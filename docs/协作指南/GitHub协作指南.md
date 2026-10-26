@@ -2,6 +2,12 @@
 
 适用于 [clash-roguelike](https://github.com/zixinyc/clash-roguelike)，面向刚开始使用 GitHub 的项目成员。先用网页协作文档，开始写游戏时再使用本地工具。
 
+## 先找到文档分类
+
+直接打开 [docs 导航](../README.md)。其中“文档讨论”是实际文件夹，包含 [技能想法](../文档讨论/技能想法.md) 和 [hunter](../文档讨论/hunter.md)。
+
+分支下拉框决定你正在修改哪个版本；文件路径决定内容归入哪个文件夹。`docs/skill-ideas` 是分支名，`docs/文档讨论/技能想法.md` 才是文档路径。日常阅读选 `main`，再从文件列表进入目录。
+
 ## 1. 先理解六个词
 
 | 名称 | 通俗解释 | 本项目例子 |
@@ -65,7 +71,7 @@
 练习任务：朋友新增一份技能想法文档。以下按朋友已接受协作者邀请的情况说明。
 
 1. **创建分支。** 打开 Code 页，在文件列表上方点击 `main` 下拉框，输入 `docs/combat-ideas`，选择从 main 创建这个新分支。确认当前显示的是新分支。
-2. **添加文档。** 点击 **Add file → Create new file**，文件名输入 `docs/技能想法.md`，写下技能名称、作用和具体例子。也可以进入现有文档，通过编辑按钮修改。
+2. **添加文档。** 点击 **Add file → Create new file**，文件名输入 `docs/文档讨论/技能想法.md`，写下技能名称、作用和具体例子。也可以进入现有文档，通过编辑按钮修改。
 3. **保存提交。** 点击 **Commit changes**，填写说明，例如 `docs: 新增三种基础技能想法`。确认提交到当前任务分支；若界面提供新建分支选项，核对分支名称后再提交。
 4. **发起 PR。** 进入 **Pull requests → New pull request**，设置 `base: main`、`compare: docs/combat-ideas`。检查 Files changed 中只有预期改动，然后点击 **Create pull request**。
 5. **说明结果。** PR 中写明改了什么、为什么改、如何检查；如果完成了某个 Issue，可写 `Closes #编号`，把“编号”替换为真实 Issue 编号。
@@ -96,7 +102,7 @@ git switch -c docs/combat-ideas
 
 ```bash
 git status
-git add docs/技能想法.md
+git add docs/文档讨论/技能想法.md
 git diff --cached
 git commit -m "docs: 新增三种基础技能想法"
 git push -u origin docs/combat-ideas
@@ -127,4 +133,4 @@ git push -u origin docs/combat-ideas
 
 ## 9. 今天就能完成的一次练习
 
-你邀请一位朋友并确认其接受邀请；朋友建一个 `docs/first-idea` 分支，新增 `docs/第一个想法.md`，提交并发起 PR；你阅读后合并。刷新 main，看到新文档，就走完了最小协作闭环。
+你邀请一位朋友并确认其接受邀请；朋友建一个 `docs/first-idea` 分支，新增 `docs/文档讨论/第一个想法.md`，提交并发起 PR；你阅读后合并。刷新 main，看到新文档，就走完了最小协作闭环。
