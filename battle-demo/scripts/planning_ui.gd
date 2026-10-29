@@ -26,6 +26,9 @@ var selected_target := 0
 var busy := false
 var speed := 2.0
 var last_second := -1
+var ally_status: Label
+var enemy_status: Label
+var guide: Label
 
 func _ready() -> void:
 	var font := SystemFont.new()
@@ -64,8 +67,13 @@ func _ready() -> void:
 	var fast := button("演出 ×2", func() -> void: speed = 4.0 if speed == 2.0 else 2.0)
 	fast.pressed.connect(func() -> void: fast.text = "演出 ×%d" % int(speed))
 	top.add_child(fast)
+	var statuses := HBoxContainer.new()
+	statuses.add_theme_constant_override("separation", 12)
+	column.add_child(statuses)
+	ally_status = _status_panel(statuses, Color("80d6df"))
+	enemy_status = _status_panel(statuses, Color("ee9b8b"))
 	stage = Stage.new()
-	stage.custom_minimum_size.y = 340
+	stage.custom_minimum_size.y = 280
 	stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	stage.slot_selected.connect(_slot_selected)
 	stage.aim_committed.connect(_aim)
@@ -87,8 +95,30 @@ func _ready() -> void:
 	selectors.add_child(cancel_button)
 	hint = label("", 15)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.custom_minimum_size.y = 42
+	hint.custom_minimum_size.y = 24
 	column.add_child(hint)
+	guide = label("", 15)
+	guide.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	guide.add_theme_color_override("font_color", Color("e6c888"))
+	column.add_child(guide)
+	var action_center := CenterContainer.new()
+	column.add_child(action_center)
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 16)
+	action_center.add_child(actions)
+	auto_button = button("自动安排", _auto_plan)
+	auto_button.custom_minimum_size = Vector2(180, 46)
+	actions.add_child(auto_button)
+	ready_button = button("准备交锋  ·  Enter", _resolve)
+	ready_button.custom_minimum_size = Vector2(260, 46)
+	var ready_style := StyleBoxFlat.new()
+	ready_style.bg_color = Color("d9bb82")
+	ready_style.set_content_margin_all(10)
+	ready_style.set_corner_radius_all(4)
+	ready_button.add_theme_stylebox_override("normal", ready_style)
+	ready_button.add_theme_color_override("font_color", Color("15232b"))
+	ready_button.add_theme_color_override("font_focus_color", Color("15232b"))
+	actions.add_child(ready_button)
 	hand_row = HBoxContainer.new()
 	hand_row.add_theme_constant_override("separation", 10)
 	column.add_child(hand_row)
@@ -98,10 +128,6 @@ func _ready() -> void:
 	log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	log_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom.add_child(log_label)
-	auto_button = button("自动安排", _auto_plan)
-	bottom.add_child(auto_button)
-	ready_button = button("准备完成 · 开始交锋", _resolve)
-	bottom.add_child(ready_button)
 	sound = Sound.new()
 	add_child(sound)
 	new_battle()
@@ -113,6 +139,21 @@ func label(value: String, font_size: int) -> Label:
 	result.text = value
 	result.add_theme_font_size_override("font_size", font_size)
 	return result
+
+func _status_panel(parent: HBoxContainer, accent: Color) -> Label:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var style := StyleBoxFlat.new()
+	style.bg_color = accent.darkened(0.85)
+	style.border_color = accent
+	style.border_width_left = 4
+	style.set_content_margin_all(10)
+	panel.add_theme_stylebox_override("panel", style)
+	parent.add_child(panel)
+	var text_label := label("", 20)
+	text_label.add_theme_color_override("font_color", accent)
+	panel.add_child(text_label)
+	return text_label
 
 func button(value: String, callback: Callable) -> Button:
 	var result := Button.new()
@@ -181,7 +222,24 @@ func _refresh(state: Dictionary) -> void:
 	for control in [ready_button, cancel_button, assign_button, auto_button, hero_picker, enemy_picker]:
 		control.disabled = busy or state.phase != "response"
 	restart_button.disabled = busy
-	ready_button.text = "我方已准备 · 结算中" if busy else "准备完成 · 开始交锋"
+	ready_button.text = "交锋进行中" if busy else "准备交锋  ·  Enter"
+	var count := 0
+	for slot in state.hero_slots:
+		if slot.active:
+			count += 1
+	ally_status.text = "我方  ·  规划中    已安排 %d 次行动" % count
+	enemy_status.text = "敌方  ·  已锁定    目标公开 / 技能隐藏"
+	guide.text = "① 选手牌   →   ② 从我方行动格拖向敌方格   →   ③ 准备交锋"
+	if count > 0:
+		guide.text = "已安排 %d 次行动 · 可继续选牌或撤销调整；安排完毕点击「准备交锋」" % count
+	if busy:
+		ally_status.text = "我方  ·  已准备    交锋中"
+		enemy_status.text = "敌方  ·  已准备    技能已揭晓"
+		guide.text = "双方已锁定，按速度依次交锋，请等待本回合结束。"
+	if not state.outcome.is_empty():
+		ally_status.text = "我方  ·  胜利" if state.outcome == "victory" else "我方  ·  败北"
+		enemy_status.text = "敌方  ·  已击败" if state.outcome == "victory" else "敌方  ·  获胜"
+		guide.text = "战斗结束 · 点击右上角「重新开始」再试一次。"
 	if state.phase == "response":
 		_hint()
 	elif not state.outcome.is_empty():
@@ -193,9 +251,9 @@ func _hint() -> void:
 	var response := "单方面攻击"
 	if e.active and e.category != 2:
 		response = "迎击自身受到的攻击" if e.target == h.unit else ("速度更高，可替队友接招" if h.speed > e.speed else "速度不足以接招，双方各自攻击")
-	hint.text = "敌方已锁定 · 我方规划中｜%s\n选牌后拖动我方格到敌方格，或点击两格后按「安排」；1–6 选牌，空格安排，Enter 准备。" % response
+	hint.text = "当前目标：%s ｜ 也可用上方下拉框选行动格，再点击「安排」。" % response
 	if selected_card >= 0:
-		hint.text = "%s → %s｜%s\n%s" % [battle.heroes[h.unit].name, Rules.SKILLS[battle.hand[selected_card]].name, response, battle.can_assign(selected_card, selected_slot, selected_target)]
+		hint.text = "%s → %s｜%s  %s" % [battle.heroes[h.unit].name, Rules.SKILLS[battle.hand[selected_card]].name, response, battle.can_assign(selected_card, selected_slot, selected_target)]
 
 func _slot_selected(allied: bool, index: int) -> void:
 	if busy or battle.phase != "response":
