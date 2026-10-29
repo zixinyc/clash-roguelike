@@ -1,0 +1,5 @@
+.tools/
+**/.godot/
+battle-demo/builds/
+battle-demo/test-output/
+*.tmp

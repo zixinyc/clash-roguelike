@@ -129,7 +129,7 @@ git push -u origin docs/combat-ideas
 - 素材带来源与许可信息；不提交缓存、账号凭证和个人文件。
 - 尽量由另一位成员检查 PR。需要系统强制时，再配置 main 的分支规则；目前尚未设置。
 
-公有可见性也不等于自动授予开源许可。本项目暂未选择许可证，后续由团队确定代码与素材的许可方式。参考：[GitHub 仓库许可说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository)。
+公有可见性与开源许可是两回事。本仓库原创内容现采用 [MIT 许可证](../../LICENSE)，允许下载、修改和再分发，分发时需保留版权声明与许可文本；第三方内容遵守各自许可。参考：[GitHub 仓库许可说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository)。
 
 ## 9. 今天就能完成的一次练习
 
