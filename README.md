@@ -2,18 +2,18 @@
 
 探索《边狱巴士》式拼点战斗与《杀戮尖塔》式卡牌构筑、随机路线和战后成长的结合，由朋友共同协作开发。
 
-**当前阶段：Godot 单场战斗原型。已提供可下载、可修改的源工程，支持手牌、小队、拼点、cost 与胜败流程。**
+**当前阶段：Godot 单场战斗原型。已提供可下载、可修改的源工程，支持敌方先规划、隐藏技能与公开箭头、角色随机速度、多行动格、180 秒响应、拼点与 cost。**
 ## 这是总文档
 ## 下载与运行
 
 1. 点击 **Code → Download ZIP** 下载 main 分支源码并解压，或使用 Git 克隆仓库。
 2. 下载 [Godot 4.7.2 标准版](https://github.com/godotengine/godot-builds/releases/tag/4.7.2-stable)，不需要 .NET 版。
 3. 在 Godot 中导入 **battle-demo/project.godot**，按 **F5** 运行。
-4. 点击游戏右下角的 **演示一回合** 观看流程，也可以自己选人、选牌和出牌。
+4. 点击游戏右下角的 **自动安排**，再点击 **准备完成**，或自己拖动行动箭头安排出牌。
 
 [完整运行与修改说明](battle-demo/README.md)。源码 ZIP 不包含引擎和独立游戏安装包。
 
-![单场战斗画面](battle-demo/preview/battle-ready.png)
+![单场战斗画面](battle-demo/preview/planning.png)
 
 ## 想做出的体验
 

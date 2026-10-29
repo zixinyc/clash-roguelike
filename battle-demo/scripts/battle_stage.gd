@@ -2,6 +2,12 @@ class_name DemoBattleStage
 extends Control
 
 signal unit_selected(allied: bool, index: int)
+signal slot_selected(allied: bool, index: int)
+signal aim_committed(source: int, target: int)
+var active_slot := 0
+var target_slot := 0
+var dragging := -1
+var pointer := Vector2.ZERO
 
 const GOLD := Color("dfbc80")
 const BLUE := Color("8bc8ce")
@@ -55,17 +61,75 @@ func _process(delta: float) -> void:
 	floaters = floaters.filter(func(item: Dictionary) -> bool: return item.age < 1.5)
 	queue_redraw()
 
+func slot_position(allied: bool, index: int) -> Vector2:
+	var id := index / 3 if allied else index / 3 + 3
+	return POINTS[id] + Vector2((index % 3 - 1) * 43, -190)
+
 func _gui_input(event: InputEvent) -> void:
-	if busy or not event is InputEventMouseButton:
+	if busy:
 		return
-	if event.button_index != MOUSE_BUTTON_LEFT or not event.pressed:
+	if event is InputEventMouseMotion:
+		pointer = event.position * BASE / size
+		return
+	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT:
 		return
 	var point: Vector2 = event.position * BASE / size
+	for side in 2:
+		var slots: Array = state.get("hero_slots" if side == 0 else "enemy_slots", [])
+		for slot in slots:
+			if Rect2(slot_position(side == 0, slot.id) - Vector2(20, 17), Vector2(40, 34)).has_point(point):
+				if event.pressed:
+					slot_selected.emit(side == 0, slot.id)
+					if side == 0:
+						dragging = slot.id
+						pointer = point
+				elif side == 1 and dragging >= 0:
+					aim_committed.emit(dragging, slot.id)
+				if not event.pressed:
+					dragging = -1
+				accept_event()
+				return
+	if not event.pressed:
+		dragging = -1
+		return
 	for i in POINTS.size():
-		if Rect2(POINTS[i] + Vector2(-64, -190), Vector2(128, 260)).has_point(point):
+		if Rect2(POINTS[i] + Vector2(-55, -150), Vector2(110, 240)).has_point(point):
 			unit_selected.emit(i < 3, i if i < 3 else i - 3)
 			accept_event()
 			return
+
+func _arrow(a: Vector2, b: Vector2, color: Color, bend: float) -> void:
+	var points := PackedVector2Array()
+	var mid := (a + b) * 0.5 + Vector2(0, bend)
+	for i in 25:
+		var t := i / 24.0
+		points.append(a.lerp(mid, t).lerp(mid.lerp(b, t), t))
+	draw_polyline(points, color, 2.0, true)
+	var direction := (b - points[23]).normalized()
+	draw_colored_polygon(PackedVector2Array([b, b - direction.rotated(0.45) * 12, b - direction.rotated(-0.45) * 12]), color)
+
+func _planning_overlay() -> void:
+	if not state.has("hero_slots"):
+		return
+	var opacity := 0.18 if busy else 0.7
+	for slot in state.enemy_slots:
+		if slot.active and slot.category != 2 and not slot.done:
+			_arrow(slot_position(false, slot.id), POINTS[slot.target] + Vector2(0, -145), Color(RED, opacity), -65.0 - slot.id * 5)
+	for slot in state.hero_slots:
+		if slot.active and slot.category != 2 and not slot.done:
+			_arrow(slot_position(true, slot.id), slot_position(false, slot.target), Color(BLUE, opacity), 65.0 + slot.id * 4)
+	for side in 2:
+		var slots: Array = state.hero_slots if side == 0 else state.enemy_slots
+		for slot in slots:
+			var pos := slot_position(side == 0, slot.id)
+			var accent := BLUE if side == 0 else RED
+			var chosen: bool = slot.id == (active_slot if side == 0 else target_slot)
+			draw_rect(Rect2(pos - Vector2(20, 17), Vector2(40, 34)), accent.darkened(0.35) if slot.active else Color("15222b"))
+			draw_rect(Rect2(pos - Vector2(20, 17), Vector2(40, 34)), GOLD if chosen else accent.darkened(0.55), false, 2 if chosen else 1)
+			_text(["攻", "大", "防"][slot.category], pos + Vector2(0, -2), 11, Color("f4e8d5") if slot.active else Color("697c85"))
+			_text(str(slot.speed), pos + Vector2(0, 12), 12, GOLD)
+	if dragging >= 0:
+		_arrow(slot_position(true, dragging), pointer, GOLD, 35)
 
 func _draw() -> void:
 	var wobble := Vector2(sin(time * 116.0), cos(time * 133.0)) * impact * 5.0
@@ -73,19 +137,13 @@ func _draw() -> void:
 	_background()
 	if state.is_empty():
 		return
-	if not busy and state.outcome.is_empty():
-		var a: Vector2 = POINTS[selected_hero] + Vector2(0, -89)
-		var b: Vector2 = POINTS[selected_enemy + 3] + Vector2(0, -89)
-		if state.heroes[selected_hero].hp > 0 and state.enemies[selected_enemy].hp > 0:
-			for k in range(0, 38):
-				var p: Vector2 = a.lerp(b, k / 38.0)
-				draw_circle(p, 1.1, Color(0.85, 0.7, 0.44, 0.14))
 	for i in POINTS.size():
 		var allied := i < 3
 		var idx := i if allied else i - 3
 		var unit: Dictionary = state.heroes[idx] if allied else state.enemies[idx]
 		var selected := idx == selected_hero if allied else idx == selected_enemy
 		_actor(i, unit, allied, selected)
+	_planning_overlay()
 	_draw_overlay()
 	for item in floaters:
 		var p: Vector2 = item.position + Vector2(0, -item.age * 36.0)
@@ -146,7 +204,7 @@ func _background() -> void:
 	draw_rect(Rect2(0, 376, BASE.x, 34), Color(0.025, 0.045, 0.06, 0.7))
 	_text("TEAM / 小队", Vector2(75, 399), 11, Color("617e86"))
 	_text("HOSTILES / 敌方", Vector2(1251, 399), 11, Color("91695f"))
-	_text("点击角色或敌人进行选择", Vector2(690, 399), 12, Color("70858c"))
+	_text("选牌 → 选择我方格 → 拖向敌方格 ｜ 攻 / 大 / 防，数字为速度", Vector2(690, 399), 12, Color("70858c"))
 
 func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 	var point: Vector2 = POINTS[id] + motions[id]
@@ -210,13 +268,9 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 	draw_rect(Rect2(hp_rect.position, Vector2(hp_rect.size.x * maxf(unit.hp, 0) / unit.max_hp, 4)), Color(accent, alpha))
 	_text("%02d / %02d" % [unit.hp, unit.max_hp], POINTS[id] + Vector2(0, 64), 12, Color("8b999b"), mono_font)
 	if allied:
-		_text("已行动" if acted else "待命", POINTS[id] + Vector2(0, 84), 11, Color("677c81") if acted else BLUE)
+		_text("已行动" if acted else "规划中", POINTS[id] + Vector2(0, 84), 11, Color("677c81") if acted else BLUE)
 	elif alive:
-		var intent_color := Color("6e7779") if acted else RED
-		_text("行动已消耗" if acted else unit.intent, POINTS[id] + Vector2(0, -201), 14, intent_color)
-		if not acted:
-			_text("%d—%d   → %s" % [unit.base, unit.base + unit.power * unit.coins, state.heroes[maxi(0, unit.target)].name], POINTS[id] + Vector2(0, -181), 12, Color("b19483"))
-			draw_colored_polygon(PackedVector2Array([POINTS[id] + Vector2(-4, -169), POINTS[id] + Vector2(4, -169), POINTS[id] + Vector2(0, -163)]), intent_color)
+		_text("已锁定 · 技能隐藏" if state.get("phase", "") == "response" else "行动已揭晓", POINTS[id] + Vector2(0, -220), 12, RED)
 
 func draw_ellipse_shadow(center: Vector2, radius: Vector2, color: Color) -> void:
 	var points := PackedVector2Array()
