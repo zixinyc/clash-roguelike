@@ -36,7 +36,7 @@ func _run() -> void:
 	check(b.assign(0, 1, 0) != "", "category mismatch rejected")
 	check(b.snapshot() == before, "invalid choices cannot mutate state")
 	check(b.assign(0, 0, 0) == "", "first action")
-	check(b.cost == 12 and b.reserved_cost() == 3, "reservation does not spend")
+	check(b.cost == 30 and b.reserved_cost() == 3, "reservation does not spend")
 	check(b.assign(0, 3, 0) != "", "same card cannot be used twice")
 	check(b.assign(5, 1, 0) == "", "second action by same hero")
 	check(b.assign(4, 2, -1) != "", "third action rejected")
@@ -58,7 +58,7 @@ func _run() -> void:
 	check(b.assign(0, 0, 0) != "" and b.lock_and_resolve().is_empty(), "lock prevents repeat spending")
 	var old_cost := b.cost
 	b.next_round()
-	check(b.turn == 2 and b.cost == old_cost + 3 and b.remaining == 180, "next round income and timer")
+	check(b.turn == 2 and b.cost == old_cost + 8 and b.remaining == 180, "next round income and timer")
 	for seed_value in 40:
 		var a := Rules.new()
 		var c := Rules.new()
@@ -101,7 +101,7 @@ func _run() -> void:
 	only_attack(loser)
 	loser.assign(0, 0, 0)
 	events = loser.lock_and_resolve()
-	check(events.filter(func(e: Dictionary) -> bool: return e.type == "refund").size() == 1 and loser.cost == 10, "only one half refund after full lost clash")
+	check(events.filter(func(e: Dictionary) -> bool: return e.type == "refund").size() == 1 and loser.cost == 28, "only one half refund after full lost clash")
 	var tied := Ties.new()
 	tied.start()
 	only_attack(tied)
@@ -109,7 +109,7 @@ func _run() -> void:
 	events = tied.lock_and_resolve()
 	check(events.filter(func(e: Dictionary) -> bool: return e.type == "clash").size() == 100, "ties reroll without random winner")
 	check(events.any(func(e: Dictionary) -> bool: return e.type == "stalemate") and not events.any(func(e: Dictionary) -> bool: return e.type == "strike"), "stall safeguard deals no damage")
-	check(tied.cost == 10, "stalemate partial refund")
+	check(tied.cost == 28, "stalemate partial refund")
 	b.start()
 	for unit in b.heroes:
 		unit.hp = 0
@@ -131,6 +131,6 @@ func _run() -> void:
 	b.lock_and_resolve()
 	check(b.outcome == "victory", "victory terminal state")
 	b.start()
-	check(b.outcome == "" and b.turn == 1 and b.cost == 12, "reset")
+	check(b.outcome == "" and b.turn == 1 and b.cost == 30, "reset")
 	print("PLANNING_RULES checks=", checks, " failures=", failures)
 	quit(1 if failures else 0)

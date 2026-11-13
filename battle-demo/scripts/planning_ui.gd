@@ -2,7 +2,7 @@ extends Control
 
 const Rules = preload("res://scripts/battle_rules.gd")
 const Stage = preload("res://scripts/battle_stage.gd")
-const Card = preload("res://scripts/card_view.gd")
+const RoleHand = preload("res://scripts/role_hand.gd")
 const Sound = preload("res://scripts/synth_audio.gd")
 var battle := Rules.new()
 var stage: DemoBattleStage
@@ -11,7 +11,7 @@ var header: Label
 var clock_label: Label
 var hint: Label
 var log_label: Label
-var hand_row: HBoxContainer
+var hand_view: RoleHand
 var ready_button: Button
 var cancel_button: Button
 var assign_button: Button
@@ -19,10 +19,11 @@ var auto_button: Button
 var restart_button: Button
 var hero_picker: OptionButton
 var enemy_picker: OptionButton
-var cards: Array[DemoCardView] = []
 var selected_card := -1
 var selected_slot := 0
 var selected_target := 0
+var encounter := 0
+var encounter_button: Button
 var busy := false
 var speed := 2.0
 var last_second := -1
@@ -62,6 +63,8 @@ func _ready() -> void:
 	top.add_child(header)
 	clock_label = label("180 秒", 24)
 	top.add_child(clock_label)
+	encounter_button = button("切换敌组：斥候 / 盾卫（重开）", _switch_encounter)
+	top.add_child(encounter_button)
 	restart_button = button("重新开始", new_battle)
 	top.add_child(restart_button)
 	var fast := button("演出 ×2", func() -> void: speed = 4.0 if speed == 2.0 else 2.0)
@@ -93,10 +96,6 @@ func _ready() -> void:
 	selectors.add_child(assign_button)
 	cancel_button = button("撤销此格", _cancel)
 	selectors.add_child(cancel_button)
-	hint = label("", 15)
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.custom_minimum_size.y = 24
-	column.add_child(hint)
 	guide = label("", 15)
 	guide.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	guide.add_theme_color_override("font_color", Color("e6c888"))
@@ -119,9 +118,14 @@ func _ready() -> void:
 	ready_button.add_theme_color_override("font_color", Color("15232b"))
 	ready_button.add_theme_color_override("font_focus_color", Color("15232b"))
 	actions.add_child(ready_button)
-	hand_row = HBoxContainer.new()
-	hand_row.add_theme_constant_override("separation", 10)
-	column.add_child(hand_row)
+	hand_view = RoleHand.new()
+	hand_view.hero_selected.connect(func(unit: int) -> void: _slot_selected(true, unit * 3))
+	hand_view.group_changed.connect(func() -> void:
+		selected_card = -1
+		_refresh(battle.snapshot()))
+	hand_view.card_selected.connect(_select_card)
+	column.add_child(hand_view)
+	hint = hand_view.detail
 	var bottom := HBoxContainer.new()
 	column.add_child(bottom)
 	log_label = label("", 14)
@@ -161,14 +165,22 @@ func button(value: String, callback: Callable) -> Button:
 	result.pressed.connect(callback)
 	return result
 
+func _switch_encounter() -> void:
+	if busy:
+		return
+	encounter = 1 - encounter
+	encounter_button.text = "切换敌组：斥候 / 盾卫（重开）" if encounter == 0 else "切换敌组：祭司 / 行刑者（重开）"
+	new_battle()
+
 func new_battle() -> void:
 	if busy:
 		return
-	battle.start()
+	battle.start(73129, encounter)
 	stage.reset_visuals()
 	selected_card = -1
 	selected_slot = 0
 	selected_target = 0
+	hand_view.show_shared = false
 	last_second = -1
 	_refresh(battle.snapshot())
 	log_label.text = "敌方已安排好。每人最多两次行动；同速不能替队友接招。"
@@ -196,7 +208,7 @@ func _refresh(state: Dictionary) -> void:
 	hero_picker.clear()
 	enemy_picker.clear()
 	for slot in state.hero_slots:
-		hero_picker.add_item("%s · %s · 速度 %d%s" % [state.heroes[slot.unit].name, Rules.CATEGORIES[slot.category], slot.speed, " · " + Rules.SKILLS[slot.key].name if slot.active else " · 空"])
+		hero_picker.add_item("%s(%s) · %s · 速度 %d%s" % [state.heroes[slot.unit].name, state.heroes[slot.unit].role, Rules.CATEGORIES[slot.category], slot.speed, " · " + Rules.SKILLS[slot.key].name if slot.active else " · 空"])
 	for slot in state.enemy_slots:
 		var detail := "待机"
 		if slot.active:
@@ -206,22 +218,11 @@ func _refresh(state: Dictionary) -> void:
 		enemy_picker.add_item("%s · %s · 速度 %d · %s" % [state.enemies[slot.unit].name, Rules.CATEGORIES[slot.category], slot.speed, detail])
 	hero_picker.select(selected_slot)
 	enemy_picker.select(selected_target)
-	if cards.is_empty():
-		for i in state.hand.size():
-			var card := Card.new()
-			card.skill = Rules.SKILLS[state.hand[i]]
-			card.key_number = i + 1
-			card.pressed.connect(_select_card.bind(i))
-			hand_row.add_child(card)
-			cards.append(card)
-	for i in cards.size():
-		cards[i].selected = i == selected_card
-		cards[i].disabled = busy or state.phase != "response"
-		cards[i].modulate.a = 0.45 if state.hero_slots.any(func(s: Dictionary) -> bool: return s.active and s.card == i) else 1.0
-		cards[i].queue_redraw()
+	hand_view.refresh(state, stage.selected_hero, selected_card, not busy and state.phase == "response")
 	for control in [ready_button, cancel_button, assign_button, auto_button, hero_picker, enemy_picker]:
 		control.disabled = busy or state.phase != "response"
 	restart_button.disabled = busy
+	encounter_button.disabled = busy
 	ready_button.text = "交锋进行中" if busy else "准备交锋  ·  Enter"
 	var count := 0
 	for slot in state.hero_slots:
@@ -229,7 +230,7 @@ func _refresh(state: Dictionary) -> void:
 			count += 1
 	ally_status.text = "我方  ·  规划中    已安排 %d 次行动" % count
 	enemy_status.text = "敌方  ·  已锁定    目标公开 / 技能隐藏"
-	guide.text = "① 选手牌   →   ② 从我方行动格拖向敌方格   →   ③ 准备交锋"
+	guide.text = "选择角色和手牌，再用行动格拖向目标，或点击「安排」"
 	if count > 0:
 		guide.text = "已安排 %d 次行动 · 可继续选牌或撤销调整；安排完毕点击「准备交锋」" % count
 	if busy:
@@ -240,43 +241,68 @@ func _refresh(state: Dictionary) -> void:
 		ally_status.text = "我方  ·  胜利" if state.outcome == "victory" else "我方  ·  败北"
 		enemy_status.text = "敌方  ·  已击败" if state.outcome == "victory" else "敌方  ·  获胜"
 		guide.text = "战斗结束 · 点击右上角「重新开始」再试一次。"
-	if state.phase == "response":
+	if state.phase == "response" and not busy:
 		_hint()
 	elif not state.outcome.is_empty():
 		hint.text = "战斗胜利！点击重新开始。" if state.outcome == "victory" else "小队失利。点击重新开始再试。"
+	else:
+		hint.text = "交锋中，行动按速度结算。"
 
 func _hint() -> void:
 	var h: Dictionary = battle.hero_slots[selected_slot]
+	if battle.heroes[h.unit].hp <= 0:
+		hint.text = "该成员已退场。请选择存活队员。"
+		return
+	if selected_card < 0:
+		hint.text = "选择一张牌查看效果。数字键对应当前手牌的编号。"
+		return
+	var card := hand_view.cards[selected_card]
+	var error := battle.can_assign(selected_card, selected_slot, selected_target)
+	if not error.is_empty():
+		hint.text = "%s · %s" % [card.skill.name, error]
+		return
+	if card.skill.kind == "guard":
+		hint.text = "%s · %s" % [card.skill.name, card.effect_text()]
+		return
 	var e: Dictionary = battle.enemy_slots[selected_target]
 	var response := "单方面攻击"
 	if e.active and e.category != 2:
 		response = "迎击自身受到的攻击" if e.target == h.unit else ("速度更高，可替队友接招" if h.speed > e.speed else "速度不足以接招，双方各自攻击")
-	hint.text = "当前目标：%s ｜ 也可用上方下拉框选行动格，再点击「安排」。" % response
-	if selected_card >= 0:
-		hint.text = "%s → %s｜%s  %s" % [battle.heroes[h.unit].name, Rules.SKILLS[battle.hand[selected_card]].name, response, battle.can_assign(selected_card, selected_slot, selected_target)]
+	hint.text = "%s · %s｜%d 枚硬币，每个正面 +%d｜%s" % [card.skill.name, card.effect_text(), card.skill.coins, card.skill.power, response]
+
+func _change_slot(index: int) -> void:
+	if index / 3 != selected_slot / 3:
+		hand_view.show_shared = false
+		selected_card = -1
+	elif selected_card >= 0 and battle.category_for(battle.hand[selected_card]) != index % 3:
+		selected_card = -1
+	selected_slot = index
 
 func _slot_selected(allied: bool, index: int) -> void:
 	if busy or battle.phase != "response":
 		return
 	if allied:
-		selected_slot = index
+		_change_slot(index)
 	else:
 		selected_target = index
 	_refresh(battle.snapshot())
 
 func _select_card(index: int) -> void:
-	if busy or battle.phase != "response":
+	if busy or battle.phase != "response" or not hand_view.visible_indices.has(index):
+		return
+	if battle.heroes[selected_slot / 3].hp <= 0:
 		return
 	selected_card = index
-	selected_slot = (selected_slot / 3) * 3 + battle.category_for(battle.hand[index])
+	selected_slot = selected_slot / 3 * 3 + battle.category_for(battle.hand[index])
 	sound.play_sound("select")
 	_refresh(battle.snapshot())
 
 func _aim(source: int, target: int) -> void:
-	selected_slot = source
+	_change_slot(source)
 	selected_target = target
 	if selected_card < 0 and battle.hero_slots[source].active:
 		selected_card = battle.hero_slots[source].card
+		hand_view.show_shared = int(Rules.SKILLS[battle.hand[selected_card]].get("owner", -1)) < 0
 	_assign()
 
 func _assign() -> void:
@@ -333,6 +359,9 @@ func _resolve() -> void:
 				sound.play_sound("strike")
 			"refund", "stalemate":
 				log_label.text = "%s，返还 %d cost" % ["僵持" if event.type == "stalemate" else "拼点失败", event.amount]
+			"ability":
+				log_label.text = event.message
+				await get_tree().create_timer(0.8 / speed).timeout
 			"cancelled":
 				log_label.text = event.reason
 		await stage.play_event(event, speed)
@@ -342,7 +371,7 @@ func _resolve() -> void:
 	if battle.phase == "finished":
 		battle.next_round()
 		last_second = -1
-		log_label.text = "下一回合：敌方已重新安排，速度重新生成，cost +3。"
+		log_label.text = "下一回合：敌方已重新安排，速度重新生成，cost +8。"
 	_refresh(battle.snapshot())
 	if not battle.outcome.is_empty():
 		clock_label.text = "战斗结束"
@@ -352,9 +381,16 @@ func _resolve() -> void:
 func _input(event: InputEvent) -> void:
 	if busy or not event is InputEventKey or not event.pressed or event.echo:
 		return
-	if event.keycode >= KEY_1 and event.keycode <= KEY_6:
-		_select_card(event.keycode - KEY_1)
+	if event.keycode >= KEY_1 and event.keycode <= KEY_9:
+		var index: int = event.keycode - KEY_1
+		if index >= hand_view.visible_indices.size():
+			return
+		_select_card(hand_view.visible_indices[index])
 	elif event.keycode == KEY_SPACE:
+		var focused := get_viewport().gui_get_focus_owner()
+		if focused != null and hand_view.is_ancestor_of(focused):
+			if not focused is DemoCardView or focused.hand_index != selected_card:
+				return
 		_assign()
 	elif event.keycode == KEY_ENTER:
 		_resolve()
@@ -370,18 +406,55 @@ func _smoke() -> void:
 	await get_tree().create_timer(0.5).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("res://test-output/planning-ready.png")
+	assert(hand_view.visible_indices.size() == 4)
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = get_viewport().get_final_transform() * (stage.global_position + stage.POINTS[1] * stage.size / stage.BASE)
+	Input.parse_input_event(press)
+	await get_tree().process_frame
+	var release := press.duplicate() as InputEventMouseButton
+	release.pressed = false
+	Input.parse_input_event(release)
+	await get_tree().process_frame
+	assert(selected_slot == 3 and hand_view.visible_indices.size() == 3)
+	_select_card(battle.hand.find("steady_edge"))
+	assert(hand_view.cards[selected_card].bonus == 2 and hint.text.contains("下限更高"))
+	await RenderingServer.frame_post_draw
+	var review_path := "res://test-output/role-hand-review%s.png" % ("-small" if DisplayServer.window_get_size().x <= 1000 else "")
+	get_viewport().get_texture().get_image().save_png(review_path)
+	hand_view.group_buttons[1].pressed.emit()
+	assert(hand_view.visible_indices.size() == 6)
+	var shared_card := battle.hand.find("steady")
+	_select_card(shared_card)
+	hand_view.cards[shared_card].grab_focus()
 	var key := InputEventKey.new()
-	key.keycode = KEY_1
+	key.keycode = KEY_SPACE
 	key.pressed = true
 	Input.parse_input_event(key)
 	await get_tree().process_frame
+	assert(battle.hero_slots[3].card == shared_card)
+	hand_view.hero_buttons[2].pressed.emit()
+	assert(selected_slot == 6 and hand_view.visible_indices.size() == 3 and selected_card == -1)
+	_select_card(battle.hand.find("light_guard"))
+	assert(hint.text.contains("队友各 +8"))
+	hand_view.group_buttons[1].pressed.emit()
+	assert(hand_view.cards[shared_card].assigned_to == "长锋")
+	_select_card(shared_card)
+	_assign()
+	assert(not battle.hero_slots[6].active and battle.hero_slots[3].active)
+	_slot_selected(true, 3)
+	_cancel()
+	assert(not battle.hero_slots[3].active and battle.reserved_cost() == 0)
+	new_battle()
+	key.keycode = KEY_1
+	Input.parse_input_event(key)
+	await get_tree().process_frame
+	assert(battle.hand[selected_card] == "probe")
 	var source := stage.global_position + stage.slot_position(true, 0) * stage.size / stage.BASE
 	var target := stage.global_position + stage.slot_position(false, 0) * stage.size / stage.BASE
 	source = get_viewport().get_final_transform() * source
 	target = get_viewport().get_final_transform() * target
-	var press := InputEventMouseButton.new()
-	press.button_index = MOUSE_BUTTON_LEFT
-	press.pressed = true
 	press.position = source
 	Input.parse_input_event(press)
 	await get_tree().process_frame
@@ -390,9 +463,6 @@ func _smoke() -> void:
 	motion.button_mask = MOUSE_BUTTON_MASK_LEFT
 	Input.parse_input_event(motion)
 	await get_tree().process_frame
-	var release := InputEventMouseButton.new()
-	release.button_index = MOUSE_BUTTON_LEFT
-	release.pressed = false
 	release.position = target
 	Input.parse_input_event(release)
 	await get_tree().process_frame
@@ -421,5 +491,5 @@ func _smoke() -> void:
 	get_viewport().get_texture().get_image().save_png("res://test-output/planning-result.png")
 	new_battle()
 	assert(battle.turn == 1 and battle.phase == "response")
-	print("PLANNING_UI_PASS keyboard mouse_drag assign cancel auto resolve timeout outcome restart")
+	print("PLANNING_UI_PASS role_groups shared_reservation keyboard mouse_drag assign cancel auto resolve timeout outcome restart")
 	get_tree().quit()
