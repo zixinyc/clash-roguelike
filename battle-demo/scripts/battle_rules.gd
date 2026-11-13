@@ -2,8 +2,11 @@ class_name DemoBattleRules
 extends RefCounted
 
 const MAX_PLAYS := 6
-const BASE_INCOME := 3
+const BASE_INCOME := 8
+const START_COST := 30
 const REFUND_RATE := 0.5
+const GUARD_AMOUNT := 9
+const BREAKER_HP_LOSS := 2
 const SKILLS := {
 	"cleave": {"name": "断轨", "cost": 3, "base": 5, "power": 4, "coins": 2, "kind": "attack", "tag": "重击", "description": "高威力 · 两枚硬币", "flavor": "将退路，一并斩断。"},
 	"ember": {"name": "余烬斩", "cost": 2, "base": 4, "power": 3, "coins": 2, "kind": "attack", "tag": "斩击", "description": "均衡威力 · 两枚硬币", "flavor": "火熄灭前，再向前一步。"},
@@ -11,6 +14,16 @@ const SKILLS := {
 	"steady": {"name": "定锋", "cost": 2, "base": 7, "power": 1, "coins": 2, "kind": "attack", "tag": "稳势", "description": "稳定威力 · 两枚硬币", "flavor": "让摇摆的，只剩敌人。"},
 	"guard": {"name": "守夜", "cost": 1, "base": 0, "power": 0, "coins": 0, "kind": "guard", "tag": "防御", "description": "获得 9 护盾 · 持续本回合", "flavor": "总有人，要守住最后一盏灯。"},
 	"nova": {"name": "破晓", "cost": 4, "base": 6, "power": 4, "coins": 3, "kind": "ultimate", "tag": "大招", "description": "三枚硬币 · 爆发", "flavor": "以余火，换黎明。"},
+	"observe": {"name": "观察", "cost": 2, "base": 5, "power": 2, "coins": 2, "kind": "attack", "tag": "灰烬专属", "owner": 0, "description": "行动结束获得 1 层准备", "flavor": "等待破绽。"},
+	"probe": {"name": "试探", "cost": 1, "base": 5, "power": 2, "coins": 2, "kind": "attack", "tag": "灰烬专属", "owner": 0, "description": "拼点获胜获得 1 层准备", "flavor": "试出敌人的节奏。"},
+	"exploit": {"name": "捕捉破绽", "cost": 3, "base": 6, "power": 3, "coins": 2, "kind": "attack", "tag": "灰烬专属", "owner": 0, "description": "拼点时消耗准备，拼点威力 +4", "flavor": "此刻，就是破绽。"},
+	"follow": {"name": "余势追击", "cost": 3, "base": 5, "power": 3, "coins": 2, "kind": "attack", "tag": "灰烬专属", "owner": 0, "description": "拼点获胜并攻击后，追加 4 点攻击", "flavor": "不要放过机会。"},
+	"steady_edge": {"name": "稳斩", "cost": 3, "base": 9, "power": 1, "coins": 2, "kind": "attack", "tag": "长锋专属", "owner": 1, "description": "稳定拼点；触发长锋高费被动", "flavor": "稳住，再挥剑。"},
+	"shatter": {"name": "裂甲强袭", "cost": 4, "base": 5, "power": 4, "coins": 3, "kind": "ultimate", "tag": "长锋专属", "owner": 1, "description": "三枚硬币；触发长锋高费被动", "flavor": "全力破阵。"},
+	"light_guard": {"name": "守护之光", "cost": 3, "base": 0, "power": 0, "coins": 0, "kind": "guard", "tag": "织火专属", "owner": 2, "description": "自身获得9护盾；其他存活队友各获得8护盾", "flavor": "光护住同伴。"},
+	"support_strike": {"name": "援火冲击", "cost": 2, "base": 5, "power": 2, "coins": 2, "kind": "attack", "tag": "织火专属", "owner": 2, "description": "拼点获胜后，其他存活队友各获得4护盾", "flavor": "以攻守护。"},
+	"all_in": {"name": "破阵", "cost": 3, "base": 7, "power": 4, "coins": 2, "kind": "attack", "tag": "长锋专属", "owner": 1, "description": "高威力；触发破阵者被动", "flavor": "赌上这一击。"},
+	"cover": {"name": "护阵", "cost": 2, "base": 0, "power": 0, "coins": 0, "kind": "guard", "tag": "织火专属", "owner": 2, "description": "自身获得 9 护盾；其他存活队友获得 6 护盾", "flavor": "火光护住同伴。"},
 	"risk": {"name": "孤注", "cost": 2, "base": 2, "power": 4, "coins": 3, "kind": "attack", "tag": "搏命", "description": "波动威力 · 三枚硬币", "flavor": "把最后的余温，押上。"}
 }
 
@@ -22,7 +35,7 @@ var enemies: Array[Dictionary] = []
 var hand: Array[String] = []
 var hero_slots: Array[Dictionary] = []
 var enemy_slots: Array[Dictionary] = []
-var cost := 12
+var cost := START_COST
 var turn := 1
 var plays := 0
 var first_win_paid := false
@@ -30,18 +43,23 @@ var outcome := ""
 var phase := "response"
 var remaining := RESPONSE_SECONDS
 
-func start(seed_value: int = 73129) -> void:
+func start(seed_value: int = 73129, encounter: int = 0) -> void:
 	rng.seed = seed_value
 	heroes = [
-		{"name": "灰烬", "role": "前锋", "hp": 48, "max_hp": 48, "shield": 0, "acted": false, "speed_min": 3, "speed_max": 6},
-		{"name": "长锋", "role": "游刃", "hp": 42, "max_hp": 42, "shield": 0, "acted": false, "speed_min": 5, "speed_max": 8},
-		{"name": "织火", "role": "守望", "hp": 46, "max_hp": 46, "shield": 0, "acted": false, "speed_min": 2, "speed_max": 5}
+		{"name": "灰烬", "role": "蓄势者", "preparation": 0, "hp": 48, "max_hp": 48, "shield": 0, "acted": false, "speed_min": 3, "speed_max": 6},
+		{"name": "长锋", "role": "破阵者", "hp": 42, "max_hp": 42, "shield": 0, "acted": false, "speed_min": 5, "speed_max": 8},
+		{"name": "织火", "role": "援护者", "hp": 46, "max_hp": 46, "shield": 0, "acted": false, "speed_min": 2, "speed_max": 5}
 	]
-	enemies = [
-		{"name": "锈刃巡卫", "hp": 65, "max_hp": 65, "shield": 0, "spent": false, "speed_min": 2, "speed_max": 5},
-		{"name": "失序哨兵", "hp": 58, "max_hp": 58, "shield": 0, "spent": false, "speed_min": 4, "speed_max": 7}
-	]
-	cost = 12
+	enemies.assign([
+		{"name": "裂影斥候", "kind": "scout", "hp": 58, "max_hp": 58, "shield": 0, "spent": false, "speed_min": 4, "speed_max": 7},
+		{"name": "守墓盾卫", "kind": "warden", "hp": 65, "max_hp": 65, "shield": 0, "spent": false, "speed_min": 2, "speed_max": 5}
+	])
+	if encounter == 1:
+		enemies.assign([
+		{"name": "缚咒祭司", "kind": "priest", "hp": 52, "max_hp": 52, "shield": 0, "spent": false, "speed_min": 3, "speed_max": 6},
+		{"name": "鸣钟行刑者", "kind": "elite", "hp": 95, "max_hp": 95, "shield": 0, "spent": false, "speed_min": 2, "speed_max": 5}
+		])
+	cost = START_COST
 	turn = 1
 	outcome = ""
 	_prepare_round()
@@ -51,7 +69,7 @@ func _prepare_round() -> void:
 	remaining = RESPONSE_SECONDS
 	plays = 0
 	first_win_paid = false
-	hand.assign(["cleave", "ember", "needle", "steady", "guard", "nova"])
+	hand.assign(["cleave", "ember", "needle", "steady", "guard", "nova", "observe", "all_in", "cover", "probe", "exploit", "follow", "steady_edge", "shatter", "light_guard", "support_strike"])
 	hero_slots.clear()
 	enemy_slots.clear()
 	for side in 2:
@@ -70,6 +88,10 @@ func _prepare_round() -> void:
 					slot.active = category == 0 or category == second
 					if slot.active:
 						slot.key = ["ember", "nova", "guard"][category]
+						if category == 0 and units[u].kind == "scout":
+							slot.key = "needle"
+						elif category == 0 and units[u].kind == "elite":
+							slot.key = "cleave"
 						slot.target = _living_target((turn + u + category - 1) % heroes.size()) if category != 2 else u
 				slots.append(slot)
 
@@ -91,6 +113,14 @@ func snapshot() -> Dictionary:
 func category_for(key: String) -> int:
 	return 2 if SKILLS[key].kind == "guard" else (1 if SKILLS[key].kind == "ultimate" else 0)
 
+static func clash_bonus(key: String, unit: int, preparation: int) -> int:
+	if key == "exploit" and preparation > 0:
+		return 4
+	return 2 if unit == 1 and SKILLS[key].cost >= 3 else 0
+
+static func ally_guard_amount(key: String) -> int:
+	return 8 if key == "light_guard" else (6 if key == "cover" else 4)
+
 func can_assign(card: int, slot_id: int, target: int) -> String:
 	if phase != "response" or not outcome.is_empty():
 		return "当前不能修改行动"
@@ -99,6 +129,9 @@ func can_assign(card: int, slot_id: int, target: int) -> String:
 	var slot: Dictionary = hero_slots[slot_id]
 	if heroes[slot.unit].hp <= 0:
 		return "该成员已退场"
+	var owner := int(SKILLS[hand[card]].get("owner", -1))
+	if owner >= 0 and owner != slot.unit:
+		return "这张牌只能由%s使用" % heroes[owner].name
 	if category_for(hand[card]) != slot.category:
 		return "卡牌类别与行动格不符"
 	var count := 0
@@ -212,8 +245,22 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 	var skill: Dictionary = SKILLS[slot.key]
 	var units: Array[Dictionary] = heroes if allied else enemies
 	if slot.category == 2:
-		units[slot.unit].shield += 9
-		_emit(events, {"type": "guard" if allied else "enemy_guard", "hero": slot.unit, "enemy": slot.unit, "amount": 9})
+		var guard_amount := GUARD_AMOUNT
+		if not allied and units[slot.unit].kind == "warden":
+			guard_amount = 14
+		units[slot.unit].shield += guard_amount
+		if not allied and units[slot.unit].kind == "priest":
+			for i in enemies.size():
+				if i != slot.unit and enemies[i].hp > 0:
+					enemies[i].shield += 6
+			_emit(events, {"type": "ability", "message": "缚咒祭司：为其他存活敌人提供 6 护盾"})
+		if allied and slot.unit == 2:
+			var support_shield := ally_guard_amount(slot.key)
+			for i in heroes.size():
+				if i != slot.unit and heroes[i].hp > 0:
+					heroes[i].shield += support_shield
+			_emit(events, {"type": "ability", "message": "织火 · 援护：其他存活队友获得 %d 护盾" % support_shield})
+		_emit(events, {"type": "guard" if allied else "enemy_guard", "hero": slot.unit, "enemy": slot.unit, "amount": guard_amount})
 		return
 	var target: int = enemy_slots[slot.target].unit if allied else slot.target
 	var victims: Array[Dictionary] = enemies if allied else heroes
@@ -222,9 +269,20 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 		return
 	_emit(events, {"type": "paid", "hero": slot.unit, "skill": skill.name, "paid": 0} if allied else {"type": "enemy_turn", "enemy": slot.unit, "hero": target})
 	_attack(events, allied, slot.unit, target, skill.base, skill.power, skill.coins, 0.65 if allied else 0.5)
+	if allied and slot.key == "observe":
+		heroes[0].preparation = 1
+		_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
 
 func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
-	var left_skill: Dictionary = SKILLS[h.key]
+	var left_skill: Dictionary = SKILLS[h.key].duplicate()
+	var bonus := clash_bonus(h.key, h.unit, heroes[0].preparation)
+	var breaker: bool = h.unit == 1 and bonus > 0
+	left_skill.base += bonus
+	if h.key == "exploit" and bonus > 0:
+		heroes[0].preparation = 0
+		_emit(events, {"type": "ability", "message": "灰烬 · 捕捉破绽：消耗准备，本次拼点威力 +%d" % bonus})
+	if breaker:
+		_emit(events, {"type": "ability", "message": "长锋 · 破阵：本次拼点威力 +%d，失败损失 %d 生命" % [bonus, BREAKER_HP_LOSS]})
 	var right_skill: Dictionary = SKILLS[e.key]
 	var lc := int(left_skill.coins)
 	var rc := int(right_skill.coins)
@@ -239,6 +297,9 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 			var refund := int(floor(left_skill.cost * REFUND_RATE))
 			cost += refund
 			_emit(events, {"type": "stalemate", "amount": refund})
+			if h.key == "observe" and heroes[0].hp > 0:
+				heroes[0].preparation = 1
+				_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
 			return
 		var left := _roll(left_skill.base, left_skill.power, lc, 0.65)
 		var right := _roll(right_skill.base, right_skill.power, rc, 0.5)
@@ -252,16 +313,33 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 		ties = ties + 1 if winner == -1 else 0
 		_emit(events, {"type": "clash", "hero": h.unit, "enemy": e.unit, "left": left.value, "right": right.value, "left_heads": left.heads, "right_heads": right.heads, "hero_coins": old_lc, "enemy_coins": old_rc, "hero_remaining": lc, "enemy_remaining": rc, "winner": winner, "decider": false})
 	if lc > 0:
+		if h.unit == 0:
+			heroes[0].preparation = 1
+			_emit(events, {"type": "ability", "message": "灰烬 · 蓄势：获得 1 层准备"})
+		if h.key == "support_strike":
+			for i in heroes.size():
+				if i != h.unit and heroes[i].hp > 0:
+					heroes[i].shield += 4
+			_emit(events, {"type": "ability", "message": "织火 · 援火冲击：其他存活队友获得4护盾"})
 		if not first_win_paid:
 			first_win_paid = true
 			cost += 1
 			_emit(events, {"type": "reward", "amount": 1, "hero": h.unit})
-		_attack(events, true, h.unit, e.unit, left_skill.base, left_skill.power, lc, 0.65)
+		_attack(events, true, h.unit, e.unit, int(SKILLS[h.key].base), left_skill.power, lc, 0.65)
+		if h.key == "follow" and enemies[e.unit].hp > 0:
+			_emit(events, {"type": "ability", "message": "灰烬 · 余势追击：追加 4 点攻击"})
+			_attack(events, true, h.unit, e.unit, 4, 0, 1, 0.65)
 	else:
+		if breaker:
+			heroes[1].hp = maxi(0, int(heroes[1].hp) - BREAKER_HP_LOSS)
+			_emit(events, {"type": "ability", "message": "长锋 · 破阵：拼点失败，损失 %d 生命" % BREAKER_HP_LOSS})
 		var refund := int(floor(left_skill.cost * REFUND_RATE))
 		cost += refund
 		_emit(events, {"type": "refund", "amount": refund, "hero": h.unit})
 		_attack(events, false, e.unit, h.unit, right_skill.base, right_skill.power, rc, 0.5)
+	if h.key == "observe" and heroes[0].hp > 0:
+		heroes[0].preparation = 1
+		_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
 
 func _roll(base: int, power: int, coins: int, chance: float) -> Dictionary:
 	var heads := 0
@@ -282,6 +360,9 @@ func _attack(events: Array[Dictionary], allied: bool, source: int, target: int, 
 		victims[target].shield -= blocked
 		var damage := maxi(0, running - blocked)
 		victims[target].hp = maxi(0, int(victims[target].hp) - damage)
+		if not allied and damage > 0 and enemies[source].kind == "scout" and target == 0 and heroes[0].preparation > 0:
+			heroes[0].preparation = 0
+			_emit(events, {"type": "ability", "message": "裂影斥候：命中移除了灰烬的准备"})
 		_emit(events, {"type": "strike", "allied": allied, "source": source, "target": target, "damage": damage, "blocked": blocked, "hit": i + 1, "total": coins})
 
 func _living_target(preferred: int) -> int:

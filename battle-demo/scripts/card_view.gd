@@ -1,15 +1,30 @@
 class_name DemoCardView
 extends Button
 
+const Rules = preload("res://scripts/battle_rules.gd")
+const USE_HINTS := {
+	"probe": "低费接招", "observe": "积累准备", "exploit": "消耗准备强化拼点",
+	"follow": "拼赢后追加攻击", "steady_edge": "同费下限更高", "all_in": "同费上限更高",
+	"shatter": "三枚硬币 · 爆发",
+	"support_strike": "拼赢后给队友护盾", "steady": "同费下限更高", "ember": "同费上限更高",
+	"needle": "低费进攻", "cleave": "高威力进攻", "guard": "低费防御", "nova": "三枚硬币 · 爆发"
+}
+
 var skill: Dictionary = {}
+var skill_key := ""
+var hand_index := -1
 var key_number := 1
 var selected := false
 var hovered := false
+var assigned_to := ""
+var accent := Color("dfbc80")
+var bonus := 0
+var ally_shield := 0
 var chinese_font: Font
 var number_font: Font
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(142, 222)
+	custom_minimum_size = Vector2(130, 133)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	chinese_font = get_theme_font("font")
@@ -22,54 +37,67 @@ func _ready() -> void:
 	focus_entered.connect(queue_redraw)
 	focus_exited.connect(queue_redraw)
 	resized.connect(queue_redraw)
-	tooltip_text = "%s｜%s\n费用 %d cost\n%s\n%s" % [skill.name, skill.tag, skill.cost, skill.description, skill.flavor]
+	tooltip_text = "%s · %d cost\n%s" % [skill.name, skill.cost, skill.description]
+
+func effect_text() -> String:
+	if skill.kind == "guard":
+		var effect := "行动结算时，自身 +%d 护盾" % Rules.GUARD_AMOUNT
+		if ally_shield > 0:
+			effect += "，其他存活队友各 +%d" % ally_shield
+		return effect
+	match skill_key:
+		"steady": return "和「余烬斩」同费，拼点下限更高"
+		"ember": return "和「定锋」同费，拼点上限更高"
+		"steady_edge": return "和「破阵」同费，拼点下限更高"
+		"all_in": return "和「稳斩」同费，拼点上限更高"
+		"exploit":
+			return "消耗 1 层准备，拼点威力 +%d" % bonus if bonus > 0 else "获得准备后，下次用它拼点可强化威力"
+	return skill.description
 
 func _draw() -> void:
 	if skill.is_empty() or chinese_font == null:
 		return
-	var accent := Color("95c3c6") if skill.kind == "guard" else Color("d9b77c")
-	var active := selected or hovered or has_focus()
-	var tint := Color("1c2a31") if active else Color("131e27")
-	var opacity := 0.40 if disabled else 1.0
-	var rect := Rect2(Vector2(1, 5), size - Vector2(2, 10))
-	draw_style_box(_box(tint, accent if selected else Color("37464d"), 2 if selected else 1), rect)
-	draw_rect(Rect2(2, 6, size.x - 4, 3), Color(accent, opacity if selected else opacity * 0.25))
-	draw_circle(Vector2(25, 30), 15, Color("29353b"))
-	_text(str(skill.cost), Vector2(25, 37), 23, Color(accent, opacity), number_font)
-	_text(skill.tag, Vector2(size.x - 31, 34), 12, Color("98a4a4", opacity))
-	_text(skill.name, Vector2(size.x / 2.0, 73), 23, Color("e9e6dc", opacity))
-	draw_line(Vector2(18, 87), Vector2(size.x - 18, 87), Color(accent, opacity * 0.2), 1)
-	var center := Vector2(size.x / 2.0, 121)
-	if skill.kind == "guard":
-		var shape := PackedVector2Array([center + Vector2(0, -26), center + Vector2(25, -13), center + Vector2(19, 15), center + Vector2(0, 30), center + Vector2(-19, 15), center + Vector2(-25, -13), center + Vector2(0, -26)])
-		draw_polyline(shape, Color(accent, opacity * 0.75), 2, true)
-		draw_line(center + Vector2(0, -16), center + Vector2(0, 18), Color(accent, opacity * 0.4), 1)
-	else:
-		var shape := PackedVector2Array([center + Vector2(-21, 25), center + Vector2(9, -18), center + Vector2(26, -31), center + Vector2(20, -8), center + Vector2(-14, 31)])
-		draw_colored_polygon(shape, Color(accent, opacity * 0.65))
-		draw_line(center + Vector2(-29, 10), center + Vector2(-4, 27), Color(accent, opacity), 2, true)
-		for i in int(skill.coins):
-			draw_circle(center + Vector2(-26 + i * 10, -22), 2.4, Color(accent, opacity * 0.5))
-	if skill.kind == "guard":
-		_text("护盾 +9", Vector2(size.x / 2.0, 177), 17, Color(accent, opacity))
-	else:
-		_text("%d — %d" % [skill.base, skill.base + skill.power * skill.coins], Vector2(size.x / 2.0, 177), 22, Color(accent, opacity), number_font)
-		_text("%d 枚硬币  /  正面 +%d" % [skill.coins, skill.power], Vector2(size.x / 2.0, 198), 11, Color("9ca9a9", opacity))
-	_text(str(key_number), Vector2(size.x - 16, size.y - 15), 10, Color("6d838a"), number_font)
-	if selected:
-		_text("已选择", Vector2(33, size.y - 15), 10, accent)
-
-func _text(value: String, center: Vector2, font_size: int, color: Color, font_override: Font = null) -> void:
-	var used_font := chinese_font if font_override == null else font_override
-	var width := used_font.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-	draw_string(used_font, center - Vector2(width / 2, 0), value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
-
-func _box(fill: Color, border: Color, border_width: int) -> StyleBoxFlat:
+	var active := selected or has_focus()
+	var tint := Color("192832").lerp(accent, 0.10) if selected else Color("16242e")
+	if hovered:
+		tint = tint.lightened(0.06)
+	var ink := Color("f2eee3") if not disabled else Color("a3b1b4")
+	var muted := Color("a8bac0") if not disabled else Color("86989d")
+	var bright := accent if not disabled else accent.lerp(muted, 0.65)
+	var rect := Rect2(Vector2.ZERO, size)
 	var style := StyleBoxFlat.new()
-	style.bg_color = fill
-	style.border_color = border
-	style.set_border_width_all(border_width)
-	style.set_corner_radius_all(5)
-	style.shadow_color = Color(0, 0, 0, 0.2)
-	style.shadow_size = 6
-	return style
+	style.bg_color = tint
+	style.border_color = bright if active else Color("354751")
+	style.set_border_width_all(1)
+	style.border_width_top = 3 if active else 1
+	style.set_corner_radius_all(6)
+	draw_style_box(style, rect)
+	var kind_label := "防御" if skill.kind == "guard" else ("大招" if skill.kind == "ultimate" else "进攻")
+	_text("%d cost" % skill.cost, Vector2(10, 23), 17, bright, number_font)
+	_right(kind_label, Vector2(size.x - 10, 23), 13, muted)
+	_text(skill.name, Vector2(10, 48), 19, ink)
+	if skill.kind == "guard":
+		_text("+%d" % Rules.GUARD_AMOUNT, Vector2(10, 76), 23, bright, number_font)
+		_text("自身护盾", Vector2(61, 75), 12, muted)
+	else:
+		var base := int(skill.base) + bonus
+		var values := "%d–%d" % [base, base + int(skill.power) * int(skill.coins)]
+		var value_width := number_font.get_string_size(values, HORIZONTAL_ALIGNMENT_LEFT, -1, 23).x
+		_text(values, Vector2(10, 76), 23, bright, number_font)
+		_text("拼点威力", Vector2(17 + value_width, 75), 12, muted)
+	var usage: String = USE_HINTS.get(skill_key, skill.description)
+	if skill.kind == "guard" and ally_shield > 0:
+		usage = "队友各 +%d 护盾" % ally_shield
+	_text(usage, Vector2(10, 100), 13, ink)
+	if not assigned_to.is_empty():
+		_text("已安排 · %s" % assigned_to, Vector2(10, 122), 12, muted)
+	_right(str(key_number), Vector2(size.x - 10, 122), 13, muted, number_font)
+
+func _text(value: String, origin: Vector2, font_size: int, color: Color, font: Font = null) -> void:
+	var used_font := chinese_font if font == null else font
+	draw_string(used_font, origin, value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+
+func _right(value: String, origin: Vector2, font_size: int, color: Color, font: Font = null) -> void:
+	var used_font := chinese_font if font == null else font
+	var width := used_font.get_string_size(value, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+	_text(value, origin - Vector2(width, 0), font_size, color, used_font)

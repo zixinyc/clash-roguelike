@@ -2,4 +2,6 @@
 **/.godot/
 battle-demo/builds/
 battle-demo/test-output/
+battle-demo/art/
+docs/任务记录/视觉预览/
 *.tmp

@@ -13,6 +13,12 @@ const GOLD := Color("dfbc80")
 const BLUE := Color("8bc8ce")
 const RED := Color("e17d70")
 const BASE := Vector2(1380, 410)
+const HERO_SPRITES := [Rect2(96, 18, 315, 480), Rect2(570, 4, 402, 494), Rect2(1082, 26, 306, 472)]
+const ENEMY_SPRITES := {
+	"scout": Rect2(92, 550, 359, 458),
+	"warden": Rect2(561, 513, 381, 497),
+	"elite": Rect2(1043, 504, 414, 508),
+}
 const POINTS := [Vector2(228, 282), Vector2(369, 282), Vector2(510, 282), Vector2(951, 282), Vector2(1126, 282)]
 
 var state: Dictionary = {}
@@ -29,6 +35,9 @@ var banner := ""
 var floaters: Array[Dictionary] = []
 var face_font: Font
 var mono_font: Font
+var station_texture: Texture2D
+var actors_texture: Texture2D
+var priest_texture: Texture2D
 
 func _ready() -> void:
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -36,6 +45,12 @@ func _ready() -> void:
 	face_font = get_theme_font("font")
 	mono_font = SystemFont.new()
 	mono_font.font_names = PackedStringArray(["Bahnschrift", "Consolas"])
+	station_texture = _optional_texture("res://art/rain-station.png")
+	actors_texture = _optional_texture("res://art/battle-actors.png")
+	priest_texture = _optional_texture("res://art/grave-priest.png")
+
+func _optional_texture(path: String) -> Texture2D:
+	return load(path) as Texture2D if ResourceLoader.exists(path) else null
 
 func set_state(value: Dictionary) -> void:
 	state = value
@@ -155,61 +170,29 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO)
 
 func _background() -> void:
-	draw_rect(Rect2(Vector2.ZERO, BASE), Color("101c26"))
-	for i in 22:
-		var alpha := 0.02 + i * 0.003
-		draw_rect(Rect2(0, i * 14.0, BASE.x, 14), Color(0.31, 0.43, 0.48, alpha))
-	draw_circle(Vector2(772, 72), 55, Color(0.7, 0.79, 0.76, 0.045))
-	draw_circle(Vector2(772, 72), 33, Color(0.76, 0.81, 0.76, 0.12))
-	draw_circle(Vector2(787, 62), 31, Color("14212b"))
-	for i in 15:
-		var x := i * 112.0 - 80
-		var h := 34.0 + fmod(i * 37.0, 78.0)
-		draw_rect(Rect2(x, 158 - h, 67, h + 80), Color("14212a"))
-		for j in 3:
-			draw_rect(Rect2(x + 12 + j * 16, 151 - h, 3, 5), Color(0.8, 0.65, 0.4, 0.17))
-	draw_rect(Rect2(0, 162, BASE.x, 92), Color("101b22"))
-	for i in 18:
-		var x := i * 81.0 - 20
-		draw_rect(Rect2(x, 183, 48, 40), Color("26343a"))
-		draw_rect(Rect2(x + 3, 186, 42, 34), Color(0.68, 0.53, 0.3, 0.08 + fmod(i * 0.031, 0.08)))
-		draw_line(Vector2(x + 24, 185), Vector2(x + 24, 221), Color("14232b"), 2)
-	draw_line(Vector2(0, 242), Vector2(BASE.x, 242), Color("3e4849"), 2)
-	for x in [74.0, 650.0, 1306.0]:
-		draw_rect(Rect2(x - 8, 0, 16, 278), Color("0b151d"))
-		draw_rect(Rect2(x - 15, 241, 30, 38), Color("101920"))
-		draw_line(Vector2(x, 25), Vector2(x + 136, 0), Color("0a141b"), 11)
-		draw_line(Vector2(x, 25), Vector2(x - 136, 0), Color("0a141b"), 11)
-	draw_rect(Rect2(0, 0, BASE.x, 8), Color("0b141c"))
-	draw_line(Vector2(0, 17), Vector2(BASE.x, 17), Color(0.6, 0.7, 0.7, 0.07))
-	for x in [130.0, 568.0, 1210.0]:
-		draw_line(Vector2(x, 0), Vector2(x, 47), Color("25333b"), 2)
-		_glow(Vector2(x, 54), 28, Color(0.97, 0.72, 0.35, 0.05))
-		draw_rect(Rect2(x - 16, 46, 32, 5), Color("ac8a54"))
-	_text("07", Vector2(78, 53), 26, Color("667d82"), mono_font)
-	_text("NORTH TERMINAL / 北境废站", Vector2(202, 75), 12, Color("5f777e"))
-	draw_colored_polygon(PackedVector2Array([Vector2(0, 277), Vector2(1380, 277), Vector2(1380, 410), Vector2(0, 410)]), Color("111b23"))
-	for i in 13:
-		var x := i * 148.0 - 250
-		draw_line(Vector2(690 + (x - 690) * 0.55, 277), Vector2(x, 410), Color(0.35, 0.43, 0.47, 0.1))
-	for y in [286.0, 310.0, 358.0, 402.0]:
-		draw_line(Vector2(0, y), Vector2(1380, y), Color(0.42, 0.5, 0.51, 0.08))
-	draw_rect(Rect2(0, 278, 1380, 3), Color("77715b"))
-	for i in 40:
-		var x := i * 36.0
-		draw_rect(Rect2(x, 281, 19, 3), Color(0.81, 0.65, 0.36, 0.2))
-	for i in 34:
-		var p := Vector2(fposmod(i * 97.3 + time * (3 + i % 3), 1380), 52 + fposmod(i * 43.7 - time * 4, 220))
-		draw_circle(p, 0.7 + (i % 2) * 0.4, Color(0.76, 0.82, 0.75, 0.08 + 0.06 * sin(time + i)))
-	draw_rect(Rect2(0, 376, BASE.x, 34), Color(0.025, 0.045, 0.06, 0.7))
-	_text("TEAM / 小队", Vector2(75, 399), 11, Color("617e86"))
-	_text("HOSTILES / 敌方", Vector2(1251, 399), 11, Color("91695f"))
-	_text("选牌 → 选择我方格 → 拖向敌方格 ｜ 攻 / 大 / 防，数字为速度", Vector2(690, 399), 12, Color("70858c"))
+	if station_texture != null:
+		draw_texture_rect(station_texture, Rect2(Vector2.ZERO, BASE), false)
+	else:
+		draw_rect(Rect2(Vector2.ZERO, BASE), Color("182630"))
+		draw_rect(Rect2(0, 282, BASE.x, 128), Color("111b23"))
+		draw_line(Vector2(0, 282), Vector2(BASE.x, 282), Color("52605e"), 2)
+	draw_rect(Rect2(0, 0, BASE.x, 115), Color(0.025, 0.045, 0.06, 0.32))
+	draw_rect(Rect2(0, 292, BASE.x, 84), Color(0.025, 0.045, 0.06, 0.50))
+	draw_rect(Rect2(0, 376, BASE.x, 34), Color(0.025, 0.045, 0.06, 0.81))
+	_text("北境废站", Vector2(89, 398), 13, Color("c2a77d"))
+	_text("选择角色和手牌，拖动行动格接招", Vector2(690, 398), 13, Color("b0bdc1"))
+
 
 func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 	var point: Vector2 = POINTS[id] + motions[id]
 	var alive: bool = unit.hp > 0
 	var accent: Color = [Color("d5b27a"), Color("8cbfc8"), Color("b8bf94")][id] if allied else RED
+	if not allied:
+		match unit.get("kind", ""):
+			"scout": accent = Color("cd9a6f")
+			"warden": accent = Color("b5b0a3")
+			"priest": accent = Color("88c7bd")
+			"elite": accent = Color("c38e4f")
 	var alpha := 1.0 if alive else 0.24
 	var acted: bool = unit.acted if allied else unit.spent
 	if acted and alive and not busy:
@@ -221,42 +204,21 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 		draw_arc(Vector2(0, 2), 49, PI * 0.02, PI * 0.98, 28, Color(accent, 0.5), 2, true)
 		draw_arc(Vector2(0, 2), 49, PI * 1.05, PI * 1.95, 28, Color(accent, 0.25), 1, true)
 		_glow(Vector2(0, -74), 91, Color(accent, 0.025))
-	var facing := 1.0 if allied else -1.0
-	var bob := sin(time * 2.1 + id * 1.5) * 1.5 if alive else 0.0
-	var body_color := Color("182831") if allied else Color("28272a")
-	var edge := Color("40545b") if allied else Color("65504b")
-	if flashes[id] > 0:
-		body_color = body_color.lerp(Color("ddd8c6"), flashes[id])
-	var body_points := PackedVector2Array([Vector2(-22, -111), Vector2(10, -116), Vector2(28, -87), Vector2(17, -42), Vector2(30, -12), Vector2(-9, -23), Vector2(-31, -7), Vector2(-25, -57), Vector2(-32, -88)])
-	for i in body_points.size():
-		body_points[i].x *= facing
-		body_points[i].y += bob
-	var body_tint := Color(body_color, alpha)
-	draw_colored_polygon(body_points, body_tint)
-	draw_polyline(body_points, Color(edge, alpha), 1.5, true)
-	_poly([Vector2(-18, -37), Vector2(-4, -37), Vector2(-5, -3), Vector2(-22, -3)], Color("0c171f"), facing, bob, alpha)
-	_poly([Vector2(3, -34), Vector2(16, -36), Vector2(25, -2), Vector2(9, -2)], Color("101b22"), facing, bob, alpha)
-	draw_line(Vector2(-22 * facing, -2), Vector2(-2 * facing, -2), Color(edge, alpha), 3, true)
-	draw_line(Vector2(9 * facing, -2), Vector2(28 * facing, -2), Color(edge, alpha), 3, true)
-	_poly([Vector2(-11, -132), Vector2(9, -135), Vector2(18, -125), Vector2(12, -110), Vector2(-8, -110), Vector2(-16, -119)], Color("a6a59a") if allied else Color("ad9b86"), facing, bob, alpha)
-	_poly([Vector2(-18, -133), Vector2(1, -146), Vector2(20, -134), Vector2(18, -124), Vector2(4, -128), Vector2(-9, -122), Vector2(-16, -115)], Color("0c1720") if allied else Color("3a3632"), facing, bob, alpha)
-	draw_line(Vector2(8 * facing, -122 + bob), Vector2(15 * facing, -123 + bob), Color(accent, alpha), 2)
-	_poly([Vector2(-15, -111), Vector2(12, -110), Vector2(8, -101), Vector2(-17, -99), Vector2(-35, -102), Vector2(-63, -88 + sin(time * 3 + id) * 4), Vector2(-44, -107)], accent.darkened(0.18), facing, bob, alpha)
-	_poly([Vector2(-10, -98), Vector2(2, -100), Vector2(11, -67), Vector2(-2, -52)], accent.darkened(0.58), facing, bob, alpha)
-	draw_line(Vector2(-5 * facing, -91 + bob), Vector2(-13 * facing, -50), Color(edge, alpha), 1.5)
-	draw_line(Vector2(-23 * facing, -53), Vector2(18 * facing, -53), Color(accent.darkened(0.55), alpha), 4)
-	_poly([Vector2(15, -102), Vector2(33, -90), Vector2(40, -67), Vector2(30, -60), Vector2(20, -80)], body_color.lightened(0.04), facing, bob, alpha)
-	draw_circle(Vector2(35 * facing, -66 + bob), 5, Color(Color("9b9d94"), alpha))
-	if id == 1:
-		draw_line(Vector2(-7 * facing, -27), Vector2(72 * facing, -160), Color(Color("6c7372"), alpha), 4, true)
-		_poly([Vector2(66, -153), Vector2(76, -177), Vector2(77, -153)], Color("c1d5d1"), facing, bob, alpha)
-	elif id == 2:
-		draw_arc(Vector2(35 * facing, -86), 27, 0.2, 5.8, 18, Color(accent, alpha), 3, true)
-		draw_circle(Vector2(35 * facing, -86), 8, Color(accent, alpha * 0.5))
+	var region: Rect2 = HERO_SPRITES[id] if allied else ENEMY_SPRITES.get(unit.kind, Rect2())
+	var sprite_height := 168.0 if allied else (177.0 if unit.kind in ["elite", "warden"] else 164.0)
+	var bob := sin(time * 2.1 + id * 1.5) * 1.2 if alive else 0.0
+	var texture := actors_texture
+	if not allied and unit.kind == "priest":
+		texture = priest_texture
+		region = Rect2(Vector2(35, 12), Vector2(1165, 1244))
+	if texture != null and region.size.y > 0:
+		var sprite_width := sprite_height * region.size.x / region.size.y
+		var ink := Color.WHITE.lerp(Color(1.45, 1.39, 1.32), flashes[id])
+		ink.a = alpha
+		var sprite_rect := Rect2(-sprite_width * 0.5, -sprite_height + bob + 2, sprite_width, sprite_height)
+		draw_texture_rect_region(texture, sprite_rect, region, ink)
 	else:
-		draw_line(Vector2(31 * facing, -55), Vector2(53 * facing, -96), Color(Color("a19980"), alpha), 4, true)
-		_poly([Vector2(48, -87), Vector2(55, -106), Vector2(82, -143), Vector2(87, -126), Vector2(61, -87)], Color("b7c3bd") if allied else Color("bca088"), facing, bob, alpha)
-		draw_line(Vector2(57 * facing, -95), Vector2(81 * facing, -132), Color(Color("e0dfc9"), alpha), 1)
+		_draw_placeholder_actor(accent, alpha, bob, flashes[id])
 	if unit.shield > 0 and alive:
 		draw_arc(Vector2(0, -71), 78, -PI * 0.7, PI * 0.7, 32, Color(BLUE, 0.65), 2, true)
 		_text("护盾 %d" % unit.shield, Vector2(0, -162), 13, BLUE)
@@ -272,18 +234,21 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 	elif alive:
 		_text("已锁定 · 技能隐藏" if state.get("phase", "") == "response" else "行动已揭晓", POINTS[id] + Vector2(0, -220), 12, RED)
 
+func _draw_placeholder_actor(accent: Color, alpha: float, bob: float, flash: float) -> void:
+	var outline := Color(accent.lerp(Color.WHITE, flash), alpha)
+	var cloak := PackedVector2Array([Vector2(-21, -112 + bob), Vector2(21, -112 + bob), Vector2(35, -18), Vector2(-35, -18), Vector2(-21, -112 + bob)])
+	draw_colored_polygon(cloak, Color(outline.darkened(0.67), alpha))
+	draw_polyline(cloak, outline, 2, true)
+	draw_circle(Vector2(0, -129 + bob), 17, outline, true, -1, true)
+	draw_line(Vector2(-15, -18), Vector2(-21, -2), outline, 6, true)
+	draw_line(Vector2(15, -18), Vector2(21, -2), outline, 6, true)
+
 func draw_ellipse_shadow(center: Vector2, radius: Vector2, color: Color) -> void:
 	var points := PackedVector2Array()
 	for i in 32:
 		var angle := TAU * i / 32.0
 		points.append(center + Vector2(cos(angle), sin(angle)) * radius)
 	draw_colored_polygon(points, color)
-
-func _poly(points: Array, color: Color, facing: float, bob: float, alpha: float) -> void:
-	var array := PackedVector2Array()
-	for p in points:
-		array.append(Vector2(p.x * facing, p.y + bob))
-	draw_colored_polygon(array, Color(color, alpha))
 
 func _glow(center: Vector2, radius: float, color: Color) -> void:
 	for i in range(6, 0, -1):
