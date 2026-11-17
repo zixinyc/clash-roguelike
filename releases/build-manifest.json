@@ -3,21 +3,15 @@
   "branch": "touhou",
   "unity": "2022.3.62f3c1",
   "platform": "Windows x64 Mono",
-  "build_method": "C# assembly compiled against existing Unity Mono player; not a new Unity Editor build",
-  "archive": "ClashRoguelike-Unity-Windows-touhou.zip",
-  "archive_bytes": 27529805,
-  "archive_sha256": "A623C80F0AF7E979FB0910FE685D76C9B0EB5752AB3EB00BD43C67F0F283FB8E",
-  "assembly_sha256": "96D712090DE832FB80FF0266929016A199727920D66BA0DFBEADD55066E035F2",
-  "checks": {
-    "speed_and_battle": 1944,
-    "click": 28,
-    "panel": 25,
-    "port": 131,
-    "forest": 135,
-    "coin": 1298,
-    "total": 3647,
-    "touhou": 86
-  },
-  "runtime_result": "Actual original and Touhou battle victories, Sakuya World three slots with original five coins, Reimu Dream armed, forest elite and extraction, latest HUD, two screen sizes",
-  "role_design_source": "feat/touhou-characters@8949db251e32c75674b65d9e243562d76d27c097"
+  "build_method": "C# assembly updated in existing Unity player; no full Editor build",
+  "archive_bytes": 27548256,
+  "archive_sha256": "9A9887EE0676270D59BF2A151BEB205D8ABC9ED3BF6D26D1F62F60CBA3863DB2",
+  "assembly_sha256": "5AA4A79BB8FB871EE2D092BB2E040F24E8785514875CDF69827142C3D8685F4A",
+  "checks": 3474,
+  "rosters": [
+    "Marisa/Sakuya/Reimu",
+    "Ash/ZiXi/Weaver",
+    "Original"
+  ],
+  "runtime": "All three actual forest encounters: victory; HP/wallet/roster carried back; two resolutions"
 }

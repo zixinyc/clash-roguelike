@@ -317,6 +317,7 @@ func _start_battle(encounter: int) -> void:
 	battle._refresh(battle.battle.snapshot())
 	battle.encounter_button.visible = false
 	battle.team_button.visible = false
+	battle.zixi_button.visible = false
 	battle.restart_button.visible = false
 	return_button.visible = false
 	move_child(return_button, get_child_count() - 1)

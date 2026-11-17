@@ -53,11 +53,17 @@ namespace ClashRoguelike
         void OnDestroy() { if(font!=null) Destroy(font); if(hitClip!=null) Destroy(hitClip); if(clashClip!=null) Destroy(clashClip); if(forestArt!=null)forestArt.Dispose();if(coinDisc!=null)Destroy(coinDisc); }
         void Start()
         {
+            string checkPath=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--character-checks="));
+            if(checkPath!=null){CheckNewCharacterEntrances(checkPath.Substring("--character-checks=".Length));return;}
             string argument=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--visual-smoke="));
             if(argument!=null) StartCoroutine(VisualSmoke(argument.Substring("--visual-smoke=".Length)));
             else
             {
+                selectedRoster=Environment.GetCommandLineArgs().Contains("--zixi")?2:Environment.GetCommandLineArgs().Contains("--original-team")?0:1;
                 InitializeAdventure();
+                string mainRosterSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--main-roster-smoke="));
+                if(mainRosterSmoke!=null)StartCoroutine(MainRosterSmoke(mainRosterSmoke.Substring("--main-roster-smoke=".Length)));
+                if(Environment.GetCommandLineArgs().Contains("--battle"))OpenPortBattle(false,0,selectedRoster==1,selectedRoster==2);
                 string smoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--adventure-smoke="));
                 if(smoke!=null){forestMode=false;StartCoroutine(AdventureSmoke(smoke.Substring("--adventure-smoke=".Length)));}
                 string forestSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--forest-smoke="));
@@ -68,6 +74,8 @@ namespace ClashRoguelike
                 if(guidanceSmoke!=null)StartCoroutine(GuidanceSmoke(guidanceSmoke.Substring("--guidance-smoke=".Length)));
                 string touhouSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--touhou-smoke="));
                 if(touhouSmoke!=null)StartCoroutine(TouhouSmoke(touhouSmoke.Substring("--touhou-smoke=".Length)));
+                string compactSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--compact-smoke="));
+                if(compactSmoke!=null)StartCoroutine(CompactCombatSmoke(compactSmoke.Substring("--compact-smoke=".Length)));
                 if(Environment.GetCommandLineArgs().Contains("--grid"))forestMode=false;
                 if(Environment.GetCommandLineArgs().Contains("--legacy")) adventureMode=false;
             }
@@ -166,11 +174,13 @@ namespace ClashRoguelike
         }
         void ResetState()
         {
+            CloseEffectInspector();
             audioSource.Stop(); rules=new BattleRules(); selection=new BattleInteraction(rules); shown=rules.State.Copy(); busy=false; auto=false; current=null; phase=0; roundPlanCount=0;
             log.Clear(); Log("敌方已锁定目标。双方速度已公开。"); notice=selection.Message;
         }
         void Update()
         {
+            if(effectInspectorOpen&&Input.GetKeyDown(KeyCode.Escape)){CloseEffectInspector();return;}
             if(adventureMode) { AdventureUpdate(); return; }
             if(Input.GetKeyDown(KeyCode.R)) Restart();
             if(Input.GetKeyDown(KeyCode.Escape)) { if(selection.WaitingForTarget) { selection.ClearSkill(); notice=selection.Message; } else help=!help; }
@@ -221,7 +231,7 @@ namespace ClashRoguelike
                 current=e; phase=0;
                 // A snapshot belongs to one event; the renderer never resolves damage.
                 shown=e.Snapshot.Copy(); string message=Describe(e); if(message!="") { notice=e.Coin==null?message:CoinHint(e.Coin,e.Type); Log(message); }
-                float duration=e.Type=="clash"?1.25f:e.Type=="strike"?.95f:e.Type=="clash_end"||e.Type=="attack_end"?1f:.22f;
+                float duration=e.Type=="clash"?.65f:e.Type=="strike"?.45f:e.Type=="clash_end"?.4f:e.Type=="attack_end"?.18f:.12f;
                 yield return PlayBattleBeat(e.Type,e.Coin,duration,p=>phase=p,()=>legacySkip);
             }
             current=null; shown=rules.State.Copy(); busy=false;
@@ -321,7 +331,7 @@ namespace ClashRoguelike
                 Panel(new Rect(32,635,1027,215),Hex("12202A"),Hex("35474F"));
                 Label(120,711,850,40,busy?"按速度执行本回合行动":"选择一名角色以查看技能",23,Muted,TextAnchor.MiddleCenter);
             }
-            DrawBattleJournal();DrawOperationPanel();
+            if(effectInspectorOpen)DrawEffectInspector();else{DrawBattleJournal();DrawOperationPanel();}
             Label(32,863,1100,25,"点击角色 → 技能 → 敌人   1–5 技能   Q/E 选人   A/D 指定敌人   Delete 撤销   Enter 准备 / 演示",12,Muted);
             if(Btn(new Rect(1180,861,110,29),"重开")) Restart();
             if(Btn(new Rect(1300,861,110,29),"地图探索")) { if(exploration==null) InitializeAdventure(); else adventureMode=true; }
@@ -359,20 +369,13 @@ namespace ClashRoguelike
             Label(1110,126,260,27,current!=null&&current.Speed>0?"当前结算速度  "+current.Speed:"敌方计划行动已公开",12,Muted);
             for(int i=0;i<3;i++) DrawUnit(true,i);
             for(int i=0;i<2;i++) DrawUnit(false,i);
-            if(current!=null)DrawImpactBurst(current.Type,phase);
+
             if(current!=null&&current.Coin!=null)DrawCoinPanel(current.Coin,current.Type,phase,current.Damage);
-            if(current!=null && (current.Type=="strike"||current.Type=="clash") && phase<0.6f)
-            {
-                float alpha=Mathf.Sin(Mathf.Clamp01(phase*2)*Mathf.PI);
-                Color c=Gold; c.a=alpha;
-                for(int i=0;i<9;i++) { float a=i*0.7f; Vector2 p=new Vector2(720,345); Line(p+new Vector2(Mathf.Cos(a),Mathf.Sin(a))*20,p+new Vector2(Mathf.Cos(a),Mathf.Sin(a))*(40+phase*100),c,2); }
-            }
-            Label(54,479,1260,24,string.Join("     ·     ",log.Skip(Math.Max(0,log.Count-2)).ToArray()),12,Muted);
         }
         void DrawUnit(bool allied,int index)
         {
             Unit u=(allied?shown.Heroes:shown.Enemies)[index];
-            float x=allied?(busy?110+index*150:180+index*147):(busy?1095+index*190:1010+index*215), y=370;
+            float x=CombatX(allied,index), y=370;
             bool selected=allied?hero==index:selection.LastEnemy==index;
             bool validTarget=!allied&&Interactive&&selection.CanTarget(index);
             if(current!=null && ((current.Type=="clash"&&(allied?current.Hero==index:current.Enemy==index)) || (current.Type=="strike"&&current.Allied==allied&&current.Source==index)))
@@ -399,9 +402,11 @@ namespace ClashRoguelike
             Line(new Vector2(x-21,y-69),new Vector2(x-43,y-16),tint,9);
             Line(new Vector2(x+21,y-69),new Vector2(x+46,y-38),tint,9);
             Line(new Vector2(x+40,y-25),new Vector2(x+(allied?81:-42),y-103),Pale,4);
-            Label(x-69,421,151,27,u.Name,17,selected?Gold:Pale,TextAnchor.MiddleCenter);
-            Fill(new Rect(x-60,454,135,5),Hex("25353D")); Fill(new Rect(x-60,454,135*(float)u.Hp/u.MaxHp,5),allied?Cyan:Red);
-            Label(x-70,461,155,20,u.Hp+" / "+u.MaxHp+(u.Shield>0?"  盾 "+u.Shield:""),11,Muted,TextAnchor.MiddleCenter);
+            Label(x-69,401,151,27,u.Name,17,selected?Gold:Pale,TextAnchor.MiddleCenter);
+            Fill(new Rect(x-60,432,135,5),Hex("25353D")); Fill(new Rect(x-60,432,135*(float)u.Hp/u.MaxHp,5),allied?Cyan:Red);
+            Label(x-70,439,155,20,u.Hp+" / "+u.MaxHp,11,Muted,TextAnchor.MiddleCenter);
+            DrawUnitEffects(allied,index);
+            if(!busy){
             Label(x-70,150,155,28,"速度 "+u.Speed+"  ["+u.MinSpeed+"–"+u.MaxSpeed+"]",15,allied?Cyan:Gold,TextAnchor.MiddleCenter);
             if(allied)
             {
@@ -416,11 +421,10 @@ namespace ClashRoguelike
                 int receiver=BattleRules.ClashHero(shown,index);
                 Label(x-100,211,210,32,u.Hp<=0?"已退场":u.Spent?"本次行动已结束":receiver>=0?"最终拼点 → "+shown.Heroes[receiver].Name:"无人拼点 / 将单方面攻击",12,receiver>=0?Cyan:Muted,TextAnchor.MiddleCenter);
             }
+            }
             GUI.enabled=Interactive&&(allied?selection.CanSelectHero(index):validTarget);
             if(GUI.Button(new Rect(x-67,y-130,144,174),GUIContent.none,GUIStyle.none)) { if(allied) SelectHero(index); else SelectEnemy(index); }
             GUI.enabled=true;
-            if(current!=null&&current.Type=="strike"&&current.Allied!=allied&&current.Target==index)
-                Label(x-70,y-155-phase*40,160,45,"−"+current.Damage,30,Red,TextAnchor.MiddleCenter);
         }
         string PlanDescription(BattleState state,PlannedAction plan)
         {
@@ -460,7 +464,7 @@ namespace ClashRoguelike
         {
             Fill(new Rect(0,0,1440,900),new Color(0,0,0,0.8f)); Panel(new Rect(330,165,780,570),Hex("12202A"),Gold);
             Label(370,193,700,50,"操作与规则",27,Gold);
-            Label(370,255,700,390,"点击己方角色 → 技能 → 高亮敌人完成安排。守夜自动对自身安排，切换角色会清除待选技能，Esc 取消目标选择。保留共享手牌与撤销。\n\n至少有一项有效安排且没有待选目标时，点击准备完成锁定；按钮切换为演示一回合，再点击才付费并按速度统一执行。已准备可返回调整，其余成员按原规则待机。\n\n速度不低于敌人可以主动拼点；被敌人点名者可以低速迎击。多人接同一次攻击，以最后一次有效指定为准。低速仍能攻击高速敌人，未配对的攻击单方面执行。\n\n拼点按双方较高速度执行。同速各场战斗独立结算，按我方成员从左到右、再敌方从左到右的固定顺序执行。每次行动仅使用一次。护盾按自身速度生效；角色或目标退场取消后续对应行动，不转移目标、不退费。\n\n初始 9 cost，每人一次、全队最多三张。拼点失败退实付费用的一半，向下取整；首次拼点获胜 +1。回合结束 +3、清盾、刷新速度并抽五张。拼点每轮重投全部余币；平局不破币，直到出现胜负。攻击每币一击，初始点数重新计算，不逐击累加。",17,Pale);
+            Label(370,255,700,390,"点击己方角色 → 技能 → 高亮敌人完成安排。守夜自动对自身安排，切换角色会清除待选技能，Esc 取消目标选择。保留共享手牌与撤销。\n\n至少有一项有效安排且没有待选目标时，点击准备完成锁定；按钮切换为演示一回合，再点击才付费并按速度统一执行。已准备可返回调整，其余成员按原规则待机。\n\n速度不低于敌人可以主动拼点；被敌人点名者可以低速迎击。多人接同一次攻击，以最后一次有效指定为准。低速仍能攻击高速敌人，未配对的攻击单方面执行。\n\n拼点按双方较高速度执行。同速各场战斗独立结算，按我方成员从左到右、再敌方从左到右的固定顺序执行。每次行动仅使用一次。护盾按自身速度生效；角色或目标退场取消后续对应行动，不转移目标、不退费。\n\n初始 9 cost，每人一次、全队最多三张。拼点失败退实付费用的一半，向下取整；首次拼点获胜 +1。回合结束 +3、清盾、刷新速度并抽五张。拼点每轮重投全部余币；平局不破币，直到出现胜负。攻击每币一击；正面币威力逐币累计，反面保留累计值。本次技能结束后清零。",17,Pale);
             if(Btn(new Rect(590,665,260,42),"返回战斗",true)) help=false;
         }
         bool Btn(Rect r,string label,bool selected=false)
@@ -482,5 +486,7 @@ namespace ClashRoguelike
         }
     }
 }
+
+
 
 

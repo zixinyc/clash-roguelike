@@ -7,6 +7,7 @@ namespace ClashRoguelike
 {
     public sealed partial class BattleGame
     {
+        int selectedRoster=1;
         bool adventureMode,portBusy,portPrepared,fromMap,portSkip;
         ExplorationRun exploration;
         PortBattleRules portRules;
@@ -20,9 +21,10 @@ namespace ClashRoguelike
         string[] categoryNames={"进攻","大招","防御"};
         string[] heroNames={"灰烬","长锋","织火"};
         void InitializeAdventure()
-        { adventureMode=true;exploration=new ExplorationRun();portRules=null;portShown=null;portBusy=false;portPrepared=false;portHero=-1;portCard="";forestMode=true;InitializeForest(); }
+        { adventureMode=true;exploration=new ExplorationRun();exploration.Resources.ConfigureRoster(selectedRoster);heroNames=CharacterRoster.Team(selectedRoster).Select(x=>x.Name).ToArray();portRules=null;portShown=null;portBusy=false;portPrepared=false;portHero=-1;portCard="";forestMode=true;InitializeForest(); }
         void AdventureUpdate()
         {
+            if(effectInspectorOpen&&Input.GetKeyDown(KeyCode.Escape)){CloseEffectInspector();return;}
             if(Input.GetKeyDown(KeyCode.R)) { StopAllCoroutines();InitializeAdventure();return; }
             if(portRules==null){if(forestMode)ForestUpdate();return;}
             if(!portBusy&&!portPrepared&&portRules.State.Outcome==""&&portRules.Tick(Time.unscaledDeltaTime)) { portCard="";portPrepared=true;StartPortRound();return; }
@@ -33,9 +35,10 @@ namespace ClashRoguelike
             if(Input.GetKeyDown(KeyCode.Delete))CancelPortSlot();
             var visible=VisiblePortCards();for(int i=0;i<5;i++)if(Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1+i))&&portPage*5+i<visible.Length)SelectPortCard(visible[portPage*5+i].Id);
         }
-        void OpenPortBattle(bool map,int encounter=0,bool touhou=false)
+        void OpenPortBattle(bool map,int encounter=0,bool touhou=false,bool zixi=false)
         {
-            fromMap=map;portRules=map?(forestMode?forest.CreateBattle():exploration.CreateBattle()):new PortBattleRules(73129,encounter,touhou);portShown=portRules.Snapshot();portHero=-1;portSlot=-1;portCard="";portPrepared=false;portBusy=false;portPage=0;portEvent=null;portExplicitSlot=false;
+            CloseEffectInspector();
+            fromMap=map;portRules=map?(forestMode?forest.CreateBattle():exploration.CreateBattle()):new PortBattleRules(73129,encounter,touhou,zixi);portShown=portRules.Snapshot();portHero=-1;portSlot=-1;portCard="";portPrepared=false;portBusy=false;portPage=0;portEvent=null;portExplicitSlot=false;
             log.Clear();portNotice="敌方已规划。点击己方角色，选择技能与敌方行动。";
         }
         PortCard[] VisiblePortCards()
@@ -78,7 +81,7 @@ namespace ClashRoguelike
             foreach(var e in portRules.ResolveStream())
             {
                 portEvent=e;portShown=e.Snapshot.Copy(false);portNotice=e.Coin==null?e.Message:CoinHint(e.Coin,e.Type);Log(e.Message);portPhase=0;
-                float duration=e.Type=="clash"?1.25f:e.Type=="strike"?.95f:e.Type=="clash_end"||e.Type=="attack_end"?1f:.15f;
+                float duration=e.Type=="clash"?.65f:e.Type=="strike"?.45f:e.Type=="clash_end"?.4f:e.Type=="attack_end"?.18f:.12f;
                 yield return PlayBattleBeat(e.Type,e.Coin,duration,p=>portPhase=p,()=>portSkip);
             }
             portEvent=null;portRules.NextRound();portShown=portRules.Snapshot();portBusy=false;portHero=-1;portSlot=-1;portNotice=portShown.Outcome==""?"新回合，点击角色继续安排。":portShown.Outcome=="victory"?"战斗胜利，可返回地图。":"战斗失败，可返回地图。";
@@ -115,7 +118,7 @@ namespace ClashRoguelike
             GUI.enabled=exploration.Pending=="";
             if(Btn(new Rect(1072,615,315,36),"返回节点森林"))forestMode=true;
             if(Btn(new Rect(1072,662,315,42),"重新探索"))InitializeAdventure();
-            if(Btn(new Rect(1072,718,315,42),"单场战斗试玩"))OpenPortBattle(false);
+            if(Btn(new Rect(1072,718,315,42),"单场战斗试玩"))OpenPortBattle(false,0,selectedRoster==1,selectedRoster==2);
             if(Btn(new Rect(1072,774,315,42),"旧版单场战斗")){adventureMode=false;Restart();}
             GUI.enabled=true;
             Label(36,860,1360,25,"相邻格移动 · 节点收益只能领取一次 · 战后 cost 和生命带回地图 · R 重新探索",13,Muted);
@@ -137,13 +140,11 @@ namespace ClashRoguelike
             Label(30,68,650,26,portShown.WorldActive?"时停回合 · 咲夜三个不限类别技能槽 · 敌方无法行动":"角色专属牌 · 每人两个分类行动 · 目标与速度公开，敌方技能隐藏",13,Muted);
             Label(700,25,190,40,"回合 "+portShown.Turn,24,Pale);Label(900,24,190,42,"cost "+portShown.Cost,28,Gold);
             Label(1100,25,120,36,portBusy?"演出中":portPrepared?"已准备":Math.Ceiling(portRules.State.Remaining)+" 秒",18,Cyan);
-            if(Btn(new Rect(1250,25,150,36),"演出 ×"+speed))speed=speed==1?2:speed==2?4:1;DrawRosterSwitch();
+            if(Btn(new Rect(1250,25,150,36),"演出 ×"+speed))speed=speed==1?2:speed==2?4:1;DrawRosterSwitch();DrawZixiEnhancement();
             DrawPortStatuses();
             Panel(new Rect(30,162,1380,355),Hex("12202A"),Hex("35474F"));Fill(new Rect(31,391,1378,125),Hex("0D1922"));Line(new Vector2(31,414),new Vector2(1408,414),Hex("3F4A47"),2);
             for(int i=0;i<3;i++)DrawPortUnit(true,i);for(int i=0;i<2;i++)DrawPortUnit(false,i);
-            if(portEvent!=null)DrawImpactBurst(portEvent.Type,portPhase);
             if(portEvent!=null&&portEvent.Coin!=null)DrawCoinPanel(portEvent.Coin,portEvent.Type,portPhase,portEvent.Damage);
-            if(!portShown.TouhouTeam&&(portEvent==null||portEvent.Coin==null))Label(50,486,1340,24,portNotice,12,Muted);
             Label(40,527,1000,32,PortGuide(),15,Gold,TextAnchor.MiddleCenter);
             DrawPortCenteredActions();
             Label(32,612,530,26,portHero<0?portBusy?"我方行动已锁定":portPrepared?"已准备 · 等待演示":"点击己方角色查看技能":PortHeroName(portHero)+" · "+PortRoleSummary(portHero),15,Cyan);
@@ -155,29 +156,28 @@ namespace ClashRoguelike
             if(Btn(new Rect(923,610,130,27),(portPage+1)+" / "+pages+" 下一页"))portPage=(portPage+1)%pages;GUI.enabled=true;
             if(portHero<0) {Panel(new Rect(32,647,1027,203),Hex("12202A"),Hex("35474F"));Label(100,699,880,60,PortHandPlaceholder(),23,Muted,TextAnchor.MiddleCenter);}
             else for(int i=0;i<5&&portPage*5+i<cards.Length;i++)DrawPortCard(cards[portPage*5+i],i);
-            DrawBattleJournal();DrawPortOperationPanel();Label(32,865,1120,24,"1–5 选当前页技能 · Delete 撤销选中行动格 · Enter 准备 / 演示 · R 重新探索",12,Muted);
+            if(effectInspectorOpen)DrawEffectInspector();else{DrawBattleJournal();DrawPortOperationPanel();}Label(32,865,1120,24,"1–5 选技能 · 点击角色下方状态查看详情 · Esc 关闭详情 · Enter 准备 / 演示",12,Muted);
             if(Btn(new Rect(1250,862,150,30),"重新探索")){StopAllCoroutines();InitializeAdventure();}
-            if(portShown.Outcome!=""&&!portBusy){DrawPortResult();DrawPortStatuses();}
+            if(portShown.Outcome!=""&&!portBusy){DrawPortResult();if(portRules!=null)DrawPortStatuses();}
         }
         void DrawPortUnit(bool allied,int index)
         {
-            var units=allied?portShown.Heroes:portShown.Enemies;var u=units[index];float x=allied?(portBusy?110+index*150:180+index*147):(portBusy?1095+index*190:1010+index*215),y=390;
+            var units=allied?portShown.Heroes:portShown.Enemies;var u=units[index];float x=CombatX(allied,index),y=370;
             bool selected=allied&&portHero==index;Color tint=u.Hp<=0?Hex("35414A"):allied?(index==2?Cyan:Gold):Red;
             if(portEvent!=null&&(portEvent.Hero==index&&allied||portEvent.Enemy==index&&!allied)){
-                bool attacker=portEvent.Type=="clash"||portEvent.Type=="strike"&&portEvent.AttackerAllied==allied;
-                if(attacker){float travel=ImpactTravel(portPhase);x+=(allied?1:-1)*(travel<0?travel:travel*.27f);}
-                else if(portEvent.Type=="strike"){x+=(allied?-1:1)*ImpactRecoil(portPhase);if(portPhase>=.45f&&portPhase<.58f)tint=Pale;}
+                if(portEvent.Type=="strike"&&portEvent.AttackerAllied!=allied&&portPhase>=.25f&&portPhase<.38f)tint=Pale;
             }
             bool legal=!allied&&PortTargetLegal(DefaultTarget(index));if(selected||legal)Outline(new Rect(x-61,y-127,128,169),selected?Gold:Cyan,2);
             DrawPortFigure(allied,index,x,y,tint);
-            Label(x-77,421,165,27,u.Name,17,selected?Gold:Pale,TextAnchor.MiddleCenter);Fill(new Rect(x-60,454,135,5),Hex("25353D"));Fill(new Rect(x-60,454,135*(float)u.Hp/u.MaxHp,5),allied?Cyan:Red);Label(x-70,462,155,21,u.Hp+" / "+u.MaxHp+(u.Shield>0?" 盾"+u.Shield:""),11,Muted,TextAnchor.MiddleCenter);
-            if(!allied&&portShown.TouhouTeam)Label(x-80,485,170,25,"退治 "+u.Exorcism+"/4"+(u.ExorcismActive?" · 引爆":"")+(u.SealActive?" · 封魔":""),11,Red,TextAnchor.MiddleCenter);
+            Label(x-77,401,165,25,u.Name,17,selected?Gold:Pale,TextAnchor.MiddleCenter);Fill(new Rect(x-60,432,135,5),Hex("25353D"));Fill(new Rect(x-60,432,135*(float)u.Hp/u.MaxHp,5),allied?Cyan:Red);Label(x-70,439,155,19,u.Hp+" / "+u.MaxHp,11,Muted,TextAnchor.MiddleCenter);
+            DrawUnitEffects(allied,index);
             GUI.enabled=!portBusy&&!portPrepared&&u.Hp>0&&(!allied||!portShown.HeroSlots[index*3].Frozen);
             if(GUI.Button(new Rect(x-67,y-130,144,174),GUIContent.none,GUIStyle.none)){if(allied)SelectPortHero(index);else CommitPortTarget(DefaultTarget(index));}GUI.enabled=true;
             var slots=allied?portShown.HeroSlots:portShown.EnemySlots;
+            if(portBusy)return;
             foreach(var s in slots.Where(a=>a.Unit==index))
             {
-                Rect r=new Rect(x-71,176+s.Category*28,portBusy&&allied?138:150,25);bool target=!allied&&PortTargetLegal(s.Id);string label=(s.Frozen?"停时":s.Flexible?"技能"+(s.Category+1):categoryNames[s.Category])+" "+s.Speed;
+                Rect r=new Rect(x-71,168+s.Category*25,150,23);bool target=!allied&&PortTargetLegal(s.Id);string label=(s.Frozen?"停时":s.Flexible?"技能"+(s.Category+1):categoryNames[s.Category])+" "+s.Speed;
                 if(s.Active)label+=" · "+(allied?PortContent.Card(s.Key).Name:portShown.Phase=="response"?s.Category==2?"防御":"→ "+PortHeroName(s.Target):PortContent.Card(s.Key).Name);
                 else label+=" · 空";
                 Panel(r,Hex("172630"),target?Cyan:allied&&portSlot==s.Id?Gold:s.Active?Hex("667369"):Hex("293941"));Label(r.x+4,r.y+2,r.width-8,23,label,12,s.Active?Pale:Muted,TextAnchor.MiddleCenter);
@@ -212,7 +212,7 @@ namespace ClashRoguelike
         }
         void FillPortPlans()
         {
-            if(portRules.State.TouhouTeam){FillTouhouPlans();return;}
+            if(portRules.State.TouhouTeam||portRules.State.ZixiTeam){FillTouhouPlans();return;}
             string[][] preferred={new[]{"exploit","probe","nova","guard"},new[]{"all_in","steady_edge","shatter","guard"},new[]{"support_strike","light_guard","cover","nova"}};
             for(int h=0;h<3;h++)
             {
@@ -246,10 +246,10 @@ namespace ClashRoguelike
             SmokeCheck(portRules.State.Outcome!="","complete translated battle");string outcome=portRules.State.Outcome;yield return Capture(folder,"port-complete");
             int expected=portRules.State.Cost+(outcome=="victory"?4:0);int[] hp=portRules.State.Heroes.Select(x=>x.Hp).ToArray();ReturnPortMap();
             SmokeCheck(exploration.Cost==expected&&exploration.Hp.SequenceEqual(hp),"actual completed battle carries wallet and HP back");yield return Capture(folder,"map-after-battle");
-            OpenPortBattle(false);foreach(var s in portRules.State.EnemySlots)s.Active=false;portRules.State.Enemies[0].Hp=1;portRules.State.Enemies[1].Hp=0;
+            OpenPortBattle(false,0,selectedRoster==1,selectedRoster==2);foreach(var s in portRules.State.EnemySlots)s.Active=false;portRules.State.Enemies[0].Hp=1;portRules.State.Enemies[1].Hp=0;
             SelectPortHero(0);SelectPortCard("probe");CommitPortTarget(0);PreparePortRound();StartPortRound();while(portBusy)yield return null;
             SmokeCheck(portShown.Outcome=="victory","victory rendering fixture");yield return Capture(folder,"port-victory");ReturnPortMap();
-            OpenPortBattle(false);Screen.SetResolution(1000,650,false);yield return null;yield return null;SelectPortHero(2);SelectPortCard("light_guard");yield return Capture(folder,"port-small");
+            OpenPortBattle(false,0,selectedRoster==1,selectedRoster==2);Screen.SetResolution(1000,650,false);yield return null;yield return null;SelectPortHero(2);SelectPortCard("light_guard");yield return Capture(folder,"port-small");
             portRules=null;yield return Capture(folder,"map-small");
             string report="UNITY_ADVENTURE_SMOKE_PASSED\nTranslated checks: "+portChecks+"\nLegacy checks: "+legacyChecks+"\nActual complete battle: "+outcome+"\nMap movement, event, shop, role skills, two actions, hidden enemy cards, preparation, speed resolution, actual map-battle-map wallet/HP, victory fixture, two resolutions verified.\n";
             File.WriteAllText(Path.Combine(folder,"adventure-smoke.txt"),report);Debug.Log(report);Application.Quit(0);

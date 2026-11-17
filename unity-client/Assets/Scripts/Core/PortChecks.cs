@@ -12,7 +12,7 @@ namespace ClashRoguelike
         {foreach(var e in b.State.EnemySlots)e.Active=false;b.State.EnemySlots[0].Active=true;b.State.EnemySlots[0].Key="ember";b.State.EnemySlots[0].Target=0;b.State.Enemies[0].Hp=500;b.State.Enemies[0].MaxHp=500;}
         public static int Run()
         {
-            checks=0;Check(PortContent.Cards.Length==25&&PortContent.Hand.Length==16,"translated definitions and hand");
+            checks=0;Check(PortContent.Cards.Length==33&&PortContent.Hand.Length==16,"translated definitions and hand");
             var b=new PortBattleRules();Check(b.State.Cost==30&&b.State.HeroSlots.Count==9&&b.State.EnemySlots.Count==6,"source economy and slot layout");
             Check(b.State.Heroes[0].Hp==48&&b.State.Heroes[1].Hp==42&&b.State.Heroes[2].Hp==46,"source role HP");
             Check(b.Snapshot().EnemySlots.All(x=>x.Key==""&&x.Card==-1)&&b.State.EnemySlots.Any(x=>x.Key!=""),"enemy cards hidden in response snapshot");
@@ -43,7 +43,7 @@ namespace ClashRoguelike
             var loss=new Loses();OnlyFirstAttack(loss);loss.State.EnemySlots[0].Target=1;loss.Assign("all_in",1,0);var lossEvents=loss.Resolve();
             Check(lossEvents.Any(x=>x.Message.Contains("损失 2")&&x.Snapshot.Heroes[1].Hp==40),"breaker failure loses two HP before retaliation");
             Check(lossEvents.Count(x=>x.Type=="refund")==1,"one partial refund for complete clash loss");
-            var follow=new Wins();OnlyFirstAttack(follow);follow.Assign("follow",0,0);var followEvents=follow.Resolve();Check(followEvents.Count(x=>x.Type=="strike")==2&&followEvents.Where(x=>x.Type=="strike").All(x=>x.Damage==8),"follow cannot create a third attack; each coin restarts from base");
+            var follow=new Wins();OnlyFirstAttack(follow);follow.Assign("follow",0,0);var followEvents=follow.Resolve();Check(followEvents.Where(x=>x.Type=="strike").Select(x=>x.Damage).SequenceEqual(new[]{8,11}),"follow uses its two remaining coins with cumulative damage and no third attack");
             var priest=new PortBattleRules(5,1);foreach(var e in priest.State.EnemySlots)e.Active=false;priest.State.EnemySlots[2].Active=true;priest.State.EnemySlots[2].Key="guard";priest.Resolve();Check(priest.State.Enemies[0].Shield==9&&priest.State.Enemies[1].Shield==6,"priest guards allies");
             var warden=new PortBattleRules();foreach(var e in warden.State.EnemySlots)e.Active=false;warden.State.EnemySlots[5].Active=true;warden.State.EnemySlots[5].Key="guard";warden.Resolve();Check(warden.State.Enemies[1].Shield==14,"warden enhanced guard");
             b=new PortBattleRules();before=b.State.Fingerprint();Check(!b.Tick(-1)&&b.State.Fingerprint()==before,"negative timer ignored");Check(b.Tick(180),"180 second response");

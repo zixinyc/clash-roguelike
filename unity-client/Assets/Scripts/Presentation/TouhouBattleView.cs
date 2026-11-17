@@ -8,15 +8,16 @@ namespace ClashRoguelike
         string PortHeroName(int i){return portShown!=null?portShown.Heroes[i].Name:heroNames[i];}
         string PortRoleSummary(int i)
         {
+            if(portShown.ZixiTeam&&i==1){var z=portShown.Heroes[1].Zixi;return "超形上学 "+z.Metaphysics+"/6 · 因果 "+z.Causality+"/3";}
             if(!portShown.TouhouTeam)return i==0?"准备 "+portShown.Preparation:i==1?"高费拼点 +2 / 失败 −2 HP":"防御援护队友";
-            if(i==0)return "准备 "+portShown.Preparation;
+            if(i==0)return "火花 "+portShown.Heroes[0].RoleState.Spark+"/10 · 生命5换1敌方cost";
             if(i==1)return "无视速度接招 · 银刀 +"+TouhouRoles.SilverKnife(portShown.Turn)+(portShown.Heroes[1].RoleState.SpaceActive?" / 空间 +5":"");
             var r=portShown.Heroes[2].RoleState;return r.DreamDue>0?"宝玉 "+r.DreamOrbs+"/3 · 第 "+r.DreamDue+" 回合末结算":"对本土目标拼点 +1 · 退治四层引爆";
         }
         void DrawRosterSwitch()
         {
             if(fromMap)return;GUI.enabled=!portBusy;
-            if(Btn(new Rect(437,25,215,35),portShown.TouhouTeam?"阵容：东方（重开）":"阵容：原版（重开）"))OpenPortBattle(false,portRules.State.Kinds[0]=="priest"?1:0,!portShown.TouhouTeam);GUI.enabled=true;
+            if(Btn(new Rect(437,25,215,35),portShown.TouhouTeam?"东方三人 → ZiXi":portShown.ZixiTeam?"ZiXi → 原小队":"原小队 → 东方三人"))OpenPortBattle(false,portRules.State.Kinds[0]=="priest"?1:0,portShown.TouhouTeam?false:!portShown.ZixiTeam,portShown.TouhouTeam);GUI.enabled=true;
         }
         void DrawPortFigure(bool allied,int index,float x,float y,Color tint)
         {
@@ -32,10 +33,12 @@ namespace ClashRoguelike
                 else{Fill(new Rect(x-23,y-126,47,5),Pale);for(int n=0;n<3;n++)Line(new Vector2(x+34+n*7,y-42),new Vector2(x+48+n*7,y-84),Pale,2);}
             }
             else Line(new Vector2(x+40,y-25),new Vector2(x+(allied?81:-42),y-103),Pale,4);
+            if(allied&&portShown.TouhouTeam&&index==0){Fill(new Rect(x-32,y-124,64,7),Hex("DCCAA3"));Line(new Vector2(x-23,y-129),new Vector2(x,y-158),Hex("332E38"),17);Line(new Vector2(x,y-158),new Vector2(x+18,y-127),Hex("332E38"),17);Fill(new Rect(x-23,y-75,47,48),Hex("363342"));}
+            if(allied&&portShown.ZixiTeam&&index==1){Fill(new Rect(x-25,y-81,51,66),Hex("68527C"));Line(new Vector2(x-25,y-90),new Vector2(x+25,y-90),Cyan,3);}
         }
         void FillTouhouPlans()
         {
-            string[][] options={new[]{"exploit","probe","guard","nova"},portRules.State.WorldActive?new[]{"murder_doll","needle","steady","guard"}:new[]{"murder_doll",portRules.State.Heroes[1].RoleState.WorldUsed?"private_square":"the_world","stopwatch","private_square","guard"},new[]{"yin_yang_orb","demon_seal","fantasy_seal","guard"}};
+            string[][] options=portRules.State.ZixiTeam?new string[][]{new[]{"probe","nova","guard"},new[]{"zixi_central_limit","zixi_almost_sure","zixi_martingale","zixi_convergence"},new[]{"support_strike","light_guard","cover"}}:new string[][]{new[]{"marisa_stars","marisa_spark","marisa_orrery","marisa_laser","guard"},portRules.State.WorldActive?new[]{"murder_doll","needle","steady","guard"}:new[]{"murder_doll",portRules.State.Heroes[1].RoleState.WorldUsed?"private_square":"the_world","stopwatch","private_square","guard"},new[]{"yin_yang_orb","demon_seal","fantasy_seal","guard"}};
             for(int hero=0;hero<3;hero++)
             {
                 if(portRules.State.Heroes[hero].Hp<=0||portRules.State.HeroSlots[hero*3].Frozen)continue;

@@ -5,7 +5,8 @@ namespace ClashRoguelike
     // Shared by the retained grid and the new node map; original values and battle rules unchanged.
     public sealed class ExpeditionResources
     {
-        public int Cost=30;
+        public int Cost=30;public int Roster;
+        public void ConfigureRoster(int roster){Roster=roster;var team=CharacterRoster.Team(roster);for(int i=0;i<3;i++){Hp[i]=team[i].Hp;MaxHp[i]=team[i].MaxHp;}}
         public int[] Hp={48,42,46};
         public readonly int[] MaxHp={48,42,46};
         public void Heal(int amount){for(int i=0;i<3;i++)if(Hp[i]>0)Hp[i]=Math.Min(MaxHp[i],Hp[i]+amount);}
@@ -19,7 +20,7 @@ namespace ClashRoguelike
         }
         public PortBattleRules CreateBattle(int encounter,uint seed=73129)
         {
-            var b=new PortBattleRules(seed,encounter);b.State.Cost=Cost;for(int i=0;i<3;i++)b.State.Heroes[i].Hp=Hp[i];
+            var b=new PortBattleRules(seed,encounter,Roster==1,Roster==2);b.State.Cost=Cost;for(int i=0;i<3;i++)b.State.Heroes[i].Hp=Hp[i];
             foreach(var s in b.State.EnemySlots)if(s.Active&&s.Category!=2&&(s.Target<0||Hp[s.Target]<=0))s.Target=Array.FindIndex(Hp,h=>h>0);return b;
         }
         public void ApplyBattleResult(PortState state,int encounter)

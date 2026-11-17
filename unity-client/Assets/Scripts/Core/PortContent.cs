@@ -37,7 +37,7 @@ namespace ClashRoguelike
             new PortCard("all_in","破阵","长锋专属",3,7,4,4,2,"高威力；触发破阵者被动","赌上这一击。",1,"attack"),
             new PortCard("cover","护阵","织火专属",2,0,0,0,0,"自身获得 9 护盾；其他存活队友获得 6 护盾","火光护住同伴。",2,"guard"),
             new PortCard("risk","孤注","搏命",2,2,4,4,3,"波动威力 · 三枚硬币","把最后的余温，押上。",-1,"attack"),
-        }.Concat(TouhouRoles.Cards()).ToArray();
+        }.Concat(TouhouRoles.Cards()).Concat(ZixiRole.Cards).ToArray();
         public static PortCard Card(string id) { return Cards.First(x=>x.Id==id); }
         public static readonly string[] Hand={"cleave","ember","needle","steady","guard","nova","observe","all_in","cover","probe","exploit","follow","steady_edge","shatter","light_guard","support_strike"};
     }

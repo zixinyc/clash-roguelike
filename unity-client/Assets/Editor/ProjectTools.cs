@@ -12,6 +12,8 @@ public static class ProjectTools
     [MenuItem("Clash Roguelike/Run rule checks")]
     public static void Validate()
     {
+        int newChecks=NewCharacterChecks.Run();
+        Debug.Log("UNITY_NEW_CHARACTER_CHECKS_PASSED checks="+newChecks);
         int count=BattleRuleChecks.Run();
         int clickChecks=InteractionChecks.Run();
         int panelChecks=PanelChecks.Run();

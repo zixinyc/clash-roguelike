@@ -11,6 +11,7 @@ namespace ClashRoguelike
         sealed class Constant:ICoinRandom{public int Calls;public bool Flip(double chance){Calls++;return false;}}
         sealed class Recorded:ICoinRandom{readonly BattleRandom rng;public int Calls;public Recorded(uint seed){rng=new BattleRandom(seed);}public bool Flip(double c){Calls++;return rng.Flip(c);}}
         sealed class TailsPort:PortBattleRules{protected override bool FlipCoin(double chance){return false;}}
+        sealed class EnemyHeadsPort:PortBattleRules{protected override bool FlipCoin(double chance){return chance<=.5;}}
         static CoinAction Act(int basis,int clash,int attack,int coins,IEnumerable<CoinEffect> effects=null){return new CoinAction(new CoinSkill("测试技能",basis,clash,attack,coins,effects),.5);}
         static List<CoinStep> Strikes(CoinAction a,ICoinRandom rng){var list=new List<CoinStep>();CoinStep step;while((step=a.NextAttack(rng))!=null)list.Add(step);return list;}
         public static int Run()
@@ -22,7 +23,7 @@ namespace ClashRoguelike
             var b=clash.Step();Check(clash.Complete&&clash.Winner==0&&r.RemainingCoins==0&&l.RemainingCoins==3,"continuous losses finish at zero");int calls=rolls.Calls;
             Check(clash.Step()==null&&rolls.Calls==calls&&r.NextAttack(rolls)==null,"finished clash never rerolls and loser cannot attack");
             var attacks=Strikes(l,new Script(true,false,true));Check(attacks.Count==3&&l.RemainingCoins==0&&l.AttackCount==3,"winner attacks exactly three surviving coins");
-            Check(attacks.Select(x=>x.RawDamage).SequenceEqual(new[]{10,6,10})&&l.TotalRawDamage==26,"base resets even after a prior head");
+            Check(attacks.Select(x=>x.RawDamage).SequenceEqual(new[]{10,10,14})&&l.TotalRawDamage==34,"winner carries attack coin power through tails and later heads");
             // 2: ties preserve all coins; the next round is a fresh complete reroll.
             l=Act(5,2,7,2);r=Act(5,2,1,2);rolls=new Script(true,false,false,true, true,true,false,false, true,true,false);
             clash=new CoinClash(l,r,rolls);a=clash.Step();Check(a.Winner==-1&&l.RemainingCoins==2&&r.RemainingCoins==2&&!clash.Complete,"tie does not spend either side");
@@ -34,10 +35,10 @@ namespace ClashRoguelike
             Check(steps.Select(x=>x.LeftPower).SequenceEqual(new[]{9,5,7})&&steps.Select(x=>x.RightPower).SequenceEqual(new[]{5,7,5}),"round scores do not inherit prior heads");
             Check(rolls.Calls==9&&l.RemainingCoins==1&&r.RemainingCoins==0,"rolls sum to all remaining coins each round");
             attacks=Strikes(l,new Script(false));Check(attacks.Count==1&&attacks[0].RawDamage==5&&r.NextAttack(new Script())==null,"lost clash coins never become attacks");
-            // 6-10: independent powers, exactly one fresh flip per attack, zero reuse.
+            // Distinct clash/attack powers; each attack flips one surviving coin and carries its contribution.
             var independent=Act(5,2,7,3);rolls=new Script(false,true,false);attacks=Strikes(independent,rolls);
-            Check(rolls.Calls==3&&attacks.Select(x=>x.RawDamage).SequenceEqual(new[]{5,12,5}),"independent attack power is seven; no cumulative running power");
-            Check(attacks.Select(x=>x.RemainingAttackCoins).SequenceEqual(new[]{2,1,0})&&attacks.Last().TotalRawDamage==22,"attack consumes one coin and adds raw totals only");
+            Check(rolls.Calls==3&&attacks.Select(x=>x.RawDamage).SequenceEqual(new[]{5,12,12}),"attack power seven accumulates and tails preserve prior heads");
+            Check(attacks.Select(x=>x.RemainingAttackCoins).SequenceEqual(new[]{2,1,0})&&attacks.Last().TotalRawDamage==29,"attack consumes one coin and sums cumulative hits");
             calls=rolls.Calls;Check(independent.NextAttack(rolls)==null&&independent.AttackCount==3&&rolls.Calls==calls,"spent attack coins cannot be reused");
             Check(independent.Skill.ClashCoinPower==2&&independent.Skill.AttackCoinPower==7&&independent.Skill.CoinCount==3,"definition remains unchanged throughout action");
             // Repeated ties are never replaced by the old random decider.
@@ -65,7 +66,7 @@ namespace ClashRoguelike
             var statuses=new List<CoinStatus>();var opponentStatuses=new List<CoinStatus>();
             effects=new List<CoinEffect>{new CoinEffect("cast",CoinTrigger.SkillStart,CoinStat.RawDamage,1),new CoinEffect("before",CoinTrigger.BeforeAttack,CoinStat.RawDamage,2,CoinEffectScope.Attack),new CoinEffect("heads",CoinTrigger.AttackHeads,CoinStat.RawDamage,4,CoinEffectScope.Attack,condition:CoinCondition.Heads),new CoinEffect("tails",CoinTrigger.AttackTails,CoinStat.RawDamage,-1,CoinEffectScope.Attack,condition:CoinCondition.Tails),new CoinEffect("hit",CoinTrigger.Hit,CoinStat.BasePower,3,CoinEffectScope.Status,2),new CoinEffect("ended",CoinTrigger.SkillEnd,CoinStat.AttackCoinPower,2,CoinEffectScope.Status),new CoinEffect("debuff",CoinTrigger.Hit,CoinStat.ClashCoinPower,-1,CoinEffectScope.Status,2,recipient:CoinRecipient.Opponent)};
             l=new CoinAction(new CoinSkill("状态",5,2,3,2,effects),.5,statuses,opponentStatuses);a=l.NextAttack(new Script(true));l.NotifyHit(true);bool duplicate=false;try{l.NotifyHit(true);}catch(InvalidOperationException){duplicate=true;}
-            b=l.NextAttack(new Script(false));l.NotifyHit(false);l.CompleteAttack();Check(a.RawDamage==15&&b.RawDamage==10&&l.TotalRawDamage==25,"face/before-hit raw effects reset attack scope per hit");
+            b=l.NextAttack(new Script(false));l.NotifyHit(false);l.CompleteAttack();Check(a.RawDamage==15&&b.RawDamage==13&&l.TotalRawDamage==28,"coin carry persists; base status refreshes; raw effects remain per hit");
             Check(duplicate&&statuses.Single(x=>x.Id=="hit").Value==6&&opponentStatuses.Single().Value==-2,"one hit callback per coin; timed self/opponent states stack");
             Check(l.AttackCount==2&&l.RemainingCoins==0&&l.NextAttack(new Script())==null,"hit/end effects cannot create attacks");
             CoinStatus.NextRound(statuses);Check(statuses.Count==1&&statuses[0].RemainingTurns==1,"one-turn end state expires; two-turn hit state persists");CoinStatus.NextRound(statuses);Check(statuses.Count==0,"timed status expires at battle round transition");
@@ -87,6 +88,32 @@ namespace ClashRoguelike
             Check(statusBattle.State.Heroes[0].Statuses[0].RemainingTurns==2&&statusSnapshot.Heroes[0].Statuses[0].RemainingTurns==1,"UI status snapshots do not age authoritative buffs");
             var target=new PortBattleRules();foreach(var e in target.State.EnemySlots)e.Active=false;target.State.Enemies[0].Hp=1;target.State.Enemies[1].Hp=0;target.Assign("cleave",0,0);var overkill=target.Resolve().Where(x=>x.Type=="strike").ToArray();
             Check(overkill.Length==2&&overkill[1].Damage==0&&overkill.Last().Coin.RemainingAttackCoins==0,"all remaining coins retire once; dead target is never hit/retargeted again");
+            // Fixed reference sequences prevent an implementation-mirroring formula from hiding a reset bug.
+            foreach(var reference in new[]{
+                new {Faces=new[]{true,false,true},Damage=new[]{7,7,9}},
+                new {Faces=new[]{true,true,true},Damage=new[]{7,9,11}},
+                new {Faces=new[]{false,false,false},Damage=new[]{5,5,5}},
+                new {Faces=new[]{false,true,true},Damage=new[]{5,7,9}}})
+            {
+                l=Act(5,9,2,3);attacks=Strikes(l,new Script(reference.Faces));
+                Check(attacks.Select(x=>x.RawDamage).SequenceEqual(reference.Damage),"fixed cumulative damage reference");
+                Check(l.TotalRawDamage==reference.Damage.Sum(),"sum individual cumulative hits, not just final power");
+            }
+            l=Act(10,1,-2,3);attacks=Strikes(l,new Script(true,false,true));
+            Check(attacks.Select(x=>x.RawDamage).SequenceEqual(new[]{8,8,6}),"negative attack coins carry signed contributions");
+            l=Act(5,1,2,3,new[]{new CoinEffect("per-hit",CoinTrigger.SkillStart,CoinStat.RawDamage,5)});
+            attacks=Strikes(l,new Script(true,false,true));Check(attacks.Select(x=>x.RawDamage).SequenceEqual(new[]{12,12,14}),"raw modifiers are not compounded into coin carry");
+            l=Act(5,1,2,3,new[]{new CoinEffect("heads-power",CoinTrigger.AttackHeads,CoinStat.AttackCoinPower,1,CoinEffectScope.Attack)});
+            attacks=Strikes(l,new Script(true,false,true));Check(attacks.Select(x=>x.RawDamage).SequenceEqual(new[]{8,8,11}),"use each coin's own effective power without revaluing prior heads");
+            var fresh=Act(5,1,2,1);Check(fresh.NextAttack(new Script(false)).RawDamage==5,"new skill starts with zero attack carry");
+            l=Act(10,4,2,3);r=Act(1,0,1,1);clash=new CoinClash(l,r,new Script(true,true,true,false));clash.Step();
+            attacks=Strikes(l,new Script(false,false,false));Check(attacks.All(x=>x.RawDamage==10),"clash heads and clash power do not carry into damage phase");
+            var enemy=new EnemyHeadsPort();foreach(var e in enemy.State.EnemySlots)e.Active=false;
+            enemy.State.EnemySlots[0].Active=true;enemy.State.EnemySlots[0].Key="needle";enemy.State.EnemySlots[0].Target=1;
+            var enemyHits=enemy.Resolve().Where(x=>x.Type=="strike").ToArray();
+            Check(enemyHits.Select(x=>x.Coin.RawDamage).SequenceEqual(new[]{5,7})&&enemyHits.Select(x=>x.Damage).SequenceEqual(new[]{5,7}),"enemy adapter uses cumulative coins and actual damage consistently");
+            var frozen=attacks[1].Copy();frozen.Left.AttackCoinTotal=999;
+            Check(attacks[1].Left.AttackCoinTotal==0&&l.Snapshot().AttackCoinTotal==0,"attack carry snapshots remain isolated");
             // Seeded property checks: every round and every attack obey the same invariants.
             for(uint seed=1;seed<=64;seed++)
             {
@@ -99,7 +126,7 @@ namespace ClashRoguelike
                     Check(l.RemainingCoins==oldL-(a.Winner==1?1:0)&&r.RemainingCoins==oldR-(a.Winner==0?1:0),"seeded only loser loses one");
                 }
                 Check(clash.Complete,"seeded ordinary clash terminates naturally");var winner=clash.Winner==0?l:r;var loser=clash.Winner==0?r:l;int budget=winner.RemainingCoins,sum=0;
-                while((a=winner.NextAttack(random))!=null){sum+=a.RawDamage;Check(a.RawDamage==a.AttackBase+(a.Heads?a.AttackCoinPower:0)&&a.TotalRawDamage==sum,"seeded independent raw attack formulas");}
+                int carry=0;while((a=winner.NextAttack(random))!=null){int previous=carry;if(a.Heads)carry+=a.AttackCoinPower;sum+=a.RawDamage;Check(a.AttackCarry==previous&&a.AttackAccumulated==carry&&a.RawDamage==a.AttackBase+carry+a.RawModifier&&a.TotalRawDamage==sum,"seeded cumulative attack formulas");}
                 Check(winner.AttackCount==budget&&winner.RemainingCoins==0&&loser.AttackCount==0&&loser.NextAttack(random)==null,"seeded survivor attack budget and loser suppression");
             }
             return checks;

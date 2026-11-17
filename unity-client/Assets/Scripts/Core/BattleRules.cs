@@ -22,11 +22,11 @@ namespace ClashRoguelike
         public string Name, Role, Intent;
         public int Hp, MaxHp, Shield, Base, ClashCoinPower, AttackCoinPower, Coins, Target, Speed, MinSpeed, MaxSpeed;
         public List<CoinStatus> Statuses=new List<CoinStatus>();
-        public string CharacterId="";public TouhouRoleState RoleState;
+        public string CharacterId="";public TouhouRoleState RoleState;public ZixiState Zixi;
         public bool GensokyoNative,ExorcismActive,ExorcismPending,SealActive,SealPending;public int Exorcism;
-        public string StatusFingerprint(){return string.Join(";",Statuses.Select(x=>x.Id+":"+x.Stat+":"+x.Value+":"+x.RemainingTurns).ToArray())+"/"+CharacterId+":"+GensokyoNative+":"+Exorcism+":"+ExorcismActive+":"+ExorcismPending+":"+SealActive+":"+SealPending+":"+(RoleState==null?"":RoleState.Fingerprint());}
+        public string StatusFingerprint(){return string.Join(";",Statuses.Select(x=>x.Id+":"+x.Stat+":"+x.Value+":"+x.RemainingTurns).ToArray())+"/"+CharacterId+":"+GensokyoNative+":"+Exorcism+":"+ExorcismActive+":"+ExorcismPending+":"+SealActive+":"+SealPending+":"+(RoleState==null?"":RoleState.Fingerprint())+"/"+(Zixi==null?"":Zixi.Fingerprint());}
         public bool Acted, Spent;
-        public Unit Copy() { var c=(Unit)MemberwiseClone();c.Statuses=Statuses.Select(x=>x.Copy()).ToList();c.RoleState=RoleState==null?null:RoleState.Copy();return c; }
+        public Unit Copy() { var c=(Unit)MemberwiseClone();c.Statuses=Statuses.Select(x=>x.Copy()).ToList();c.RoleState=RoleState==null?null:RoleState.Copy();c.Zixi=Zixi==null?null:Zixi.Copy();return c; }
     }
     [Serializable] public sealed class PlannedAction
     {

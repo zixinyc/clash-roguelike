@@ -19,7 +19,7 @@ namespace ClashRoguelike
             string path=Path.Combine(Application.streamingAssetsPath,"forest-maze.forest");
             if(!variation&&File.Exists(path))try{definition=ForestMapDefinition.Parse(File.ReadAllText(path));}catch(Exception e){Debug.LogWarning("Forest preset invalid: "+e.Message);forestSource="内置安全预设";}
             if(definition==null)definition=ForestMapDefinition.Generate(seed,variation);
-            forest=new ForestRun(definition);forestMode=true;forestSettings=false;forestLogCount=0;forestLogScroll=Vector2.zero;
+            forest=new ForestRun(definition);forest.Party.ConfigureRoster(selectedRoster);heroNames=CharacterRoster.Team(selectedRoster).Select(x=>x.Name).ToArray();forestMode=true;forestSettings=false;forestRosterMenu=false;forestLogCount=0;forestLogScroll=Vector2.zero;
             if(forestArt!=null)forestArt.Dispose();forestArt=new ForestMapArt(definition.Seed);
         }
         void ForestUpdate()
@@ -91,8 +91,10 @@ namespace ClashRoguelike
             if(forest==null)InitializeForest();var intel=forest.Intel();forestArt.UpdateFog(forest,intel);
             Label(28,20,590,42,"余烬交锋 / 废林追猎",30,Hex("D8C7A5"));Label(30,70,590,26,"单机探索  /  夺取烬核，穿过迷雾返回归途石门",13,Muted);
             Label(650,27,190,36,"回合 "+forest.Turn.ToString("00"),23,Gold);Label(845,30,385,30,"小队行动 · "+forest.Phase,16,Pale);
-            Label(650,70,570,24,"相邻移动 1 点  /  捷径 2 点 + 1 情报  /  道具使用 1 点",12,Muted);
-            GUI.enabled=forest.Pending==""&&!forest.Finished;if(Btn(new Rect(1280,31,134,35),"设置 / 地图"))forestSettings=!forestSettings;GUI.enabled=true;
+            Label(650,70,445,24,"相邻 1 点 / 捷径 2 点 + 1 情报 / 道具 1 点",12,Muted);
+            GUI.enabled=forest.Pending==""&&!forest.Finished;
+            if(Btn(new Rect(1100,68,314,30),"队伍："+MainRosterName(selectedRoster)+" / 更换"))OpenMainRosterPicker();
+            if(Btn(new Rect(1280,31,134,35),"设置 / 地图")){forestSettings=!forestSettings;forestRosterMenu=false;}GUI.enabled=true;
             Panel(forestRect,Hex("101714"),Hex("343D35"));GUI.DrawTexture(new Rect(forestRect.x+1,forestRect.y+1,forestRect.width-2,forestRect.height-2),forestArt.Terrain);GUI.DrawTexture(forestRect,forestArt.Fog);
             foreach(var edge in forest.Map.Edges)ForestPath(edge,intel);
             float time=Time.realtimeSinceStartup;
@@ -169,13 +171,15 @@ namespace ClashRoguelike
         }
         void DrawForestSettings()
         {
+            if(forestRosterMenu){DrawMainRosterPicker();return;}
             Fill(new Rect(0,0,1440,900),new Color(0,0,0,.8f));Panel(new Rect(455,200,530,530),Hex("12202A"),Gold);Label(485,225,470,44,"废林设定",27,Gold);
             Label(485,287,470,70,forestSource+" · 种子 "+forest.Map.Seed+"\n单机小队探索；兽群是环境敌人。",16,Pale);
             if(Btn(new Rect(485,375,470,40),forestAmbient?"环境余火：开":"环境余火：关"))forestAmbient=!forestAmbient;
             if(Btn(new Rect(485,428,470,40),"新探索 · 预设地图"))InitializeForest();
             if(Btn(new Rect(485,481,470,40),"新探索 · 种子变体"))InitializeForest((forest.Map.Seed+7919)&int.MaxValue,true);
-            if(Btn(new Rect(485,534,470,40),"旧方格地图 · 对照入口")){forestMode=false;forestSettings=false;exploration=new ExplorationRun();}
-            if(Btn(new Rect(485,585,470,36),"角色测试 · 咲夜 / 灵梦")){forestSettings=false;OpenPortBattle(false,0,true);}
+            if(Btn(new Rect(485,534,470,40),"旧方格地图 · 对照入口")){forestMode=false;forestSettings=false;exploration=new ExplorationRun();exploration.Resources.ConfigureRoster(selectedRoster);}
+            if(Btn(new Rect(485,585,470,36),"选择探索队伍 · "+MainRosterName(selectedRoster)))OpenMainRosterPicker();
+            Label(485,627,470,21,"切换队伍将开始新探索",12,Muted);
             if(Btn(new Rect(485,651,470,40),"返回森林",true))forestSettings=false;
         }
         void DrawForestFinish()

@@ -32,40 +32,7 @@ namespace ClashRoguelike
             if(faces.Length>count)Label(x,y+17,width,20,"共 "+faces.Length+" 枚 · 正面 "+faces.Count(z=>z),11,Muted,TextAnchor.MiddleCenter);
         }
         void DrawCoinPanel(CoinStep c,string type,float animation,int damage)
-        {
-            const float x=493,w=522,h=350;float y=adventureMode&&portRules!=null?167:120;Panel(new Rect(x,y,w,h),Hex("0B1721"),Gold);bool done=type=="clash_end"||type=="attack_end";
-            if(c.Type=="clash")
-            {
-                Label(x+15,y+12,w-30,29,done?"拼点结束 / 最终胜者":"拼点 / 第 "+c.Round+" 轮",20,Gold,TextAnchor.MiddleCenter);
-                Label(x+12,y+53,241,30,c.Left.Name,19,Cyan,TextAnchor.MiddleCenter);Label(x+269,y+53,241,30,c.Right.Name,19,Red,TextAnchor.MiddleCenter);
-                if(done)
-                {
-                    string name=c.FinalWinner==0?c.Left.Name:c.Right.Name;Label(x+30,y+122,w-60,55,name+" 获胜",28,c.FinalWinner==0?Gold:Red,TextAnchor.MiddleCenter);
-                    Label(x+30,y+199,w-60,32,"剩余硬币  "+c.LeftRemaining+"  /  "+c.RightRemaining,21,Pale,TextAnchor.MiddleCenter);
-                    Label(x+30,y+251,w-60,55,"败方不能攻击。\n胜方每枚剩余硬币对应一次攻击。",15,Muted,TextAnchor.MiddleCenter);return;
-                }
-                Label(x+10,y+86,243,23,"初始 "+c.LeftBase+"   /   拼币 +"+c.LeftClashPower,13,Muted,TextAnchor.MiddleCenter);
-                Label(x+269,y+86,243,23,"初始 "+c.RightBase+"   /   拼币 +"+c.RightClashPower,13,Muted,TextAnchor.MiddleCenter);
-                CoinFaces(c.LeftFaces,x+7,y+139,249,animation,c.Winner==1);CoinFaces(c.RightFaces,x+266,y+139,249,animation,c.Winner==0);
-                Label(x+12,y+169,241,48,animation<.38f?"投掷中":c.LeftPower.ToString(),34,c.Winner==0?Gold:Pale,TextAnchor.MiddleCenter);Label(x+269,y+169,241,48,animation<.38f?"投掷中":c.RightPower.ToString(),34,c.Winner==1?Red:Pale,TextAnchor.MiddleCenter);
-                Label(x+12,y+218,241,24,c.LeftBase+" + "+c.LeftFaces.Count(z=>z)+" × "+c.LeftClashPower,13,Muted,TextAnchor.MiddleCenter);
-                Label(x+269,y+218,241,24,c.RightBase+" + "+c.RightFaces.Count(z=>z)+" × "+c.RightClashPower,13,Muted,TextAnchor.MiddleCenter);
-                Label(x+18,y+254,w-36,30,c.Winner<0?"平局 · 双方均不损币":c.Winner==0?c.Right.Name+" 失败 · 损失 1 枚硬币":c.Left.Name+" 失败 · 损失 1 枚硬币",17,c.Winner<0?Cyan:Gold,TextAnchor.MiddleCenter);
-                Label(x+20,y+290,w-40,25,"余币  "+c.LeftBefore+" → "+c.LeftRemaining+"      /      "+c.RightBefore+" → "+c.RightRemaining,15,Pale,TextAnchor.MiddleCenter);
-                Label(x+15,y+321,w-30,23,c.FinalWinner>=0?"一方硬币归零，拼点立即结束。":"下一轮：从初始点数重算，重投双方全部余币。",12,Muted,TextAnchor.MiddleCenter);
-            }
-            else
-            {
-                Label(x+15,y+12,w-30,29,done?"攻击结束 / 硬币已消耗":"攻击 / 独立投掷一枚硬币",20,Gold,TextAnchor.MiddleCenter);
-                Label(x+20,y+54,w-40,30,c.Left.Name+"  ·  第 "+c.AttackIndex+" / "+c.AttackBudget+" 击",20,Pale,TextAnchor.MiddleCenter);
-                CoinToken(new Vector2(x+w/2,y+125),c.Heads,47,done?1:animation);
-                Label(x+30,y+161,w-60,26,"初始 "+c.AttackBase+"  /  攻击硬币 +"+c.AttackCoinPower+"  /  "+(c.Heads?"正面":"反面"),14,Muted,TextAnchor.MiddleCenter);
-                Label(x+15,y+195,w-30,42,"本次原始伤害  "+c.RawDamage,29,Gold,TextAnchor.MiddleCenter);
-                Label(x+20,y+240,w-40,24,c.AttackBase+" + "+(c.Heads?c.AttackCoinPower:0)+(c.RawModifier!=0?" + 效果 "+c.RawModifier:"")+" = "+c.RawDamage+(done?"   /   硬币已消耗":"    /    实际伤害 "+damage),13,Muted,TextAnchor.MiddleCenter);
-                Label(x+18,y+280,w-36,29,"累计 "+c.AttackIndex+" 次  ·  累计原始 "+c.TotalRawDamage,18,Cyan,TextAnchor.MiddleCenter);
-                Label(x+20,y+318,w-40,24,"剩余攻击硬币 "+c.RemainingAttackCoins+"  ·  每击从初始点数重新计算",12,Muted,TextAnchor.MiddleCenter);
-            }
-        }
+        { DrawCompactCoins(c,type,animation,damage); }
         void DrawBattleJournal()
         {
             bool port=adventureMode&&portRules!=null;float journalY=port?527:535,journalHeight=port?112:132;
@@ -77,3 +44,4 @@ namespace ClashRoguelike
         }
     }
 }
+
