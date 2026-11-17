@@ -134,6 +134,7 @@ func _ready() -> void:
 	bottom.add_child(log_label)
 	sound = Sound.new()
 	add_child(sound)
+	stage.impact_sound.connect(sound.play_sound)
 	new_battle()
 	if "--planning-smoke" in OS.get_cmdline_user_args():
 		_smoke.call_deferred()
@@ -353,10 +354,7 @@ func _resolve() -> void:
 			"intercept":
 				log_label.text = "%s 替队友接走攻击！" % battle.heroes[event.hero].name
 			"clash":
-				sound.play_sound("clash")
 				log_label.text = "拼点 %d : %d ｜ 剩余硬币 %d : %d" % [event.left, event.right, event.hero_remaining, event.enemy_remaining]
-			"strike":
-				sound.play_sound("strike")
 			"refund", "stalemate":
 				log_label.text = "%s，返还 %d cost" % ["僵持" if event.type == "stalemate" else "拼点失败", event.amount]
 			"ability":
