@@ -131,7 +131,7 @@ func _planning_overlay() -> void:
 		if slot.active and slot.category != 2 and not slot.done:
 			_arrow(slot_position(false, slot.id), POINTS[slot.target] + Vector2(0, -145), Color(RED, opacity), -65.0 - slot.id * 5)
 	for slot in state.hero_slots:
-		if slot.active and slot.category != 2 and not slot.done:
+		if slot.active and slot.get("targeted", slot.category != 2) and not slot.done:
 			_arrow(slot_position(true, slot.id), slot_position(false, slot.target), Color(BLUE, opacity), 65.0 + slot.id * 4)
 	for side in 2:
 		var slots: Array = state.hero_slots if side == 0 else state.enemy_slots
@@ -141,7 +141,10 @@ func _planning_overlay() -> void:
 			var chosen: bool = slot.id == (active_slot if side == 0 else target_slot)
 			draw_rect(Rect2(pos - Vector2(20, 17), Vector2(40, 34)), accent.darkened(0.35) if slot.active else Color("15222b"))
 			draw_rect(Rect2(pos - Vector2(20, 17), Vector2(40, 34)), GOLD if chosen else accent.darkened(0.55), false, 2 if chosen else 1)
-			_text(["攻", "大", "防"][slot.category], pos + Vector2(0, -2), 11, Color("f4e8d5") if slot.active else Color("697c85"))
+			var kind: String = "技" if slot.get("flexible", false) else ["攻", "大", "防"][slot.category]
+			if slot.get("frozen", false):
+				kind = "停"
+			_text(kind, pos + Vector2(0, -2), 11, Color("f4e8d5") if slot.active else Color("697c85"))
 			_text(str(slot.speed), pos + Vector2(0, 12), 12, GOLD)
 	if dragging >= 0:
 		_arrow(slot_position(true, dragging), pointer, GOLD, 35)
@@ -208,6 +211,8 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 	var sprite_height := 168.0 if allied else (177.0 if unit.kind in ["elite", "warden"] else 164.0)
 	var bob := sin(time * 2.1 + id * 1.5) * 1.2 if alive else 0.0
 	var texture := actors_texture
+	if allied and state.get("touhou_team", false) and id > 0:
+		texture = null
 	if not allied and unit.kind == "priest":
 		texture = priest_texture
 		region = Rect2(Vector2(35, 12), Vector2(1165, 1244))
@@ -229,6 +234,13 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 	draw_rect(hp_rect, Color("27343a"))
 	draw_rect(Rect2(hp_rect.position, Vector2(hp_rect.size.x * maxf(unit.hp, 0) / unit.max_hp, 4)), Color(accent, alpha))
 	_text("%02d / %02d" % [unit.hp, unit.max_hp], POINTS[id] + Vector2(0, 64), 12, Color("8b999b"), mono_font)
+	if not allied and alive and unit.has("exorcism"):
+		var status := "退治 %d/4" % unit.exorcism
+		if unit.exorcism_active:
+			status += " · 已引爆"
+		if unit.seal_active:
+			status += " · 封魔"
+		_text(status, POINTS[id] + Vector2(0, 84), 11, RED)
 	if allied:
 		_text("已行动" if acted else "规划中", POINTS[id] + Vector2(0, 84), 11, Color("677c81") if acted else BLUE)
 	elif alive:

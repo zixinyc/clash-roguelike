@@ -1,6 +1,9 @@
 class_name DemoBattleRules
 extends RefCounted
 
+const Sakuya = preload("res://scripts/characters/izayoi_sakuya.gd")
+const Reimu = preload("res://scripts/characters/hakurei_reimu.gd")
+
 const MAX_PLAYS := 6
 const BASE_INCOME := 8
 const START_COST := 30
@@ -24,7 +27,15 @@ const SKILLS := {
 	"support_strike": {"name": "援火冲击", "cost": 2, "base": 5, "power": 2, "coins": 2, "kind": "attack", "tag": "织火专属", "owner": 2, "description": "拼点获胜后，其他存活队友各获得4护盾", "flavor": "以攻守护。"},
 	"all_in": {"name": "破阵", "cost": 3, "base": 7, "power": 4, "coins": 2, "kind": "attack", "tag": "长锋专属", "owner": 1, "description": "高威力；触发破阵者被动", "flavor": "赌上这一击。"},
 	"cover": {"name": "护阵", "cost": 2, "base": 0, "power": 0, "coins": 0, "kind": "guard", "tag": "织火专属", "owner": 2, "description": "自身获得 9 护盾；其他存活队友获得 6 护盾", "flavor": "火光护住同伴。"},
-	"risk": {"name": "孤注", "cost": 2, "base": 2, "power": 4, "coins": 3, "kind": "attack", "tag": "搏命", "description": "波动威力 · 三枚硬币", "flavor": "把最后的余温，押上。"}
+	"risk": {"name": "孤注", "cost": 2, "base": 2, "power": 4, "coins": 3, "kind": "attack", "tag": "搏命", "description": "波动威力 · 三枚硬币", "flavor": "把最后的余温，押上。"},
+	"murder_doll": Sakuya.MURDER_DOLL,
+	"stopwatch": Sakuya.STOPWATCH,
+	"private_square": Sakuya.PRIVATE_SQUARE,
+	"the_world": Sakuya.THE_WORLD,
+	"yin_yang_orb": Reimu.YIN_YANG_ORB,
+	"fantasy_seal": Reimu.FANTASY_SEAL,
+	"demon_seal": Reimu.DEMON_SEAL,
+	"fantasy_nature": Reimu.FANTASY_NATURE,
 }
 
 const CATEGORIES := ["进攻", "大招", "防御"]
@@ -42,8 +53,9 @@ var first_win_paid := false
 var outcome := ""
 var phase := "response"
 var remaining := RESPONSE_SECONDS
+var touhou_team := false
 
-func start(seed_value: int = 73129, encounter: int = 0) -> void:
+func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = false) -> void:
 	rng.seed = seed_value
 	heroes = [
 		{"name": "灰烬", "role": "蓄势者", "preparation": 0, "hp": 48, "max_hp": 48, "shield": 0, "acted": false, "speed_min": 3, "speed_max": 6},
@@ -59,6 +71,10 @@ func start(seed_value: int = 73129, encounter: int = 0) -> void:
 		{"name": "缚咒祭司", "kind": "priest", "hp": 52, "max_hp": 52, "shield": 0, "spent": false, "speed_min": 3, "speed_max": 6},
 		{"name": "鸣钟行刑者", "kind": "elite", "hp": 95, "max_hp": 95, "shield": 0, "spent": false, "speed_min": 2, "speed_max": 5}
 		])
+	touhou_team = use_touhou_team
+	if touhou_team:
+		heroes[1] = Sakuya.create_unit()
+		heroes[2] = Reimu.create_unit()
 	cost = START_COST
 	turn = 1
 	outcome = ""
@@ -70,6 +86,15 @@ func _prepare_round() -> void:
 	plays = 0
 	first_win_paid = false
 	hand.assign(["cleave", "ember", "needle", "steady", "guard", "nova", "observe", "all_in", "cover", "probe", "exploit", "follow", "steady_edge", "shatter", "light_guard", "support_strike"])
+	var stopped := false
+	if touhou_team:
+		hand.assign(hand.filter(func(key: String) -> bool: return int(SKILLS[key].get("owner", -1)) <= 0))
+		hand.append_array(Sakuya.CARDS)
+		hand.append_array(Reimu.CARDS)
+		Sakuya.prepare_round(heroes[1], turn)
+		stopped = heroes[1].hp > 0 and turn == heroes[1].world_round
+		for enemy in enemies:
+			Reimu.prepare_enemy_round(enemy)
 	hero_slots.clear()
 	enemy_slots.clear()
 	for side in 2:
@@ -83,7 +108,12 @@ func _prepare_round() -> void:
 				units[u].spent = false
 			for category in 3:
 				var slot := {"id": slots.size(), "unit": u, "category": category, "speed": rng.randi_range(units[u].speed_min, units[u].speed_max), "active": false, "card": -1, "target": -1, "key": "", "done": false}
-				if side == 1 and units[u].hp > 0:
+				if touhou_team:
+					slot.speed = maxi(1, slot.speed + Sakuya.speed_modifier(heroes[1], side == 0, u))
+				if side == 0 and stopped:
+					slot.frozen = u != 1
+					slot.flexible = u == 1
+				if side == 1 and units[u].hp > 0 and not stopped:
 					var second := 1 if (turn + u) % 2 == 0 else 2
 					slot.active = category == 0 or category == second
 					if slot.active:
@@ -108,7 +138,7 @@ func snapshot() -> Dictionary:
 		for slot in public_enemies:
 			slot.erase("key")
 			slot.erase("card")
-	return {"heroes": heroes.duplicate(true), "enemies": enemies.duplicate(true), "hand": hand.duplicate(), "hero_slots": hero_slots.duplicate(true), "enemy_slots": public_enemies, "cost": cost, "reserved": reserved_cost() if phase == "response" else 0, "turn": turn, "plays": plays, "outcome": outcome, "phase": phase}
+	return {"heroes": heroes.duplicate(true), "enemies": enemies.duplicate(true), "hand": hand.duplicate(), "hero_slots": hero_slots.duplicate(true), "enemy_slots": public_enemies, "cost": cost, "reserved": reserved_cost() if phase == "response" else 0, "turn": turn, "plays": plays, "outcome": outcome, "phase": phase, "touhou_team": touhou_team}
 
 func category_for(key: String) -> int:
 	return 2 if SKILLS[key].kind == "guard" else (1 if SKILLS[key].kind == "ultimate" else 0)
@@ -121,6 +151,12 @@ static func clash_bonus(key: String, unit: int, preparation: int) -> int:
 static func ally_guard_amount(key: String) -> int:
 	return 8 if key == "light_guard" else (6 if key == "cover" else 4)
 
+static func targets_enemy(key: String) -> bool:
+	return SKILLS[key].kind != "guard" or SKILLS[key].get("targeted", false)
+
+func can_clash(hero: Dictionary, enemy: Dictionary) -> bool:
+	return enemy.active and enemy.category != 2 and (hero.unit == enemy.target or hero.speed > enemy.speed or heroes[hero.unit].get("ignores_intercept_speed", false))
+
 func can_assign(card: int, slot_id: int, target: int) -> String:
 	if phase != "response" or not outcome.is_empty():
 		return "当前不能修改行动"
@@ -129,11 +165,20 @@ func can_assign(card: int, slot_id: int, target: int) -> String:
 	var slot: Dictionary = hero_slots[slot_id]
 	if heroes[slot.unit].hp <= 0:
 		return "该成员已退场"
-	var owner := int(SKILLS[hand[card]].get("owner", -1))
+	if slot.get("frozen", false):
+		return "时间停止，本回合只有咲夜可以行动"
+	var key := hand[card]
+	var skill: Dictionary = SKILLS[key]
+	var owner := int(skill.get("owner", -1))
 	if owner >= 0 and owner != slot.unit:
 		return "这张牌只能由%s使用" % heroes[owner].name
-	if category_for(hand[card]) != slot.category:
+	var flexible: bool = slot.get("flexible", false)
+	if not flexible and category_for(key) != slot.category:
 		return "卡牌类别与行动格不符"
+	if key == "the_world" and heroes[slot.unit].world_used:
+		return "咲夜的世界本场已经使用"
+	if key == "fantasy_nature" and heroes[slot.unit].dream_due > 0:
+		return "梦想天生已经开始蓄能"
 	var count := 0
 	for other in hero_slots:
 		if other.id == slot_id or not other.active:
@@ -142,14 +187,16 @@ func can_assign(card: int, slot_id: int, target: int) -> String:
 			return "这张牌已经安排，请先撤销原行动"
 		if other.unit == slot.unit:
 			count += 1
-	if count >= 2:
+	if not flexible and count >= 2:
 		return "每位成员最多安排两次行动"
 	var old_cost := int(SKILLS[slot.key].cost) if slot.active else 0
 	if reserved_cost() - old_cost + int(SKILLS[hand[card]].cost) > cost:
 		return "可用 cost 不足，请先撤销其他行动"
-	if slot.category != 2:
+	if targets_enemy(key):
 		if target < 0 or target >= enemy_slots.size() or enemies[enemy_slots[target].unit].hp <= 0:
 			return "请选择敌方行动格"
+		if skill.get("requires_clash", false) and not can_clash(slot, enemy_slots[target]):
+			return "这张牌需要与敌方拼点"
 	return ""
 
 func assign(card: int, slot_id: int, target: int) -> String:
@@ -160,7 +207,8 @@ func assign(card: int, slot_id: int, target: int) -> String:
 	slot.active = true
 	slot.card = card
 	slot.key = hand[card]
-	slot.target = target if slot.category != 2 else slot.unit
+	slot.targeted = targets_enemy(slot.key)
+	slot.target = target if slot.targeted else slot.unit
 	return ""
 
 func cancel(slot_id: int) -> void:
@@ -170,6 +218,7 @@ func cancel(slot_id: int) -> void:
 	hero_slots[slot_id].card = -1
 	hero_slots[slot_id].key = ""
 	hero_slots[slot_id].target = -1
+	hero_slots[slot_id].erase("targeted")
 
 func tick(delta: float) -> bool:
 	if phase != "response":
@@ -186,6 +235,8 @@ func lock_and_resolve() -> Array[Dictionary]:
 		if slot.active:
 			cost -= int(SKILLS[slot.key].cost)
 			plays += 1
+			if slot.key == "the_world":
+				heroes[slot.unit].world_used = true
 	_emit(events, {"type": "reveal"})
 	var pairs := {}
 	for enemy in enemy_slots:
@@ -193,9 +244,8 @@ func lock_and_resolve() -> Array[Dictionary]:
 			continue
 		var candidates: Array[Dictionary] = []
 		for hero in hero_slots:
-			if hero.active and hero.category != 2 and hero.target == enemy.id:
-				if hero.unit == enemy.target or hero.speed > enemy.speed:
-					candidates.append(hero)
+			if hero.active and targets_enemy(hero.key) and hero.target == enemy.id and can_clash(hero, enemy):
+				candidates.append(hero)
 		candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.speed > b.speed if a.speed != b.speed else a.id < b.id)
 		if not candidates.is_empty():
 			pairs[enemy.id] = candidates[0].id
@@ -206,7 +256,7 @@ func lock_and_resolve() -> Array[Dictionary]:
 	for slot in enemy_slots:
 		if slot.active:
 			var h := int(pairs.get(slot.id, -1))
-			timeline.append({"speed": maxi(slot.speed, hero_slots[h].speed) if h >= 0 else slot.speed, "order": 9 + slot.id, "hero": h, "enemy": slot.id})
+			timeline.append({"speed": maxi(slot.speed, hero_slots[h].speed) if h >= 0 else slot.speed, "order": hero_slots.size() + slot.id, "hero": h, "enemy": slot.id})
 	timeline.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.speed > b.speed if a.speed != b.speed else a.order < b.order)
 	for entry in timeline:
 		if not outcome.is_empty():
@@ -227,6 +277,9 @@ func lock_and_resolve() -> Array[Dictionary]:
 		if not e.is_empty():
 			e.done = true
 		_check_outcome(events)
+	if outcome.is_empty() and touhou_team and heroes[2].hp > 0 and heroes[2].dream_due == turn:
+		_detonate_dream(events)
+		_check_outcome(events)
 	if outcome.is_empty():
 		phase = "finished"
 		_emit(events, {"type": "round_end"})
@@ -244,7 +297,7 @@ func next_round() -> void:
 func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 	var skill: Dictionary = SKILLS[slot.key]
 	var units: Array[Dictionary] = heroes if allied else enemies
-	if slot.category == 2:
+	if not targets_enemy(slot.key):
 		var guard_amount := GUARD_AMOUNT
 		if not allied and units[slot.unit].kind == "warden":
 			guard_amount = 14
@@ -254,7 +307,7 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 				if i != slot.unit and enemies[i].hp > 0:
 					enemies[i].shield += 6
 			_emit(events, {"type": "ability", "message": "缚咒祭司：为其他存活敌人提供 6 护盾"})
-		if allied and slot.unit == 2:
+		if allied and slot.unit == 2 and not touhou_team:
 			var support_shield := ally_guard_amount(slot.key)
 			for i in heroes.size():
 				if i != slot.unit and heroes[i].hp > 0:
@@ -268,15 +321,18 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 		_emit(events, {"type": "cancelled", "reason": "目标已退场，行动取消"})
 		return
 	_emit(events, {"type": "paid", "hero": slot.unit, "skill": skill.name, "paid": 0} if allied else {"type": "enemy_turn", "enemy": slot.unit, "hero": target})
-	_attack(events, allied, slot.unit, target, skill.base, skill.power, skill.coins, 0.65 if allied else 0.5)
+	if allied:
+		_resolve_hero_skill(events, slot, target, skill.coins)
+	else:
+		_attack(events, false, slot.unit, target, skill.base, skill.power, skill.coins, 0.5)
 	if allied and slot.key == "observe":
 		heroes[0].preparation = 1
 		_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
 
 func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 	var left_skill: Dictionary = SKILLS[h.key].duplicate()
-	var bonus := clash_bonus(h.key, h.unit, heroes[0].preparation)
-	var breaker: bool = h.unit == 1 and bonus > 0
+	var bonus := clash_bonus(h.key, 0 if touhou_team else h.unit, heroes[0].preparation)
+	var breaker: bool = not touhou_team and h.unit == 1 and bonus > 0
 	left_skill.base += bonus
 	if h.key == "exploit" and bonus > 0:
 		heroes[0].preparation = 0
@@ -284,6 +340,12 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 	if breaker:
 		_emit(events, {"type": "ability", "message": "长锋 · 破阵：本次拼点威力 +%d，失败损失 %d 生命" % [bonus, BREAKER_HP_LOSS]})
 	var right_skill: Dictionary = SKILLS[e.key]
+	var right_base := int(right_skill.base)
+	if touhou_team:
+		left_skill.base += Sakuya.stopwatch_bonus(heroes[1], h.get("speed", 0), e.get("speed", 0))
+		if h.unit == 2:
+			left_skill.base += Reimu.clash_bonus(enemies[e.unit])
+		right_base -= Reimu.enemy_clash_penalty(enemies[e.unit])
 	var lc := int(left_skill.coins)
 	var rc := int(right_skill.coins)
 	var ties := 0
@@ -291,8 +353,8 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 	while lc > 0 and rc > 0:
 		var left_min := maxi(0, int(left_skill.base) + mini(0, int(left_skill.power) * lc))
 		var left_max := maxi(0, int(left_skill.base) + maxi(0, int(left_skill.power) * lc))
-		var right_min := maxi(0, int(right_skill.base) + mini(0, int(right_skill.power) * rc))
-		var right_max := maxi(0, int(right_skill.base) + maxi(0, int(right_skill.power) * rc))
+		var right_min := maxi(0, right_base + mini(0, int(right_skill.power) * rc))
+		var right_max := maxi(0, right_base + maxi(0, int(right_skill.power) * rc))
 		if (left_min == left_max and right_min == right_max and left_min == right_min) or ties >= 100:
 			var refund := int(floor(left_skill.cost * REFUND_RATE))
 			cost += refund
@@ -302,7 +364,7 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 				_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
 			return
 		var left := _roll(left_skill.base, left_skill.power, lc, 0.65)
-		var right := _roll(right_skill.base, right_skill.power, rc, 0.5)
+		var right := _roll(right_base, right_skill.power, rc, 0.5)
 		var winner := -1 if left.value == right.value else (0 if left.value > right.value else 1)
 		var old_lc := lc
 		var old_rc := rc
@@ -313,6 +375,9 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 		ties = ties + 1 if winner == -1 else 0
 		_emit(events, {"type": "clash", "hero": h.unit, "enemy": e.unit, "left": left.value, "right": right.value, "left_heads": left.heads, "right_heads": right.heads, "hero_coins": old_lc, "enemy_coins": old_rc, "hero_remaining": lc, "enemy_remaining": rc, "winner": winner, "decider": false})
 	if lc > 0:
+		if touhou_team and h.unit == 2:
+			for message in Reimu.release_on_win(heroes[2], enemies, h.key, e.unit, turn):
+				_emit(events, {"type": "ability", "message": message})
 		if h.unit == 0:
 			heroes[0].preparation = 1
 			_emit(events, {"type": "ability", "message": "灰烬 · 蓄势：获得 1 层准备"})
@@ -325,7 +390,7 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 			first_win_paid = true
 			cost += 1
 			_emit(events, {"type": "reward", "amount": 1, "hero": h.unit})
-		_attack(events, true, h.unit, e.unit, int(SKILLS[h.key].base), left_skill.power, lc, 0.65)
+		_resolve_hero_skill(events, h, e.unit, lc)
 		if h.key == "follow" and enemies[e.unit].hp > 0:
 			_emit(events, {"type": "ability", "message": "灰烬 · 余势追击：追加 4 点攻击"})
 			_attack(events, true, h.unit, e.unit, 4, 0, 1, 0.65)
@@ -341,6 +406,28 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 		heroes[0].preparation = 1
 		_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
 
+func _resolve_hero_skill(events: Array[Dictionary], slot: Dictionary, target: int, coins: int) -> void:
+	if touhou_team and slot.unit == 1:
+		var message := Sakuya.release(heroes[1], slot.key, turn)
+		if not message.is_empty():
+			_emit(events, {"type": "ability", "message": message})
+			return
+	var skill: Dictionary = SKILLS[slot.key]
+	if not skill.get("no_damage", false):
+		_attack(events, true, slot.unit, target, skill.base, skill.power, coins, 0.65, slot.key)
+
+func _detonate_dream(events: Array[Dictionary]) -> void:
+	var hero := heroes[2]
+	_emit(events, {"type": "ability", "message": "梦想天生发动"})
+	for target in enemies.size():
+		var damage := Reimu.dream_damage(hero, enemies[target])
+		if enemies[target].hp > 0 and damage > 0:
+			_deal_hit(events, true, 2, target, damage, 1, 1)
+	hero.hp = 0
+	hero.dream_due = 0
+	hero.dream_orbs = 0
+	_emit(events, {"type": "ability", "message": "博丽灵梦因梦想天生退场"})
+
 func _roll(base: int, power: int, coins: int, chance: float) -> Dictionary:
 	var heads := 0
 	for i in coins:
@@ -348,22 +435,45 @@ func _roll(base: int, power: int, coins: int, chance: float) -> Dictionary:
 			heads += 1
 	return {"value": maxi(0, base + power * heads), "heads": heads}
 
-func _attack(events: Array[Dictionary], allied: bool, source: int, target: int, base: int, power: int, coins: int, chance: float) -> void:
+func _attack(events: Array[Dictionary], allied: bool, source: int, target: int, base: int, power: int, coins: int, chance: float, key: String = "") -> void:
 	var victims: Array[Dictionary] = enemies if allied else heroes
+	var fixed_damage: bool = not key.is_empty() and SKILLS[key].get("fixed_damage", false)
+	var marks_left := Reimu.exorcism_limit(key) if allied else 0
 	var running := base
 	for i in coins:
 		if victims[target].hp <= 0:
 			break
-		if rng.randf() < chance:
+		if fixed_damage:
+			running = power + (base if i == 0 else 0)
+		elif rng.randf() < chance:
 			running += power
-		var blocked := mini(int(victims[target].shield), running)
-		victims[target].shield -= blocked
-		var damage := maxi(0, running - blocked)
-		victims[target].hp = maxi(0, int(victims[target].hp) - damage)
-		if not allied and damage > 0 and enemies[source].kind == "scout" and target == 0 and heroes[0].preparation > 0:
-			heroes[0].preparation = 0
-			_emit(events, {"type": "ability", "message": "裂影斥候：命中移除了灰烬的准备"})
-		_emit(events, {"type": "strike", "allied": allied, "source": source, "target": target, "damage": damage, "blocked": blocked, "hit": i + 1, "total": coins})
+		var hit := running
+		if touhou_team:
+			if allied and source == 1 and i == 0:
+				hit += Sakuya.damage_bonus(heroes[1], turn)
+			elif not allied and enemies[source].exorcism_active:
+				hit = hit / 2
+		var damage := _deal_hit(events, allied, source, target, hit, i + 1, coins)
+		if marks_left > 0 and damage > 0 and victims[target].hp > 0:
+			marks_left -= 1
+			var message := Reimu.add_exorcism(victims[target])
+			if not message.is_empty():
+				_emit(events, {"type": "ability", "message": message})
+
+func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int, hit: int, index: int, total: int) -> int:
+	var victim := (enemies if allied else heroes)[target]
+	var blocked := mini(int(victim.shield), hit)
+	victim.shield -= blocked
+	var damage := maxi(0, hit - blocked)
+	victim.hp = maxi(0, int(victim.hp) - damage)
+	if not allied and touhou_team and target == 2 and victim.hp == 0:
+		victim.dream_due = 0
+		victim.dream_orbs = 0
+	if not allied and damage > 0 and enemies[source].kind == "scout" and target == 0 and heroes[0].preparation > 0:
+		heroes[0].preparation = 0
+		_emit(events, {"type": "ability", "message": "裂影斥候：命中移除了灰烬的准备"})
+	_emit(events, {"type": "strike", "allied": allied, "source": source, "target": target, "damage": damage, "blocked": blocked, "hit": index, "total": total})
+	return damage
 
 func _living_target(preferred: int) -> int:
 	if preferred >= 0 and preferred < heroes.size() and heroes[preferred].hp > 0:

@@ -17,6 +17,7 @@ var role_summary: Label
 var hero_buttons: Array[Button] = []
 var group_buttons: Array[Button] = []
 var cards: Array[DemoCardView] = []
+var displayed_hand: Array = []
 var card_row: HBoxContainer
 
 func _ready() -> void:
@@ -79,6 +80,10 @@ func _tab_state(tab: Button, active: bool, accent: Color) -> void:
 	tab.add_theme_stylebox_override("hover", hover)
 
 func _add_cards(hand: Array) -> void:
+	for node in card_row.get_children():
+		card_row.remove_child(node)
+		node.queue_free()
+	displayed_hand = hand.duplicate()
 	cards.resize(hand.size())
 	var keys := CARD_ORDER.duplicate()
 	for key in hand:
@@ -97,7 +102,7 @@ func _add_cards(hand: Array) -> void:
 		card_row.add_child(card)
 
 func refresh(state: Dictionary, unit: int, selection: int, planning: bool) -> void:
-	if cards.is_empty():
+	if displayed_hand != state.hand:
 		_add_cards(state.hand)
 	var assigned := {}
 	var counts := [0, 0, 0]
@@ -107,13 +112,24 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool) -> vo
 			counts[slot.unit] += 1
 	for i in hero_buttons.size():
 		var hero: Dictionary = state.heroes[i]
-		var status := "%d/2" % counts[i] if hero.hp > 0 else "已退场"
+		var first_slot: Dictionary = state.hero_slots[i * 3]
+		var limit := 3 if first_slot.get("flexible", false) else 2
+		var status := "%d/%d" % [counts[i], limit] if hero.hp > 0 else "已退场"
+		if first_slot.get("frozen", false) and hero.hp > 0:
+			status = "停时"
 		hero_buttons[i].text = "%s   ·   %s    %s" % [hero.name, hero.role, status]
 		hero_buttons[i].disabled = not planning
 		_tab_state(hero_buttons[i], i == unit, ROLE_COLORS[i])
 	var roles := ["拼点获胜获得准备 · 当前 %d 层" % state.heroes[0].preparation,
 		"高费牌拼点威力 +%d · 失败额外损失 %d 生命" % [Rules.clash_bonus("all_in", 1, 0), Rules.BREAKER_HP_LOSS],
 		"防御行动结算时，为其他存活队友提供护盾"]
+	if state.touhou_team:
+		var sakuya: Dictionary = state.heroes[1]
+		var reimu: Dictionary = state.heroes[2]
+		roles[1] = "无视速度接招 · 每次攻击伤害 +%d" % Rules.Sakuya.damage_bonus(sakuya, state.turn)
+		roles[2] = "对幻想乡本土敌人拼点 +1 · 退治叠满 4 层触发"
+		if reimu.dream_due > 0:
+			roles[2] = "梦想宝玉 %d/3 · 第 %d 回合结束发动" % [reimu.dream_orbs, reimu.dream_due]
 	role_summary.text = roles[unit]
 	role_summary.add_theme_color_override("font_color", ROLE_COLORS[unit])
 	detail.add_theme_color_override("font_color", Color("d7e0e1"))
@@ -132,11 +148,11 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool) -> vo
 		visible_indices.append(i)
 		card.key_number = visible_indices.size()
 		card.selected = i == selection
-		card.disabled = not planning or state.heroes[unit].hp <= 0
+		card.disabled = not planning or state.heroes[unit].hp <= 0 or state.hero_slots[unit * 3].get("frozen", false)
 		card.assigned_to = assigned.get(i, "")
 		card.accent = ROLE_COLORS[unit]
-		card.bonus = Rules.clash_bonus(card.skill_key, unit, state.heroes[0].preparation)
-		card.ally_shield = Rules.ally_guard_amount(card.skill_key) if unit == 2 else 0
+		card.bonus = Rules.clash_bonus(card.skill_key, 0 if state.touhou_team else unit, state.heroes[0].preparation)
+		card.ally_shield = Rules.ally_guard_amount(card.skill_key) if unit == 2 and not state.touhou_team else 0
 		card.queue_redraw()
 	group_buttons[0].text = "专属 %d" % personal_count
 	group_buttons[1].text = "通用 %d" % shared_count

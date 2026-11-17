@@ -7,7 +7,9 @@ const USE_HINTS := {
 	"follow": "拼赢后追加攻击", "steady_edge": "同费下限更高", "all_in": "同费上限更高",
 	"shatter": "三枚硬币 · 爆发",
 	"support_strike": "拼赢后给队友护盾", "steady": "同费下限更高", "ember": "同费上限更高",
-	"needle": "低费进攻", "cleave": "高威力进攻", "guard": "低费防御", "nova": "三枚硬币 · 爆发"
+	"needle": "低费进攻", "cleave": "高威力进攻", "guard": "低费防御", "nova": "三枚硬币 · 爆发",
+	"murder_doll": "单体 · 伤害 8", "stopwatch": "敌方减速 2 回合", "private_square": "自身提速和增伤", "the_world": "停止时间一回合",
+	"yin_yang_orb": "命中积累退治", "fantasy_seal": "多段积累退治", "demon_seal": "防御拼点 · 降威力", "fantasy_nature": "拼赢后蓄能 3 回合"
 }
 
 var skill: Dictionary = {}
@@ -40,7 +42,7 @@ func _ready() -> void:
 	tooltip_text = "%s · %d cost\n%s" % [skill.name, skill.cost, skill.description]
 
 func effect_text() -> String:
-	if skill.kind == "guard":
+	if not Rules.targets_enemy(skill_key):
 		var effect := "行动结算时，自身 +%d 护盾" % Rules.GUARD_AMOUNT
 		if ally_shield > 0:
 			effect += "，其他存活队友各 +%d" % ally_shield
@@ -76,7 +78,7 @@ func _draw() -> void:
 	_text("%d cost" % skill.cost, Vector2(10, 23), 17, bright, number_font)
 	_right(kind_label, Vector2(size.x - 10, 23), 13, muted)
 	_text(skill.name, Vector2(10, 48), 19, ink)
-	if skill.kind == "guard":
+	if not Rules.targets_enemy(skill_key):
 		_text("+%d" % Rules.GUARD_AMOUNT, Vector2(10, 76), 23, bright, number_font)
 		_text("自身护盾", Vector2(61, 75), 12, muted)
 	else:
