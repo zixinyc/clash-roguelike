@@ -4,15 +4,19 @@ extends Control
 signal unit_selected(allied: bool, index: int)
 signal slot_selected(allied: bool, index: int)
 signal aim_committed(source: int, target: int)
+signal aim_cancelled
 signal impact_sound(kind: String)
 var active_slot := 0
 var target_slot := 0
 var dragging := -1
 var pointer := Vector2.ZERO
+var target_guidance: Array[Dictionary] = []
 
 const GOLD := Color("dfbc80")
 const BLUE := Color("8bc8ce")
 const RED := Color("e17d70")
+const SLOT_COLORS := [Color("dd8072"), Color("dfbc80"), Color("80bfc8")]
+const VALID_TARGET := Color("92d8a2")
 const BASE := Vector2(1380, 410)
 const HERO_SPRITES := [Rect2(96, 18, 315, 480), Rect2(570, 4, 402, 494), Rect2(1082, 26, 306, 472)]
 const ENEMY_SPRITES := {
@@ -40,6 +44,7 @@ var mono_font: Font
 var station_texture: Texture2D
 var actors_texture: Texture2D
 var priest_texture: Texture2D
+var zixi_texture: Texture2D
 
 func _ready() -> void:
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -50,6 +55,7 @@ func _ready() -> void:
 	station_texture = _optional_texture("res://art/rain-station.png")
 	actors_texture = _optional_texture("res://art/battle-actors.png")
 	priest_texture = _optional_texture("res://art/grave-priest.png")
+	zixi_texture = _optional_texture("res://art/zixi.png")
 
 func _optional_texture(path: String) -> Texture2D:
 	return load(path) as Texture2D if ResourceLoader.exists(path) else null
@@ -81,15 +87,28 @@ func _process(delta: float) -> void:
 	floaters = floaters.filter(func(item: Dictionary) -> bool: return item.age < 1.5)
 	queue_redraw()
 
+func _actor_position(id: int) -> Vector2:
+	var count: int = state.get("heroes", []).size()
+	if id < 3 and count < 3:
+		return POINTS[1] + Vector2((id - (count - 1) / 2.0) * 141.0, 0)
+	return POINTS[id]
+
 func slot_position(allied: bool, index: int) -> Vector2:
-	var id := index / 3 if allied else index / 3 + 3
-	return POINTS[id] + Vector2((index % 3 - 1) * 43, -190)
+	if allied:
+		var slot: Dictionary = state.hero_slots[index]
+		return _actor_position(slot.unit) + Vector2((slot.category - 1) * 43, -190 - slot.get("row", 0) * 36)
+	return _actor_position(index / 3 + 3) + Vector2((index % 3 - 1) * 43, -190)
 
 func _gui_input(event: InputEvent) -> void:
 	if busy:
 		return
 	if event is InputEventMouseMotion:
 		pointer = event.position * BASE / size
+		tooltip_text = ""
+		for slot in state.get("enemy_slots", []):
+			if slot.id < target_guidance.size() and Rect2(slot_position(false, slot.id) - Vector2(20, 17), Vector2(40, 34)).has_point(pointer):
+				tooltip_text = target_guidance[slot.id].get("text", "")
+				break
 		return
 	if not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT:
 		return
@@ -110,10 +129,14 @@ func _gui_input(event: InputEvent) -> void:
 				accept_event()
 				return
 	if not event.pressed:
+		if dragging >= 0:
+			aim_cancelled.emit()
 		dragging = -1
 		return
 	for i in POINTS.size():
-		if Rect2(POINTS[i] + Vector2(-55, -150), Vector2(110, 240)).has_point(point):
+		if i < 3 and i >= state.get("heroes", []).size():
+			continue
+		if Rect2(_actor_position(i) + Vector2(-55, -150), Vector2(110, 240)).has_point(point):
 			unit_selected.emit(i < 3, i if i < 3 else i - 3)
 			accept_event()
 			return
@@ -124,9 +147,10 @@ func _arrow(a: Vector2, b: Vector2, color: Color, bend: float) -> void:
 	for i in 25:
 		var t := i / 24.0
 		points.append(a.lerp(mid, t).lerp(mid.lerp(b, t), t))
-	draw_polyline(points, color, 2.0, true)
+	draw_polyline(points, Color(0.02, 0.04, 0.05, color.a * 0.8), 7.0, true)
+	draw_polyline(points, color, 4.0, true)
 	var direction := (b - points[23]).normalized()
-	draw_colored_polygon(PackedVector2Array([b, b - direction.rotated(0.45) * 12, b - direction.rotated(-0.45) * 12]), color)
+	draw_colored_polygon(PackedVector2Array([b, b - direction.rotated(0.45) * 20, b - direction.rotated(-0.45) * 20]), color)
 
 func _planning_overlay() -> void:
 	if not state.has("hero_slots"):
@@ -134,19 +158,27 @@ func _planning_overlay() -> void:
 	var opacity := 0.18 if busy else 0.7
 	for slot in state.enemy_slots:
 		if slot.active and slot.category != 2 and not slot.done:
-			_arrow(slot_position(false, slot.id), POINTS[slot.target] + Vector2(0, -145), Color(RED, opacity), -65.0 - slot.id * 5)
+			_arrow(slot_position(false, slot.id), _actor_position(slot.target) + Vector2(0, -145), Color(RED, opacity), -65.0 - slot.id * 5)
 	for slot in state.hero_slots:
-		if slot.active and slot.category != 2 and not slot.done:
+		if slot.active and slot.get("targeted", slot.category != 2) and not slot.done:
 			_arrow(slot_position(true, slot.id), slot_position(false, slot.target), Color(BLUE, opacity), 65.0 + slot.id * 4)
 	for side in 2:
 		var slots: Array = state.hero_slots if side == 0 else state.enemy_slots
 		for slot in slots:
 			var pos := slot_position(side == 0, slot.id)
-			var accent := BLUE if side == 0 else RED
+			var accent: Color = SLOT_COLORS[slot.category]
 			var chosen: bool = slot.id == (active_slot if side == 0 else target_slot)
-			draw_rect(Rect2(pos - Vector2(20, 17), Vector2(40, 34)), accent.darkened(0.35) if slot.active else Color("15222b"))
-			draw_rect(Rect2(pos - Vector2(20, 17), Vector2(40, 34)), GOLD if chosen else accent.darkened(0.55), false, 2 if chosen else 1)
-			_text(["攻", "大", "防"][slot.category], pos + Vector2(0, -2), 11, Color("f4e8d5") if slot.active else Color("697c85"))
+			draw_rect(Rect2(pos - Vector2(20, 17), Vector2(40, 34)), accent.darkened(0.45) if slot.active else accent.darkened(0.82))
+			var border := GOLD if chosen else accent.darkened(0.25 if slot.active else 0.55)
+			var border_width := 2 if chosen else 1
+			if side == 1 and slot.id < target_guidance.size() and not target_guidance[slot.id].is_empty():
+				border = VALID_TARGET if target_guidance[slot.id].valid else Color("5c6668")
+				border_width = 3 if target_guidance[slot.id].valid else 1
+			draw_rect(Rect2(pos - Vector2(20, 17), Vector2(40, 34)), border, false, border_width)
+			var kind: String = "技" if slot.get("flexible", false) else ["攻", "大", "防"][slot.category]
+			if slot.get("frozen", false):
+				kind = "停"
+			_text(kind, pos + Vector2(0, -2), 11, Color("f4e8d5") if slot.active else Color("697c85"))
 			_text(str(slot.speed), pos + Vector2(0, 12), 12, GOLD)
 	if dragging >= 0:
 		_arrow(slot_position(true, dragging), pointer, GOLD, 35)
@@ -160,6 +192,8 @@ func _draw() -> void:
 	for i in POINTS.size():
 		var allied := i < 3
 		var idx := i if allied else i - 3
+		if allied and idx >= state.heroes.size():
+			continue
 		var unit: Dictionary = state.heroes[idx] if allied else state.enemies[idx]
 		var selected := idx == selected_hero if allied else idx == selected_enemy
 		_actor(i, unit, allied, selected)
@@ -189,7 +223,7 @@ func _background() -> void:
 
 
 func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
-	var point: Vector2 = POINTS[id] + motions[id]
+	var point: Vector2 = _actor_position(id) + motions[id]
 	var alive: bool = unit.hp > 0
 	var accent: Color = [Color("d5b27a"), Color("8cbfc8"), Color("b8bf94")][id] if allied else RED
 	if not allied:
@@ -209,10 +243,17 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 		draw_arc(Vector2(0, 2), 49, PI * 0.02, PI * 0.98, 28, Color(accent, 0.5), 2, true)
 		draw_arc(Vector2(0, 2), 49, PI * 1.05, PI * 1.95, 28, Color(accent, 0.25), 1, true)
 		_glow(Vector2(0, -74), 91, Color(accent, 0.025))
-	var region: Rect2 = HERO_SPRITES[id] if allied else ENEMY_SPRITES.get(unit.kind, Rect2())
+	var character_id := int(unit.get("character_id", -1))
+	var region: Rect2 = HERO_SPRITES[character_id] if character_id in [0, 1, 2] else ENEMY_SPRITES.get(unit.get("kind", ""), Rect2())
 	var sprite_height := 168.0 if allied else (177.0 if unit.kind in ["elite", "warden"] else 164.0)
 	var bob := sin(time * 2.1 + id * 1.5) * 1.2 if alive else 0.0
 	var texture := actors_texture
+	if allied and unit.has("metaphysics"):
+		texture = zixi_texture
+		if texture != null:
+			region = Rect2(Vector2.ZERO, texture.get_size())
+	if allied and character_id in [3, 4]:
+		texture = null
 	if not allied and unit.kind == "priest":
 		texture = priest_texture
 		region = Rect2(Vector2(35, 12), Vector2(1165, 1244))
@@ -228,16 +269,23 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 		draw_arc(Vector2(0, -71), 78, -PI * 0.7, PI * 0.7, 32, Color(BLUE, 0.65), 2, true)
 		_text("护盾 %d" % unit.shield, Vector2(0, -162), 13, BLUE)
 	draw_set_transform(Vector2.ZERO, 0, size / BASE)
-	var name_pos: Vector2 = POINTS[id] + Vector2(0, 31)
+	var name_pos: Vector2 = _actor_position(id) + Vector2(0, 31)
 	_text(unit.name, name_pos, 17, Color(accent, alpha))
-	var hp_rect := Rect2(POINTS[id] + Vector2(-47, 42), Vector2(94, 4))
+	var hp_rect := Rect2(_actor_position(id) + Vector2(-47, 42), Vector2(94, 4))
 	draw_rect(hp_rect, Color("27343a"))
 	draw_rect(Rect2(hp_rect.position, Vector2(hp_rect.size.x * maxf(unit.hp, 0) / unit.max_hp, 4)), Color(accent, alpha))
-	_text("%02d / %02d" % [unit.hp, unit.max_hp], POINTS[id] + Vector2(0, 64), 12, Color("8b999b"), mono_font)
+	_text("%02d / %02d" % [unit.hp, unit.max_hp], _actor_position(id) + Vector2(0, 64), 12, Color("8b999b"), mono_font)
+	if not allied and alive and unit.has("exorcism"):
+		var status := "退治 %d/4" % unit.exorcism
+		if unit.exorcism_active:
+			status += " · 已引爆"
+		if unit.seal_active:
+			status += " · 封魔"
+		_text(status, _actor_position(id) + Vector2(0, 84), 11, RED)
 	if allied:
-		_text("已行动" if acted else "规划中", POINTS[id] + Vector2(0, 84), 11, Color("677c81") if acted else BLUE)
+		_text("已行动" if acted else "规划中", _actor_position(id) + Vector2(0, 84), 11, Color("677c81") if acted else BLUE)
 	elif alive:
-		_text("已锁定 · 技能隐藏" if state.get("phase", "") == "response" else "行动已揭晓", POINTS[id] + Vector2(0, -220), 12, RED)
+		_text("已锁定 · 技能隐藏" if state.get("phase", "") == "response" else "行动已揭晓", _actor_position(id) + Vector2(0, -220), 12, RED)
 
 func _draw_placeholder_actor(accent: Color, alpha: float, bob: float, flash: float) -> void:
 	var outline := Color(accent.lerp(Color.WHITE, flash), alpha)
@@ -311,7 +359,7 @@ func play_event(event: Dictionary, speed: float) -> void:
 			var decisive: bool = event.hero_remaining == 0 or event.enemy_remaining == 0
 			overlay = event
 			await _move_pair(hero_id, enemy_id, Vector2(-12, 0), Vector2(12, 0), 0.12 * duration)
-			await _move_pair(hero_id, enemy_id, Vector2(620, 282) - POINTS[hero_id], Vector2(766, 282) - POINTS[enemy_id], 0.16 * duration)
+			await _move_pair(hero_id, enemy_id, Vector2(620, 282) - _actor_position(hero_id), Vector2(766, 282) - _actor_position(enemy_id), 0.16 * duration)
 			impact_sound.emit("strike" if decisive else "clash")
 			sparks = 1.0
 			impact = 1.0 if decisive else 0.65
@@ -335,13 +383,13 @@ func play_event(event: Dictionary, speed: float) -> void:
 			var attacker: int = event.source if event.allied else event.source + 3
 			var victim: int = event.target + 3 if event.allied else event.target
 			var direction := 1.0 if event.allied else -1.0
-			var travel: Vector2 = POINTS[victim] - POINTS[attacker] - Vector2(92 * direction, 0)
+			var travel: Vector2 = _actor_position(victim) - _actor_position(attacker) - Vector2(92 * direction, 0)
 			await _move_pair(attacker, victim, Vector2(-14 * direction, 0), Vector2.ZERO, 0.10 * duration)
 			await _move_pair(attacker, victim, travel, Vector2.ZERO, 0.15 * duration)
 			impact_sound.emit("strike")
 			impact = 1.0
 			flashes[victim] = 1.0
-			floaters.append({"text": "−%d" % event.damage, "position": POINTS[victim] + Vector2((event.hit - 1) * 18 - 12, -152 - (event.hit - 1) * 19), "age": 0.0, "color": RED if not event.allied else GOLD, "size": 33})
+			floaters.append({"text": "−%d" % event.damage, "position": _actor_position(victim) + Vector2((event.hit - 1) * 18 - 12, -152 - (event.hit - 1) * 19), "age": 0.0, "color": RED if not event.allied else GOLD, "size": 33})
 			holding_impact = true
 			queue_redraw()
 			await get_tree().create_timer((0.28 if event.hit == event.total else 0.17) * duration).timeout
@@ -350,7 +398,7 @@ func play_event(event: Dictionary, speed: float) -> void:
 			await _move_pair(attacker, victim, Vector2.ZERO, Vector2.ZERO, 0.11 * duration)
 		"guard":
 			flashes[event.hero] = 0.5
-			floaters.append({"text": "+9 护盾", "position": POINTS[event.hero] + Vector2(0, -150), "age": 0.0, "color": BLUE, "size": 22})
+			floaters.append({"text": "+%d 护盾" % event.amount, "position": _actor_position(event.hero) + Vector2(0, -150), "age": 0.0, "color": BLUE, "size": 22})
 			await get_tree().create_timer(0.4 * duration).timeout
 		"refund", "reward":
 			await get_tree().create_timer(0.2 * duration).timeout

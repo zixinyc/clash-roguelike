@@ -7,7 +7,11 @@ const USE_HINTS := {
 	"follow": "拼赢后追加攻击", "steady_edge": "同费下限更高", "all_in": "同费上限更高",
 	"shatter": "三枚硬币 · 爆发",
 	"support_strike": "拼赢后给队友护盾", "steady": "同费下限更高", "ember": "同费上限更高",
-	"needle": "低费进攻", "cleave": "高威力进攻", "guard": "低费防御", "nova": "三枚硬币 · 爆发"
+	"needle": "低费进攻", "cleave": "高威力进攻", "guard": "低费防御", "nova": "三枚硬币 · 爆发",
+	"murder_doll": "单体 · 伤害 8", "stopwatch": "敌方减速 2 回合", "private_square": "自身提速和增伤", "the_world": "停止时间一回合",
+	"yin_yang_orb": "命中积累退治", "fantasy_seal": "多段积累退治", "demon_seal": "防御拼点 · 降威力", "fantasy_nature": "拼赢后蓄能 3 回合",
+	"zixi_central_limit": "拼赢后下次拼点 +1", "zixi_convergence": "拼赢后下次拼点 +2",
+	"zixi_martingale": "跨回合护盾", "zixi_almost_sure": "强化后可全体轰炸",
 }
 
 var skill: Dictionary = {}
@@ -15,6 +19,8 @@ var skill_key := ""
 var hand_index := -1
 var key_number := 1
 var selected := false
+var enhanced := false
+var can_enhance := false
 var hovered := false
 var assigned_to := ""
 var accent := Color("dfbc80")
@@ -38,9 +44,11 @@ func _ready() -> void:
 	focus_exited.connect(queue_redraw)
 	resized.connect(queue_redraw)
 	tooltip_text = "%s · %d cost\n%s" % [skill.name, skill.cost, skill.description]
+	if skill.has("enhance_name"):
+		tooltip_text += "\n%s · %s" % [skill.enhance_name, skill.enhance_description]
 
 func effect_text() -> String:
-	if skill.kind == "guard":
+	if not Rules.targets_enemy(skill_key):
 		var effect := "行动结算时，自身 +%d 护盾" % Rules.GUARD_AMOUNT
 		if ally_shield > 0:
 			effect += "，其他存活队友各 +%d" % ally_shield
@@ -67,16 +75,18 @@ func _draw() -> void:
 	var rect := Rect2(Vector2.ZERO, size)
 	var style := StyleBoxFlat.new()
 	style.bg_color = tint
-	style.border_color = bright if active else Color("354751")
+	style.border_color = Color("a8cfff") if enhanced else (bright if active else Color("354751"))
 	style.set_border_width_all(1)
-	style.border_width_top = 3 if active else 1
+	style.border_width_top = 3 if active or enhanced else 1
 	style.set_corner_radius_all(6)
 	draw_style_box(style, rect)
 	var kind_label := "防御" if skill.kind == "guard" else ("大招" if skill.kind == "ultimate" else "进攻")
 	_text("%d cost" % skill.cost, Vector2(10, 23), 17, bright, number_font)
 	_right(kind_label, Vector2(size.x - 10, 23), 13, muted)
 	_text(skill.name, Vector2(10, 48), 19, ink)
-	if skill.kind == "guard":
+	if skill.has("enhance_name"):
+		_text("初始 %d · %d 枚 × +%d" % [skill.base, skill.coins, skill.power], Vector2(10, 76), 14, bright)
+	elif not Rules.targets_enemy(skill_key):
 		_text("+%d" % Rules.GUARD_AMOUNT, Vector2(10, 76), 23, bright, number_font)
 		_text("自身护盾", Vector2(61, 75), 12, muted)
 	else:
@@ -89,8 +99,13 @@ func _draw() -> void:
 	if skill.kind == "guard" and ally_shield > 0:
 		usage = "队友各 +%d 护盾" % ally_shield
 	_text(usage, Vector2(10, 100), 13, ink)
-	if not assigned_to.is_empty():
+	if enhanced:
+		var state_label: String = "待安排 · %s" % skill.enhance_name if assigned_to.is_empty() else "已安排 · 强化"
+		_text(state_label, Vector2(10, 122), 12, Color("a8cfff"))
+	elif not assigned_to.is_empty():
 		_text("已安排 · %s" % assigned_to, Vector2(10, 122), 12, muted)
+	elif can_enhance:
+		_text("可强化", Vector2(10, 122), 12, Color("a8cfff"))
 	_right(str(key_number), Vector2(size.x - 10, 122), 13, muted, number_font)
 
 func _text(value: String, origin: Vector2, font_size: int, color: Color, font: Font = null) -> void:
