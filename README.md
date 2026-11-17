@@ -6,10 +6,11 @@
 - 或下载本分支整个 ZIP，解压后双击根目录 **启动Unity单机版.cmd**。
 - [Unity 工程、运行与构建说明](unity-client/README.md)。
 - [新拼点机制、效果扩展、修改清单和 12 项验收](unity-client/COIN_SYSTEM.md)。
+- [项目清单：已有成果、未完成和待讨论](unity-client/PROJECT_INVENTORY.md)。
 - [角色设计与兼容说明](unity-client/ROLE_INTEGRATION.md)：博丽灵梦、十六夜咲夜、8个专属技能和最新状态/居中操作界面。
 - [实际验证与构建限制](unity-client/VALIDATION.md)。七组共 **3,647** 项断言，实际新战斗与森林撤离通过。
 
-本轮使用既有 Unity Mono 播放器重新编译程序集并验收；本机许可限制尚未解决，未声称完成编辑器全量构建。旧追击额外攻击已停用；多人/PVP、存档和正式美术未完成。Godot 的 battle-demo 同步了角色源分支但保留其规则差异，请用 Unity 成品验证新硬币机制。角色入口：森林设置 → 角色测试，或单场顶部切换阵容。
+本轮使用既有 Unity Mono 播放器重新编译程序集并验收；本机许可限制尚未解决，未声称完成编辑器全量构建。旧追击额外攻击已停用；多人/PVP、存档和正式美术未完成。Godot 的 battle-demo 同步了角色源分支但保留其规则差异，请用 Unity 成品验证新硬币机制。已同步主分支最新打击反馈，Unity 具备蓄力、命中停顿和接触音效。角色入口：森林设置 → 角色测试，或单场顶部切换阵容。
 
 ![新拼点实机](unity-client/Preview/coin-clash.png)
 

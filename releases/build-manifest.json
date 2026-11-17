@@ -5,9 +5,9 @@
   "platform": "Windows x64 Mono",
   "build_method": "C# assembly compiled against existing Unity Mono player; not a new Unity Editor build",
   "archive": "ClashRoguelike-Unity-Windows-touhou.zip",
-  "archive_bytes": 27528951,
-  "archive_sha256": "112D85B609D986B24AEB65994F308076DA3F580F206683C9E398D6F216663025",
-  "assembly_sha256": "A5930EA48592C8D973003BCF9047292C2F1B783DA0A0B85A2CAA4A337DDBBD12",
+  "archive_bytes": 27529764,
+  "archive_sha256": "4091AE90B3445CA2CBE3803DAA8DBCAA33CD961F9BC50EC99C0E21795DA54840",
+  "assembly_sha256": "7812502E6B15F70746A47F34B4598189236BBB4F30C5332AB3F0AAA1D62AF0ED",
   "checks": {
     "speed_and_battle": 1944,
     "click": 28,

@@ -38,6 +38,7 @@ namespace ClashRoguelike
         public int Hero=-1,Enemy=-1,Left,Right,Winner=-1,HeroRemaining,EnemyRemaining,Damage,Speed;
         public PortState Snapshot;
         public CoinStep Coin;
+        public bool AttackerAllied;
     }
     public partial class PortBattleRules
     {
@@ -217,7 +218,7 @@ namespace ClashRoguelike
                 if(!allied&&State.TouhouTeam&&target==2&&victim.Hp==0){victim.RoleState.DreamDue=0;victim.RoleState.DreamOrbs=0;}
                 if(live)action.NotifyHit(step.Heads);step.Effects=step.Effects.Concat(action.DrainEffects()).ToArray();last=step;
                 if(!allied&&damage>0&&State.Kinds[source]=="scout"&&target==0&&State.Preparation>0){State.Preparation=0;Emit(events,"ability","裂影斥候命中，移除灰烬准备",0,source);}
-                var ev=Emit(events,"strike",CoinLog.Attack(step)+"；"+(skill.NoDamage?"辅助效果不造成直接伤害":live?victim.Name+" 实伤 "+damage+(blocked>0?" / 盾吸收 "+blocked:""):"目标已退场，不再命中"),allied?source:target,allied?target:source);ev.Damage=damage;ev.Coin=step;
+                var ev=Emit(events,"strike",CoinLog.Attack(step)+"；"+(skill.NoDamage?"辅助效果不造成直接伤害":live?victim.Name+" 实伤 "+damage+(blocked>0?" / 盾吸收 "+blocked:""):"目标已退场，不再命中"),allied?source:target,allied?target:source);ev.Damage=damage;ev.Coin=step;ev.AttackerAllied=allied;
             }
             action.CompleteAttack();if(last!=null){var end=Emit(events,"attack_end",action.Skill.Name+" 攻击结束："+action.AttackCount+" 次，累计原始 "+action.TotalRawDamage,allied?source:target,allied?target:source);end.Coin=last.Copy();end.Coin.Left=action.Snapshot();end.Coin.Effects=action.DrainEffects();}
         }

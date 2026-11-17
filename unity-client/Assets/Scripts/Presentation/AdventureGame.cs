@@ -78,9 +78,8 @@ namespace ClashRoguelike
             foreach(var e in portRules.ResolveStream())
             {
                 portEvent=e;portShown=e.Snapshot.Copy(false);portNotice=e.Coin==null?e.Message:CoinHint(e.Coin,e.Type);Log(e.Message);portPhase=0;
-                if(!muted&&(e.Type=="clash"||e.Type=="strike"))audioSource.PlayOneShot(e.Type=="clash"?clashClip:hitClip);
                 float duration=e.Type=="clash"?1.25f:e.Type=="strike"?.95f:e.Type=="clash_end"||e.Type=="attack_end"?1f:.15f;
-                if(portSkip){portPhase=1;yield return null;}else while(portPhase<1&&!portSkip){portPhase+=Time.unscaledDeltaTime*speed/duration;yield return null;}
+                yield return PlayBattleBeat(e.Type,e.Coin,duration,p=>portPhase=p,()=>portSkip);
             }
             portEvent=null;portRules.NextRound();portShown=portRules.Snapshot();portBusy=false;portHero=-1;portSlot=-1;portNotice=portShown.Outcome==""?"新回合，点击角色继续安排。":portShown.Outcome=="victory"?"战斗胜利，可返回地图。":"战斗失败，可返回地图。";
         }
@@ -142,6 +141,7 @@ namespace ClashRoguelike
             DrawPortStatuses();
             Panel(new Rect(30,162,1380,355),Hex("12202A"),Hex("35474F"));Fill(new Rect(31,391,1378,125),Hex("0D1922"));Line(new Vector2(31,414),new Vector2(1408,414),Hex("3F4A47"),2);
             for(int i=0;i<3;i++)DrawPortUnit(true,i);for(int i=0;i<2;i++)DrawPortUnit(false,i);
+            if(portEvent!=null)DrawImpactBurst(portEvent.Type,portPhase);
             if(portEvent!=null&&portEvent.Coin!=null)DrawCoinPanel(portEvent.Coin,portEvent.Type,portPhase,portEvent.Damage);
             if(!portShown.TouhouTeam&&(portEvent==null||portEvent.Coin==null))Label(50,486,1340,24,portNotice,12,Muted);
             Label(40,527,1000,32,PortGuide(),15,Gold,TextAnchor.MiddleCenter);
@@ -163,7 +163,11 @@ namespace ClashRoguelike
         {
             var units=allied?portShown.Heroes:portShown.Enemies;var u=units[index];float x=allied?(portBusy?110+index*150:180+index*147):(portBusy?1095+index*190:1010+index*215),y=390;
             bool selected=allied&&portHero==index;Color tint=u.Hp<=0?Hex("35414A"):allied?(index==2?Cyan:Gold):Red;
-            if(portEvent!=null&&(portEvent.Hero==index&&allied||portEvent.Enemy==index&&!allied)&&(portEvent.Type=="clash"||portEvent.Type=="strike"))x+=(allied?1:-1)*Mathf.Sin(Mathf.Clamp01(portPhase)*Mathf.PI)*24;
+            if(portEvent!=null&&(portEvent.Hero==index&&allied||portEvent.Enemy==index&&!allied)){
+                bool attacker=portEvent.Type=="clash"||portEvent.Type=="strike"&&portEvent.AttackerAllied==allied;
+                if(attacker)x+=(allied?1:-1)*ImpactTravel(portPhase);
+                else if(portEvent.Type=="strike"){x+=(allied?-1:1)*ImpactRecoil(portPhase);if(portPhase>=.45f&&portPhase<.58f)tint=Pale;}
+            }
             bool legal=!allied&&PortTargetLegal(DefaultTarget(index));if(selected||legal)Outline(new Rect(x-61,y-127,128,169),selected?Gold:Cyan,2);
             DrawPortFigure(allied,index,x,y,tint);
             Label(x-77,421,165,27,u.Name,17,selected?Gold:Pale,TextAnchor.MiddleCenter);Fill(new Rect(x-60,454,135,5),Hex("25353D"));Fill(new Rect(x-60,454,135*(float)u.Hp/u.MaxHp,5),allied?Cyan:Red);Label(x-70,462,155,21,u.Hp+" / "+u.MaxHp+(u.Shield>0?" 盾"+u.Shield:""),11,Muted,TextAnchor.MiddleCenter);

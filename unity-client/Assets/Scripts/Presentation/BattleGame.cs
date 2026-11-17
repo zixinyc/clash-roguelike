@@ -221,9 +221,8 @@ namespace ClashRoguelike
                 current=e; phase=0;
                 // A snapshot belongs to one event; the renderer never resolves damage.
                 shown=e.Snapshot.Copy(); string message=Describe(e); if(message!="") { notice=e.Coin==null?message:CoinHint(e.Coin,e.Type); Log(message); }
-                if(!muted && (e.Type=="strike" || e.Type=="clash")) audioSource.PlayOneShot(e.Type=="strike"?hitClip:clashClip);
                 float duration=e.Type=="clash"?1.25f:e.Type=="strike"?.95f:e.Type=="clash_end"||e.Type=="attack_end"?1f:.22f;
-                if(legacySkip){phase=1;yield return null;}else while(phase<1&&!legacySkip) { phase+=Time.unscaledDeltaTime*speed/duration; yield return null; }
+                yield return PlayBattleBeat(e.Type,e.Coin,duration,p=>phase=p,()=>legacySkip);
             }
             current=null; shown=rules.State.Copy(); busy=false;
             roundPlanCount=0; selection.Clear(); if(shown.Outcome=="") notice=selection.Message;
@@ -360,6 +359,7 @@ namespace ClashRoguelike
             Label(1110,126,260,27,current!=null&&current.Speed>0?"当前结算速度  "+current.Speed:"敌方计划行动已公开",12,Muted);
             for(int i=0;i<3;i++) DrawUnit(true,i);
             for(int i=0;i<2;i++) DrawUnit(false,i);
+            if(current!=null)DrawImpactBurst(current.Type,phase);
             if(current!=null&&current.Coin!=null)DrawCoinPanel(current.Coin,current.Type,phase,current.Damage);
             if(current!=null && (current.Type=="strike"||current.Type=="clash") && phase<0.6f)
             {
@@ -376,7 +376,8 @@ namespace ClashRoguelike
             bool selected=allied?hero==index:selection.LastEnemy==index;
             bool validTarget=!allied&&Interactive&&selection.CanTarget(index);
             if(current!=null && ((current.Type=="clash"&&(allied?current.Hero==index:current.Enemy==index)) || (current.Type=="strike"&&current.Allied==allied&&current.Source==index)))
-                x+=(allied?1:-1)*Mathf.Sin(Mathf.Clamp01(phase)*Mathf.PI)*90;
+                x+=(allied?1:-1)*ImpactTravel(phase);
+            if(current!=null&&current.Type=="strike"&&current.Allied!=allied&&current.Target==index)x+=(allied?-1:1)*ImpactRecoil(phase);
             Color tint=u.Hp<=0?Hex("35414A"):allied?(index==2?Cyan:Gold):Red;
             if(!allied&&Interactive&&selection.WaitingForTarget&&!validTarget) tint=Color.Lerp(tint,Hex("35414A"),0.75f);
             if(allied&&selected) Outline(new Rect(x-61,y-127,128,169),Gold,3);

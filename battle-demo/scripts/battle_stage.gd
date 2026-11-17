@@ -4,6 +4,7 @@ extends Control
 signal unit_selected(allied: bool, index: int)
 signal slot_selected(allied: bool, index: int)
 signal aim_committed(source: int, target: int)
+signal impact_sound(kind: String)
 var active_slot := 0
 var target_slot := 0
 var dragging := -1
@@ -30,6 +31,7 @@ var motions: Array[Vector2] = [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2
 var flashes: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
 var impact := 0.0
 var sparks := 0.0
+var holding_impact := false
 var overlay: Dictionary = {}
 var banner := ""
 var floaters: Array[Dictionary] = []
@@ -64,8 +66,11 @@ func reset_visuals() -> void:
 	banner = ""
 	impact = 0.0
 	sparks = 0.0
+	holding_impact = false
 
 func _process(delta: float) -> void:
+	if holding_impact:
+		return
 	time += delta
 	impact = maxf(0.0, impact - delta * 3.5)
 	sparks = maxf(0.0, sparks - delta * 2.0)
@@ -315,10 +320,17 @@ func play_event(event: Dictionary, speed: float) -> void:
 		"clash":
 			var hero_id: int = event.hero
 			var enemy_id: int = event.enemy + 3
+			var decisive: bool = event.hero_remaining == 0 or event.enemy_remaining == 0
 			overlay = event
+			await _move_pair(hero_id, enemy_id, Vector2(-12, 0), Vector2(12, 0), 0.12 * duration)
 			await _move_pair(hero_id, enemy_id, Vector2(620, 282) - POINTS[hero_id], Vector2(766, 282) - POINTS[enemy_id], 0.16 * duration)
+			impact_sound.emit("strike" if decisive else "clash")
 			sparks = 1.0
-			impact = 0.65
+			impact = 1.0 if decisive else 0.65
+			holding_impact = true
+			queue_redraw()
+			await get_tree().create_timer((0.30 if decisive else 0.18) * duration).timeout
+			holding_impact = false
 			await get_tree().create_timer(0.20 * duration).timeout
 			var result_text := "平局 · 再次交锋"
 			if event.decider:
@@ -336,12 +348,17 @@ func play_event(event: Dictionary, speed: float) -> void:
 			var victim: int = event.target + 3 if event.allied else event.target
 			var direction := 1.0 if event.allied else -1.0
 			var travel: Vector2 = POINTS[victim] - POINTS[attacker] - Vector2(92 * direction, 0)
+			await _move_pair(attacker, victim, Vector2(-14 * direction, 0), Vector2.ZERO, 0.10 * duration)
 			await _move_pair(attacker, victim, travel, Vector2.ZERO, 0.15 * duration)
+			impact_sound.emit("strike")
 			impact = 1.0
 			flashes[victim] = 1.0
 			floaters.append({"text": "−%d" % event.damage, "position": POINTS[victim] + Vector2((event.hit - 1) * 18 - 12, -152 - (event.hit - 1) * 19), "age": 0.0, "color": RED if not event.allied else GOLD, "size": 33})
-			await get_tree().create_timer(0.09 * duration).timeout
-			await _move_pair(attacker, victim, Vector2.ZERO, Vector2(17 * direction, 0), 0.13 * duration)
+			holding_impact = true
+			queue_redraw()
+			await get_tree().create_timer((0.28 if event.hit == event.total else 0.17) * duration).timeout
+			holding_impact = false
+			await _move_pair(attacker, victim, Vector2.ZERO, Vector2(26 * direction, 0), 0.13 * duration)
 			await _move_pair(attacker, victim, Vector2.ZERO, Vector2.ZERO, 0.11 * duration)
 		"guard":
 			flashes[event.hero] = 0.5
