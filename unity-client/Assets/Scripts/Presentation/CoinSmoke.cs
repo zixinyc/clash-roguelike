@@ -10,7 +10,7 @@ namespace ClashRoguelike
     {
         IEnumerator CoinSmoke(string folder)
         {
-            Directory.CreateDirectory(folder);int coinChecks=CoinChecks.Run();int otherChecks=BattleRuleChecks.Run()+InteractionChecks.Run()+PanelChecks.Run()+PortChecks.Run()+ForestChecks.Run();
+            Directory.CreateDirectory(folder);int coinChecks=CoinChecks.Run();int otherChecks=BattleRuleChecks.Run()+InteractionChecks.Run()+PanelChecks.Run()+PortChecks.Run()+ForestChecks.Run()+TouhouChecks.Run();
             while(!UnityEngine.Rendering.SplashScreen.isFinished)yield return null;yield return null;yield return null;
             OpenPortBattle(false);SelectPortHero(0);SelectPortCard("probe");CommitPortTarget(DefaultTarget(0));
             yield return Capture(folder,"coin-skill-data");PreparePortRound();yield return Capture(folder,"coin-prepared");

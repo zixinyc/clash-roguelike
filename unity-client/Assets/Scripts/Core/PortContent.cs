@@ -7,18 +7,19 @@ namespace ClashRoguelike
     {
         public string Id,Name,Tag,Description,Flavor,Kind;
         public int Cost,Owner;public readonly CoinSkill CoinData;
+        public readonly bool TargetsEnemy,RequiresClash,NoDamage;
         public int Base {get{return CoinData.BasePower;}}public int BasePower {get{return CoinData.BasePower;}}
         public int ClashCoinPower {get{return CoinData.ClashCoinPower;}}public int AttackCoinPower {get{return CoinData.AttackCoinPower;}}
         public int Coins {get{return CoinData.CoinCount;}}public int CoinCount {get{return CoinData.CoinCount;}}
         public System.Collections.ObjectModel.ReadOnlyCollection<CoinEffect> Effects {get{return CoinData.Effects;}}
         public int Category { get { return Kind=="guard"?2:Kind=="ultimate"?1:0; } }
-        public PortCard(string id,string name,string tag,int cost,int basis,int clashPower,int attackPower,int coins,string description,string flavor,int owner,string kind,IEnumerable<CoinEffect> effects=null)
-        { Id=id;Name=name;Tag=tag;Cost=cost;CoinData=new CoinSkill(name,basis,clashPower,attackPower,coins,effects);Description=description;Flavor=flavor;Owner=owner;Kind=kind; }
+        public PortCard(string id,string name,string tag,int cost,int basis,int clashPower,int attackPower,int coins,string description,string flavor,int owner,string kind,IEnumerable<CoinEffect> effects=null,bool targeted=false,bool requiresClash=false,bool noDamage=false)
+        { Id=id;Name=name;Tag=tag;Cost=cost;CoinData=new CoinSkill(name,basis,clashPower,attackPower,coins,effects);Description=description;Flavor=flavor;Owner=owner;Kind=kind;TargetsEnemy=kind!="guard"||targeted;RequiresClash=requiresClash;NoDamage=noDamage; }
     }
     public static class PortContent
     {
         // Data translated from battle-demo/scripts/battle_rules.gd, not invented replacements.
-        public static readonly PortCard[] Cards = {
+        public static readonly PortCard[] Cards = new PortCard[] {
             new PortCard("cleave","断轨","重击",3,5,4,4,2,"高威力 · 两枚硬币","将退路，一并斩断。",-1,"attack"),
             new PortCard("ember","余烬斩","斩击",2,4,3,3,2,"均衡威力 · 两枚硬币","火熄灭前，再向前一步。",-1,"attack"),
             new PortCard("needle","穿隙","突刺",1,3,2,2,2,"低费用 · 两枚硬币","裂隙，往往只需一瞬。",-1,"attack"),
@@ -36,7 +37,7 @@ namespace ClashRoguelike
             new PortCard("all_in","破阵","长锋专属",3,7,4,4,2,"高威力；触发破阵者被动","赌上这一击。",1,"attack"),
             new PortCard("cover","护阵","织火专属",2,0,0,0,0,"自身获得 9 护盾；其他存活队友获得 6 护盾","火光护住同伴。",2,"guard"),
             new PortCard("risk","孤注","搏命",2,2,4,4,3,"波动威力 · 三枚硬币","把最后的余温，押上。",-1,"attack"),
-        };
+        }.Concat(TouhouRoles.Cards()).ToArray();
         public static PortCard Card(string id) { return Cards.First(x=>x.Id==id); }
         public static readonly string[] Hand={"cleave","ember","needle","steady","guard","nova","observe","all_in","cover","probe","exploit","follow","steady_edge","shatter","light_guard","support_strike"};
     }

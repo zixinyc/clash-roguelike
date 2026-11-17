@@ -1,6 +1,6 @@
 # 全新拼点与硬币系统 · 2026-11-17
 
-当前实现在 Unity 单机版中。地图、角色生命、速度规则、费用、奖励和原战斗胜负条件保留。Godot 的 `battle-demo` 是参考版本，本轮没有修改其 GDScript 战斗。
+当前实现在 Unity 单机版中。原森林小队生命、全局速度规则、费用、奖励和战斗胜负条件保留。新增角色来自已有设计的独立测试阵容，见 [角色整合说明](ROLE_INTEGRATION.md)。Godot 参考工程同步角色分支，Unity 是新规则主线。
 
 ## 本轮改变
 
@@ -82,11 +82,11 @@ var skill = new CoinSkill("猎人的突刺", 5, 2, 3, 3, new[] {
 | `Assets/Scripts/Presentation/CoinBattleView.cs`、`CoinSmoke.cs` | 新增硬币展示、滚动记录和实际播放器验收 |
 | `Assets/Scripts/Presentation/AdventureGame.cs`、`BattleGame.cs` | 卡面两种加值、共用展示、逐事件播放和快速演出 |
 | 新增源码的 `.meta` | Unity 资源标识 |
-| `Assets/Editor/ProjectTools.cs`、`Tools/BuildLocalPlayer.ps1` | 加入第六组硬币检查，检查失败不更新播放器 |
+| `Assets/Editor/ProjectTools.cs`、`Tools/BuildLocalPlayer.ps1` | 加入第七组硬币检查，检查失败不更新播放器 |
 | `README.md`、`COIN_SYSTEM.md`、`VALIDATION.md` | 当前运行、机制与验收说明 |
 | 公开副本 `ProjectSettings/ProjectSettings.asset` | 清空未使用的主机平台口令、签名路径等字符串；本地配置和 Windows 玩法未改 |
 
-地图核心、森林绘制与配置文件的 SHA-256 与本轮开始时一致。没有修改人物基础生命、速度范围、技能费用、资源规则或原战斗胜负判定。
+地图核心、地形绘制与配置文件的 SHA-256 与本轮开始时一致；地图设置页仅增加独立角色测试入口。没有修改人物基础生命、速度范围、技能费用、资源规则或原战斗胜负判定。
 
 ## 测试结果
 
@@ -98,7 +98,8 @@ var skill = new CoinSkill("猎人的突刺", 5, 2, 3, 3, new[] {
 | 转译模式与旧地图 | 131 |
 | 森林地图 | 135 |
 | 新硬币与效果专项 | 1,298 |
-| **合计** | **3,561** |
+| 角色与专属效果整合 | 86 |
+| **合计** | **3,647** |
 
 旧速度检查数量随完整战斗轮数变化而变化，不能将新增断言数等同于新增功能数。它们继续验证 60 个种子的完整战斗、速度次序和快照；转译模式还验证 30 个种子的确定性。硬币专项另覆盖 64 个种子的逐轮与逐击公式、数量守恒和攻击预算。
 

@@ -5,9 +5,9 @@
   "platform": "Windows x64 Mono",
   "build_method": "C# assembly compiled against existing Unity Mono player; not a new Unity Editor build",
   "archive": "ClashRoguelike-Unity-Windows-touhou.zip",
-  "archive_bytes": 27514727,
-  "archive_sha256": "132EF881A752899B347D60D051BB1A155E341923BEF97D1B1DCF202170F6BDBF",
-  "assembly_sha256": "0705C152086120C9BFB6E829871647F1560734B989E6A7D4E50135C32FE75C48",
+  "archive_bytes": 27528951,
+  "archive_sha256": "112D85B609D986B24AEB65994F308076DA3F580F206683C9E398D6F216663025",
+  "assembly_sha256": "A5930EA48592C8D973003BCF9047292C2F1B783DA0A0B85A2CAA4A337DDBBD12",
   "checks": {
     "speed_and_battle": 1944,
     "click": 28,
@@ -15,7 +15,9 @@
     "port": 131,
     "forest": 135,
     "coin": 1298,
-    "total": 3561
+    "total": 3647,
+    "touhou": 86
   },
-  "runtime_result": "Actual battle victory, forest elite objective and extraction, legacy battle victory, two screen sizes verified"
+  "runtime_result": "Actual original and Touhou battle victories, Sakuya World three slots with original five coins, Reimu Dream armed, forest elite and extraction, latest HUD, two screen sizes",
+  "role_design_source": "feat/touhou-characters@8949db251e32c75674b65d9e243562d76d27c097"
 }

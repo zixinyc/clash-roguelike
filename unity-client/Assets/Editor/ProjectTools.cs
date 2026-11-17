@@ -18,6 +18,7 @@ public static class ProjectTools
         int portChecks=PortChecks.Run();
         int forestChecks=ForestChecks.Run();
         int coinChecks=CoinChecks.Run();
+        int roleChecks=TouhouChecks.Run();Debug.Log("UNITY_TOUHOU_CHECKS_PASSED checks="+roleChecks);
         Debug.Log("UNITY_COIN_CHECKS_PASSED checks="+coinChecks);
         Debug.Log("UNITY_FOREST_CHECKS_PASSED checks="+forestChecks);
         Debug.Log("UNITY_GODOT_PORT_CHECKS_PASSED checks="+portChecks);
@@ -25,7 +26,7 @@ public static class ProjectTools
         Debug.Log("UNITY_CLICK_CHECKS_PASSED checks="+clickChecks);
         Debug.Log("UNITY_RULE_CHECKS_PASSED checks="+count);
         Directory.CreateDirectory("TestResults");
-        File.WriteAllText("TestResults/rules.txt","UNITY_RULE_CHECKS_PASSED checks="+count+Environment.NewLine+"UNITY_CLICK_CHECKS_PASSED checks="+clickChecks+Environment.NewLine+"UNITY_PANEL_CHECKS_PASSED checks="+panelChecks+Environment.NewLine+"UNITY_PORT_CHECKS_PASSED checks="+portChecks+Environment.NewLine+"UNITY_FOREST_CHECKS_PASSED checks="+forestChecks+Environment.NewLine+"UNITY_COIN_CHECKS_PASSED checks="+coinChecks+Environment.NewLine);
+        File.WriteAllText("TestResults/rules.txt","UNITY_RULE_CHECKS_PASSED checks="+count+Environment.NewLine+"UNITY_CLICK_CHECKS_PASSED checks="+clickChecks+Environment.NewLine+"UNITY_PANEL_CHECKS_PASSED checks="+panelChecks+Environment.NewLine+"UNITY_PORT_CHECKS_PASSED checks="+portChecks+Environment.NewLine+"UNITY_FOREST_CHECKS_PASSED checks="+forestChecks+Environment.NewLine+"UNITY_COIN_CHECKS_PASSED checks="+coinChecks+Environment.NewLine+"UNITY_TOUHOU_CHECKS_PASSED checks="+roleChecks+Environment.NewLine);
     }
     [MenuItem("Clash Roguelike/Open battle scene")]
     public static void OpenBattle() { EditorSceneManager.OpenScene(ScenePath); }

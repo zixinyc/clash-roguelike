@@ -15,6 +15,7 @@ namespace ClashRoguelike
         int portHero=-1,portSlot=-1,portPage,portPlanCount;
         string portCard="",portNotice="点击角色，查看专属技能。";
         bool portShared;
+        bool portExplicitSlot;
         float portPhase;
         string[] categoryNames={"进攻","大招","防御"};
         string[] heroNames={"灰烬","长锋","织火"};
@@ -32,37 +33,38 @@ namespace ClashRoguelike
             if(Input.GetKeyDown(KeyCode.Delete))CancelPortSlot();
             var visible=VisiblePortCards();for(int i=0;i<5;i++)if(Input.GetKeyDown((KeyCode)((int)KeyCode.Alpha1+i))&&portPage*5+i<visible.Length)SelectPortCard(visible[portPage*5+i].Id);
         }
-        void OpenPortBattle(bool map,int encounter=0)
+        void OpenPortBattle(bool map,int encounter=0,bool touhou=false)
         {
-            fromMap=map;portRules=map?(forestMode?forest.CreateBattle():exploration.CreateBattle()):new PortBattleRules(73129,encounter);portShown=portRules.Snapshot();portHero=-1;portSlot=-1;portCard="";portPrepared=false;portBusy=false;portPage=0;portEvent=null;
+            fromMap=map;portRules=map?(forestMode?forest.CreateBattle():exploration.CreateBattle()):new PortBattleRules(73129,encounter,touhou);portShown=portRules.Snapshot();portHero=-1;portSlot=-1;portCard="";portPrepared=false;portBusy=false;portPage=0;portEvent=null;portExplicitSlot=false;
             log.Clear();portNotice="敌方已规划。点击己方角色，选择技能与敌方行动。";
         }
         PortCard[] VisiblePortCards()
-        { return portHero<0?new PortCard[0]:PortContent.Hand.Select(PortContent.Card).Where(x=>portShared?x.Owner<0:x.Owner==portHero).ToArray(); }
+        { return portHero<0?new PortCard[0]:portRules.State.Hand.Select(PortContent.Card).Where(x=>portShared?x.Owner<0:x.Owner==portHero).ToArray(); }
         int DefaultTarget(int unit)
         {
             var available=portRules.State.EnemySlots.Where(x=>x.Unit==unit&&x.Active&&x.Category!=2).ToArray();
             var first=available.FirstOrDefault(x=>portRules.PairFor(x.Id)<0);return first!=null?first.Id:available.Length>0?available[0].Id:unit*3;
         }
         string PortCardError(string key)
-        { if(portHero<0)return "先选角色";return portRules.CanAssign(key,portRules.SlotFor(portHero,key),PortContent.Card(key).Category==2?-1:portRules.State.EnemySlots.FindIndex(x=>portRules.State.Enemies[x.Unit].Hp>0)); }
+        { if(portHero<0)return "先选角色";var skill=PortContent.Card(key);int slot=portRules.SlotFor(portHero,key,portExplicitSlot?portSlot:-1);if(!skill.TargetsEnemy)return portRules.CanAssign(key,slot,-1);var targets=portRules.State.EnemySlots.Where(x=>portRules.State.Enemies[x.Unit].Hp>0).ToArray();foreach(var t in targets)if(portRules.CanAssign(key,slot,t.Id)=="")return "";return targets.Length==0?"没有存活目标":portRules.CanAssign(key,slot,targets[0].Id); }
         void SelectPortHero(int actor)
         {
             if(portBusy||portPrepared||portRules.State.Outcome!=""||portRules.State.Heroes[actor].Hp<=0)return;
-            portHero=actor;portCard="";portPage=0;portShared=false;var previous=portRules.State.HeroSlots.Where(x=>x.Unit==actor&&x.Active).OrderByDescending(x=>x.Order).FirstOrDefault();portSlot=previous==null?actor*3:previous.Id;portNotice=heroNames[actor]+"：选择专属或通用技能。";
+            if(portRules.State.HeroSlots[actor*3].Frozen){portNotice="时停回合只有咲夜可以行动。";return;}
+            portHero=actor;portCard="";portPage=0;portShared=false;portExplicitSlot=false;var previous=portRules.State.HeroSlots.Where(x=>x.Unit==actor&&x.Active).OrderByDescending(x=>x.Order).FirstOrDefault();portSlot=previous==null?actor*3:previous.Id;portNotice=PortHeroName(actor)+"：选择专属或通用技能。";
         }
         void SelectPortCard(string key)
         {
             if(portBusy||portPrepared||portHero<0)return;string error=PortCardError(key);if(error!=""){portNotice=error;return;}
-            portCard=key;portSlot=portRules.SlotFor(portHero,key);
-            if(PortContent.Card(key).Category==2)CommitPortTarget(-1);else portNotice=PortContent.Card(key).Name+"：点击敌方角色或具体行动格。";
+            portCard=key;portSlot=portRules.SlotFor(portHero,key,portExplicitSlot?portSlot:-1);
+            if(!PortContent.Card(key).TargetsEnemy)CommitPortTarget(-1);else portNotice=PortContent.Card(key).Name+"：点击敌方角色或具体行动格。";
         }
         bool PortTargetLegal(int id)
         {return !portBusy&&!portPrepared&&portCard!=""&&portHero>=0&&portRules.CanAssign(portCard,portSlot,id)=="";}
         void CommitPortTarget(int id)
         {
             if(!PortTargetLegal(id))return;
-            if(portRules.Assign(portCard,portHero,id)) {portNotice=heroNames[portHero]+" · "+PortContent.Card(portCard).Name+" 已安排";Log(portNotice);portCard="";portShown=portRules.Snapshot();}
+            if(portRules.Assign(portCard,portHero,id,portSlot)) {portNotice=PortHeroName(portHero)+" · "+PortContent.Card(portCard).Name+" 已安排";Log(portNotice);portCard="";portExplicitSlot=false;portShown=portRules.Snapshot();}
         }
         void CancelPortSlot()
         {if(portBusy||portPrepared)return;if(portRules.Cancel(portSlot)){portCard="";portShown=portRules.Snapshot();portNotice="已撤销该行动，释放预留费用。";}}
@@ -133,69 +135,69 @@ namespace ClashRoguelike
         void DrawPortBattle()
         {
             Label(30,20,600,42,"余烬交锋 / 行动规划",29,Gold);
-            Label(30,68,650,26,"角色专属牌 · 每人两个分类行动 · 目标与速度公开，敌方技能隐藏",13,Muted);
+            Label(30,68,650,26,portShown.WorldActive?"时停回合 · 咲夜三个不限类别技能槽 · 敌方无法行动":"角色专属牌 · 每人两个分类行动 · 目标与速度公开，敌方技能隐藏",13,Muted);
             Label(700,25,190,40,"回合 "+portShown.Turn,24,Pale);Label(900,24,190,42,"cost "+portShown.Cost,28,Gold);
             Label(1100,25,120,36,portBusy?"演出中":portPrepared?"已准备":Math.Ceiling(portRules.State.Remaining)+" 秒",18,Cyan);
-            if(Btn(new Rect(1250,25,150,36),"演出 ×"+speed))speed=speed==1?2:speed==2?4:1;
-            Panel(new Rect(30,110,1380,407),Hex("12202A"),Hex("35474F"));Fill(new Rect(31,381,1378,135),Hex("0D1922"));Line(new Vector2(31,414),new Vector2(1408,414),Hex("3F4A47"),2);
+            if(Btn(new Rect(1250,25,150,36),"演出 ×"+speed))speed=speed==1?2:speed==2?4:1;DrawRosterSwitch();
+            DrawPortStatuses();
+            Panel(new Rect(30,162,1380,355),Hex("12202A"),Hex("35474F"));Fill(new Rect(31,391,1378,125),Hex("0D1922"));Line(new Vector2(31,414),new Vector2(1408,414),Hex("3F4A47"),2);
             for(int i=0;i<3;i++)DrawPortUnit(true,i);for(int i=0;i<2;i++)DrawPortUnit(false,i);
             if(portEvent!=null&&portEvent.Coin!=null)DrawCoinPanel(portEvent.Coin,portEvent.Type,portPhase,portEvent.Damage);
-            Label(50,486,1340,24,portNotice,12,Muted);
-            Label(32,533,1000,30,portNotice,15,Gold);Label(32,575,470,30,portHero<0?"点击己方角色查看技能":heroNames[portHero]+" · "+(portHero==0?"准备 "+portShown.Preparation:portHero==1?"高费拼点 +2 / 失败 −2 HP":"防御援护队友"),16,Cyan);
+            if(!portShown.TouhouTeam&&(portEvent==null||portEvent.Coin==null))Label(50,486,1340,24,portNotice,12,Muted);
+            Label(40,527,1000,32,PortGuide(),15,Gold,TextAnchor.MiddleCenter);
+            DrawPortCenteredActions();
+            Label(32,612,530,26,portHero<0?portBusy?"我方行动已锁定":portPrepared?"已准备 · 等待演示":"点击己方角色查看技能":PortHeroName(portHero)+" · "+PortRoleSummary(portHero),15,Cyan);
             GUI.enabled=!portBusy&&!portPrepared&&portHero>=0;
-            if(Btn(new Rect(575,573,110,31),"专属技能",!portShared)){portShared=false;portPage=0;}
-            if(Btn(new Rect(695,573,110,31),"通用技能",portShared)){portShared=true;portPage=0;}
+            if(Btn(new Rect(575,610,110,27),"专属技能",!portShared)){portShared=false;portPage=0;}
+            if(Btn(new Rect(695,610,110,27),"通用技能",portShared)){portShared=true;portPage=0;}
             var cards=VisiblePortCards();int pages=Math.Max(1,(cards.Length+4)/5);portPage=Math.Min(portPage,pages-1);
-            if(Btn(new Rect(823,573,90,31),"上一页"))portPage=(portPage+pages-1)%pages;
-            if(Btn(new Rect(923,573,130,31),(portPage+1)+" / "+pages+" 下一页"))portPage=(portPage+1)%pages;GUI.enabled=true;
-            if(portHero<0) {Panel(new Rect(32,625,1027,225),Hex("12202A"),Hex("35474F"));Label(100,699,880,60,portBusy?"按速度执行行动":"点击角色 → 技能 → 敌方角色或行动格",24,Muted,TextAnchor.MiddleCenter);}
+            if(Btn(new Rect(823,610,90,27),"上一页"))portPage=(portPage+pages-1)%pages;
+            if(Btn(new Rect(923,610,130,27),(portPage+1)+" / "+pages+" 下一页"))portPage=(portPage+1)%pages;GUI.enabled=true;
+            if(portHero<0) {Panel(new Rect(32,647,1027,203),Hex("12202A"),Hex("35474F"));Label(100,699,880,60,PortHandPlaceholder(),23,Muted,TextAnchor.MiddleCenter);}
             else for(int i=0;i<5&&portPage*5+i<cards.Length;i++)DrawPortCard(cards[portPage*5+i],i);
             DrawBattleJournal();DrawPortOperationPanel();Label(32,865,1120,24,"1–5 选当前页技能 · Delete 撤销选中行动格 · Enter 准备 / 演示 · R 重新探索",12,Muted);
             if(Btn(new Rect(1250,862,150,30),"重新探索")){StopAllCoroutines();InitializeAdventure();}
-            if(portShown.Outcome!=""&&!portBusy)DrawPortResult();
+            if(portShown.Outcome!=""&&!portBusy){DrawPortResult();DrawPortStatuses();}
         }
         void DrawPortUnit(bool allied,int index)
         {
-            var units=allied?portShown.Heroes:portShown.Enemies;var u=units[index];float x=allied?(portBusy?110+index*150:180+index*147):(portBusy?1095+index*190:1010+index*215),y=370;
+            var units=allied?portShown.Heroes:portShown.Enemies;var u=units[index];float x=allied?(portBusy?110+index*150:180+index*147):(portBusy?1095+index*190:1010+index*215),y=390;
             bool selected=allied&&portHero==index;Color tint=u.Hp<=0?Hex("35414A"):allied?(index==2?Cyan:Gold):Red;
             if(portEvent!=null&&(portEvent.Hero==index&&allied||portEvent.Enemy==index&&!allied)&&(portEvent.Type=="clash"||portEvent.Type=="strike"))x+=(allied?1:-1)*Mathf.Sin(Mathf.Clamp01(portPhase)*Mathf.PI)*24;
             bool legal=!allied&&PortTargetLegal(DefaultTarget(index));if(selected||legal)Outline(new Rect(x-61,y-127,128,169),selected?Gold:Cyan,2);
-            Fill(new Rect(x-15,y-119,31,32),tint);Fill(new Rect(x-25,y-81,51,66),Color.Lerp(tint,Hex("192630"),0.65f));
-            Line(new Vector2(x-10,y-22),new Vector2(x-22,y+27),tint,12);Line(new Vector2(x+10,y-22),new Vector2(x+27,y+27),tint,12);Line(new Vector2(x-21,y-69),new Vector2(x-43,y-16),tint,9);Line(new Vector2(x+21,y-69),new Vector2(x+46,y-38),tint,9);Line(new Vector2(x+40,y-25),new Vector2(x+(allied?81:-42),y-103),Pale,4);
+            DrawPortFigure(allied,index,x,y,tint);
             Label(x-77,421,165,27,u.Name,17,selected?Gold:Pale,TextAnchor.MiddleCenter);Fill(new Rect(x-60,454,135,5),Hex("25353D"));Fill(new Rect(x-60,454,135*(float)u.Hp/u.MaxHp,5),allied?Cyan:Red);Label(x-70,462,155,21,u.Hp+" / "+u.MaxHp+(u.Shield>0?" 盾"+u.Shield:""),11,Muted,TextAnchor.MiddleCenter);
-            GUI.enabled=!portBusy&&!portPrepared&&u.Hp>0;
+            if(!allied&&portShown.TouhouTeam)Label(x-80,485,170,25,"退治 "+u.Exorcism+"/4"+(u.ExorcismActive?" · 引爆":"")+(u.SealActive?" · 封魔":""),11,Red,TextAnchor.MiddleCenter);
+            GUI.enabled=!portBusy&&!portPrepared&&u.Hp>0&&(!allied||!portShown.HeroSlots[index*3].Frozen);
             if(GUI.Button(new Rect(x-67,y-130,144,174),GUIContent.none,GUIStyle.none)){if(allied)SelectPortHero(index);else CommitPortTarget(DefaultTarget(index));}GUI.enabled=true;
             var slots=allied?portShown.HeroSlots:portShown.EnemySlots;
             foreach(var s in slots.Where(a=>a.Unit==index))
             {
-                Rect r=new Rect(x-71,145+s.Category*30,portBusy&&allied?138:150,25);bool target=!allied&&PortTargetLegal(s.Id);string label=categoryNames[s.Category]+" "+s.Speed;
-                if(s.Active)label+=" · "+(allied?PortContent.Card(s.Key).Name:portShown.Phase=="response"?s.Category==2?"防御":"→ "+heroNames[s.Target]:PortContent.Card(s.Key).Name);
+                Rect r=new Rect(x-71,176+s.Category*28,portBusy&&allied?138:150,25);bool target=!allied&&PortTargetLegal(s.Id);string label=(s.Frozen?"停时":s.Flexible?"技能"+(s.Category+1):categoryNames[s.Category])+" "+s.Speed;
+                if(s.Active)label+=" · "+(allied?PortContent.Card(s.Key).Name:portShown.Phase=="response"?s.Category==2?"防御":"→ "+PortHeroName(s.Target):PortContent.Card(s.Key).Name);
                 else label+=" · 空";
                 Panel(r,Hex("172630"),target?Cyan:allied&&portSlot==s.Id?Gold:s.Active?Hex("667369"):Hex("293941"));Label(r.x+4,r.y+2,r.width-8,23,label,12,s.Active?Pale:Muted,TextAnchor.MiddleCenter);
-                GUI.enabled=!portBusy&&!portPrepared&&(allied?u.Hp>0:target);
-                if(GUI.Button(r,GUIContent.none,GUIStyle.none)){if(allied){SelectPortHero(index);portSlot=s.Id;}else CommitPortTarget(s.Id);}GUI.enabled=true;
+                GUI.enabled=!portBusy&&!portPrepared&&(allied?u.Hp>0&&!s.Frozen:target);
+                if(GUI.Button(r,GUIContent.none,GUIStyle.none)){if(allied){SelectPortHero(index);portSlot=s.Id;portExplicitSlot=true;}else CommitPortTarget(s.Id);}GUI.enabled=true;
             }
         }
         void DrawPortCard(PortCard c,int index)
         {
-            float x=32+index*208,y=portCard==c.Id?620:628;Rect r=new Rect(x,y,195,220);string error=PortCardError(c.Id);bool available=error==""&&!portBusy&&!portPrepared;
+            float x=32+index*208,y=portCard==c.Id?639:647;Rect r=new Rect(x,y,195,203);string error=PortCardError(c.Id);bool available=error==""&&!portBusy&&!portPrepared;
             Panel(r,available?Hex("192630"):Hex("111C24"),portCard==c.Id?Gold:Hex("3C4C51"));Label(x+13,y+8,130,24,c.Tag,12,Cyan);Label(x+153,y+6,30,34,c.Cost.ToString(),26,Gold);
-            Label(x+13,y+43,170,38,c.Name,23,Pale);Label(x+13,y+85,170,26,c.Category==2?"盾  +9":"初始 "+c.Base+"  ·  "+c.Coins+" 枚",18,Gold);
-            if(c.Category!=2)Label(x+13,y+114,174,24,"拼币 +"+c.ClashCoinPower+"  /  攻币 +"+c.AttackCoinPower,12,Cyan);Label(x+13,y+146,170,64,c.Description,12,Muted);
-            if(!available)Fill(new Rect(x+1,y+1,193,218),new Color(0.03f,0.05f,0.07f,0.3f));GUI.enabled=available;
-            if(GUI.Button(r,new GUIContent("",error==""?c.Description:error),GUIStyle.none))SelectPortCard(c.Id);GUI.enabled=true;
+            Label(x+13,y+43,170,38,c.Name,23,Pale);Label(x+13,y+85,170,26,!c.TargetsEnemy?"盾  +9":"初始 "+c.Base+"  ·  "+c.Coins+" 枚",18,Gold);
+            if(c.TargetsEnemy)Label(x+13,y+114,174,24,"拼币 +"+c.ClashCoinPower+"  /  攻币 +"+c.AttackCoinPower,12,Cyan);Label(x+13,y+142,170,50,c.Description,12,Muted);
+            if(!available)Fill(new Rect(x+1,y+1,193,201),new Color(0.03f,0.05f,0.07f,0.3f));GUI.enabled=available;
+            if(GUI.Button(r,new GUIContent("",c.Description+(error==""?"":"\n"+error)),GUIStyle.none))SelectPortCard(c.Id);GUI.enabled=true;
         }
         void DrawPortOperationPanel()
         {
-            int count=portBusy?portPlanCount:portShown.PlanCount;Panel(new Rect(1080,680,330,170),Hex("12202A"),Hex("35474F"));Label(1098,690,294,24,"本回合行动   "+count+" / 6",16,Gold);
-            int step=portHero<0?0:portCard!=""?2:1;for(int i=0;i<3;i++)Label(1098+i*100,719,95,22,new[]{"1 角色","2 技能","3 目标"}[i],13,!portBusy&&!portPrepared&&step==i?Gold:Muted);
-            Label(1098,747,294,40,portBusy?"按速度从高到低执行。":portPrepared?"已准备，点击演示一回合。":portCard!=""?"点击敌方角色，或精确点击行动格。":portHero<0?"点击己方角色。":"可安排两种分类的行动。",13,Pale);
-            Label(1098,785,294,22,"预留 "+portShown.Reserved+" / 可用 "+(portShown.Cost-portShown.Reserved)+" cost",12,Muted);
-            GUI.enabled=portPrepared&&!portBusy||CanPreparePort;
-            if(Btn(new Rect(1098,812,188,28),portBusy?"正在演出":portPrepared?"演示一回合":"准备完成",true)){if(portPrepared)StartPortRound();else PreparePortRound();}GUI.enabled=true;
-            if(portBusy){if(Btn(new Rect(1294,812,98,28),"跳过演出"))SkipPort();}
-            else if(portPrepared){if(Btn(new Rect(1294,812,98,28),"调整安排"))portPrepared=false;}
-            else {GUI.enabled=portSlot>=0&&portShown.HeroSlots[portSlot].Active;if(Btn(new Rect(1294,812,98,28),"撤销安排"))CancelPortSlot();GUI.enabled=true;}
+            int count=portBusy?portPlanCount:portShown.PlanCount;Panel(new Rect(1080,647,330,203),Hex("12202A"),Hex("35474F"));Label(1098,660,294,27,"本回合行动   "+count+" / "+(portShown.WorldActive?3:6),18,Gold);
+            Label(1098,698,294,26,"预留 "+portShown.Reserved+" / 可用 "+(portShown.Cost-portShown.Reserved)+" cost",14,Cyan);
+            string detail=portCard!=""?PortContent.Card(portCard).Name+"\n"+PortContent.Card(portCard).Description:GUI.tooltip;
+            if(portShown.TouhouTeam&&!string.IsNullOrEmpty(detail))Label(1098,737,294,102,detail,12,Pale);
+            else{Label(1098,737,294,48,portCard!=""?"点击敌方本体可自动选行动；点击行动格可精确指定。":"同速可以接招；最后有效指定获得拼点。",14,Pale);
+            Label(1098,797,294,42,portPrepared?"已锁定，费用尚未支付。":portBusy?"正在依次结算并播放行动。":"安排只预留费用，可以撤销或改牌。",13,Muted);}
         }
         void DrawPortResult()
         {
@@ -204,8 +206,9 @@ namespace ClashRoguelike
             Label(480,400,480,60,"回合 "+portShown.Turn+"  ·  余额 "+portShown.Cost+" cost\n生命与余额将带回地图。",18,Pale,TextAnchor.MiddleCenter);
             if(Btn(new Rect(560,515,320,48),"返回地图",true))ReturnPortMap();
         }
-        void AutoPortPlan()
+        void FillPortPlans()
         {
+            if(portRules.State.TouhouTeam){FillTouhouPlans();return;}
             string[][] preferred={new[]{"exploit","probe","nova","guard"},new[]{"all_in","steady_edge","shatter","guard"},new[]{"support_strike","light_guard","cover","nova"}};
             for(int h=0;h<3;h++)
             {
@@ -217,8 +220,9 @@ namespace ClashRoguelike
                     portRules.Assign(key,h,PortContent.Card(key).Category==2?-1:DefaultTarget(target));
                 }
             }
-            portShown=portRules.Snapshot();portPrepared=true;StartPortRound();
+            portShown=portRules.Snapshot();
         }
+        void AutoPortPlan(){FillPortPlans();portPrepared=true;StartPortRound();}
         IEnumerator AdventureSmoke(string folder)
         {
             Directory.CreateDirectory(folder);int portChecks=PortChecks.Run();int legacyChecks=BattleRuleChecks.Run()+InteractionChecks.Run()+PanelChecks.Run();

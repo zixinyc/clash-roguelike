@@ -64,6 +64,10 @@ namespace ClashRoguelike
                 if(forestSmoke!=null)StartCoroutine(ForestSmoke(forestSmoke.Substring("--forest-smoke=".Length)));
                 string coinSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--coin-smoke="));
                 if(coinSmoke!=null)StartCoroutine(CoinSmoke(coinSmoke.Substring("--coin-smoke=".Length)));
+                string guidanceSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--guidance-smoke="));
+                if(guidanceSmoke!=null)StartCoroutine(GuidanceSmoke(guidanceSmoke.Substring("--guidance-smoke=".Length)));
+                string touhouSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--touhou-smoke="));
+                if(touhouSmoke!=null)StartCoroutine(TouhouSmoke(touhouSmoke.Substring("--touhou-smoke=".Length)));
                 if(Environment.GetCommandLineArgs().Contains("--grid"))forestMode=false;
                 if(Environment.GetCommandLineArgs().Contains("--legacy")) adventureMode=false;
             }

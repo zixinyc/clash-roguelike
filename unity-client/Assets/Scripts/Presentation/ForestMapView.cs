@@ -169,13 +169,14 @@ namespace ClashRoguelike
         }
         void DrawForestSettings()
         {
-            Fill(new Rect(0,0,1440,900),new Color(0,0,0,.8f));Panel(new Rect(455,200,530,510),Hex("12202A"),Gold);Label(485,225,470,44,"废林设定",27,Gold);
+            Fill(new Rect(0,0,1440,900),new Color(0,0,0,.8f));Panel(new Rect(455,200,530,530),Hex("12202A"),Gold);Label(485,225,470,44,"废林设定",27,Gold);
             Label(485,287,470,70,forestSource+" · 种子 "+forest.Map.Seed+"\n单机小队探索；兽群是环境敌人。",16,Pale);
             if(Btn(new Rect(485,375,470,40),forestAmbient?"环境余火：开":"环境余火：关"))forestAmbient=!forestAmbient;
             if(Btn(new Rect(485,428,470,40),"新探索 · 预设地图"))InitializeForest();
             if(Btn(new Rect(485,481,470,40),"新探索 · 种子变体"))InitializeForest((forest.Map.Seed+7919)&int.MaxValue,true);
             if(Btn(new Rect(485,534,470,40),"旧方格地图 · 对照入口")){forestMode=false;forestSettings=false;exploration=new ExplorationRun();}
-            if(Btn(new Rect(485,603,470,40),"返回森林",true))forestSettings=false;
+            if(Btn(new Rect(485,585,470,36),"角色测试 · 咲夜 / 灵梦")){forestSettings=false;OpenPortBattle(false,0,true);}
+            if(Btn(new Rect(485,651,470,40),"返回森林",true))forestSettings=false;
         }
         void DrawForestFinish()
         {

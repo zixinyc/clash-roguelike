@@ -1,14 +1,15 @@
 # touhou · Unity 单机成品分支
 
-本分支新增可编辑的 **Unity 2022.3.62f3c1** 工程和 **Windows 64 位运行包**，包含森林节点地图、迷雾探索及 2026-11-17 新拼点/逐枚硬币攻击机制。main 分支与下方 Godot 参考代码保持原样。
+本分支新增可编辑的 **Unity 2022.3.62f3c1** 工程和 **Windows 64 位运行包**，包含森林节点地图、迷雾探索及 2026-11-17 新拼点/逐枚硬币攻击机制。main 分支保留；本分支同步角色设计的 Godot 参考，Unity 为新规则可玩主线。
 
 - [直接下载 Windows 完整成品](https://github.com/zixinyc/clash-roguelike/raw/refs/heads/touhou/releases/ClashRoguelike-Unity-Windows-touhou.zip)：解压后运行 ClashRoguelike.exe，试玩不需要安装 Unity。
 - 或下载本分支整个 ZIP，解压后双击根目录 **启动Unity单机版.cmd**。
 - [Unity 工程、运行与构建说明](unity-client/README.md)。
 - [新拼点机制、效果扩展、修改清单和 12 项验收](unity-client/COIN_SYSTEM.md)。
-- [实际验证与构建限制](unity-client/VALIDATION.md)。六组共 **3,561** 项断言，实际新战斗与森林撤离通过。
+- [角色设计与兼容说明](unity-client/ROLE_INTEGRATION.md)：博丽灵梦、十六夜咲夜、8个专属技能和最新状态/居中操作界面。
+- [实际验证与构建限制](unity-client/VALIDATION.md)。七组共 **3,647** 项断言，实际新战斗与森林撤离通过。
 
-本轮使用既有 Unity Mono 播放器重新编译程序集并验收；本机许可限制尚未解决，未声称完成编辑器全量构建。旧追击额外攻击已停用；多人/PVP、存档和正式美术未完成。Godot 的 battle-demo 没有自动迁移到新规则，请用 Unity 成品验证本轮变化。
+本轮使用既有 Unity Mono 播放器重新编译程序集并验收；本机许可限制尚未解决，未声称完成编辑器全量构建。旧追击额外攻击已停用；多人/PVP、存档和正式美术未完成。Godot 的 battle-demo 同步了角色源分支但保留其规则差异，请用 Unity 成品验证新硬币机制。角色入口：森林设置 → 角色测试，或单场顶部切换阵容。
 
 ![新拼点实机](unity-client/Preview/coin-clash.png)
 

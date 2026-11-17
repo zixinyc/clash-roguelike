@@ -12,7 +12,7 @@ namespace ClashRoguelike
         {foreach(var e in b.State.EnemySlots)e.Active=false;b.State.EnemySlots[0].Active=true;b.State.EnemySlots[0].Key="ember";b.State.EnemySlots[0].Target=0;b.State.Enemies[0].Hp=500;b.State.Enemies[0].MaxHp=500;}
         public static int Run()
         {
-            checks=0;Check(PortContent.Cards.Length==17&&PortContent.Hand.Length==16,"translated definitions and hand");
+            checks=0;Check(PortContent.Cards.Length==25&&PortContent.Hand.Length==16,"translated definitions and hand");
             var b=new PortBattleRules();Check(b.State.Cost==30&&b.State.HeroSlots.Count==9&&b.State.EnemySlots.Count==6,"source economy and slot layout");
             Check(b.State.Heroes[0].Hp==48&&b.State.Heroes[1].Hp==42&&b.State.Heroes[2].Hp==46,"source role HP");
             Check(b.Snapshot().EnemySlots.All(x=>x.Key==""&&x.Card==-1)&&b.State.EnemySlots.Any(x=>x.Key!=""),"enemy cards hidden in response snapshot");

@@ -24,6 +24,8 @@ var selected_slot := 0
 var selected_target := 0
 var encounter := 0
 var encounter_button: Button
+var team_button: Button
+var touhou_team := false
 var busy := false
 var speed := 2.0
 var last_second := -1
@@ -65,6 +67,8 @@ func _ready() -> void:
 	top.add_child(clock_label)
 	encounter_button = button("切换敌组：斥候 / 盾卫（重开）", _switch_encounter)
 	top.add_child(encounter_button)
+	team_button = button("测试阵容", _switch_team)
+	top.add_child(team_button)
 	restart_button = button("重新开始", new_battle)
 	top.add_child(restart_button)
 	var fast := button("演出 ×2", func() -> void: speed = 4.0 if speed == 2.0 else 2.0)
@@ -172,10 +176,17 @@ func _switch_encounter() -> void:
 	encounter_button.text = "切换敌组：斥候 / 盾卫（重开）" if encounter == 0 else "切换敌组：祭司 / 行刑者（重开）"
 	new_battle()
 
+func _switch_team() -> void:
+	if busy:
+		return
+	touhou_team = not touhou_team
+	new_battle()
+
 func new_battle() -> void:
 	if busy:
 		return
-	battle.start(73129, encounter)
+	battle.start(73129, encounter, touhou_team)
+	team_button.text = "原阵容" if touhou_team else "测试阵容"
 	stage.reset_visuals()
 	selected_card = -1
 	selected_slot = 0
@@ -208,7 +219,11 @@ func _refresh(state: Dictionary) -> void:
 	hero_picker.clear()
 	enemy_picker.clear()
 	for slot in state.hero_slots:
-		hero_picker.add_item("%s(%s) · %s · 速度 %d%s" % [state.heroes[slot.unit].name, state.heroes[slot.unit].role, Rules.CATEGORIES[slot.category], slot.speed, " · " + Rules.SKILLS[slot.key].name if slot.active else " · 空"])
+		var category: String = "技能" if slot.get("flexible", false) else Rules.CATEGORIES[slot.category]
+		var action: String = " · " + Rules.SKILLS[slot.key].name if slot.active else " · 空"
+		if slot.get("frozen", false):
+			action = " · 停时"
+		hero_picker.add_item("%s(%s) · %s · 速度 %d%s" % [state.heroes[slot.unit].name, state.heroes[slot.unit].role, category, slot.speed, action])
 	for slot in state.enemy_slots:
 		var detail := "待机"
 		if slot.active:
@@ -223,6 +238,7 @@ func _refresh(state: Dictionary) -> void:
 		control.disabled = busy or state.phase != "response"
 	restart_button.disabled = busy
 	encounter_button.disabled = busy
+	team_button.disabled = busy
 	ready_button.text = "交锋进行中" if busy else "准备交锋  ·  Enter"
 	var count := 0
 	for slot in state.hero_slots:
@@ -233,6 +249,9 @@ func _refresh(state: Dictionary) -> void:
 	guide.text = "选择角色和手牌，再用行动格拖向目标，或点击「安排」"
 	if count > 0:
 		guide.text = "已安排 %d 次行动 · 可继续选牌或撤销调整；安排完毕点击「准备交锋」" % count
+	if state.hero_slots[3].get("flexible", false):
+		enemy_status.text = "敌方  ·  时间停止"
+		guide.text = "本回合只有咲夜能行动，可以在三个技能槽安排任意类别的牌"
 	if busy:
 		ally_status.text = "我方  ·  已准备    交锋中"
 		enemy_status.text = "敌方  ·  已准备    技能已揭晓"
@@ -253,6 +272,9 @@ func _hint() -> void:
 	if battle.heroes[h.unit].hp <= 0:
 		hint.text = "该成员已退场。请选择存活队员。"
 		return
+	if h.get("frozen", false):
+		hint.text = "时间停止，本回合只有咲夜可以行动"
+		return
 	if selected_card < 0:
 		hint.text = "选择一张牌查看效果。数字键对应当前手牌的编号。"
 		return
@@ -261,20 +283,20 @@ func _hint() -> void:
 	if not error.is_empty():
 		hint.text = "%s · %s" % [card.skill.name, error]
 		return
-	if card.skill.kind == "guard":
+	if not Rules.targets_enemy(card.skill_key):
 		hint.text = "%s · %s" % [card.skill.name, card.effect_text()]
 		return
 	var e: Dictionary = battle.enemy_slots[selected_target]
 	var response := "单方面攻击"
 	if e.active and e.category != 2:
-		response = "迎击自身受到的攻击" if e.target == h.unit else ("速度更高，可替队友接招" if h.speed > e.speed else "速度不足以接招，双方各自攻击")
+		response = "迎击自身受到的攻击" if e.target == h.unit else ("可替队友接招" if battle.can_clash(h, e) else "速度不足以接招，双方各自攻击")
 	hint.text = "%s · %s｜%d 枚硬币，每个正面 +%d｜%s" % [card.skill.name, card.effect_text(), card.skill.coins, card.skill.power, response]
 
 func _change_slot(index: int) -> void:
 	if index / 3 != selected_slot / 3:
 		hand_view.show_shared = false
 		selected_card = -1
-	elif selected_card >= 0 and battle.category_for(battle.hand[selected_card]) != index % 3:
+	elif selected_card >= 0 and not battle.hero_slots[index].get("flexible", false) and battle.category_for(battle.hand[selected_card]) != index % 3:
 		selected_card = -1
 	selected_slot = index
 
@@ -293,7 +315,8 @@ func _select_card(index: int) -> void:
 	if battle.heroes[selected_slot / 3].hp <= 0:
 		return
 	selected_card = index
-	selected_slot = selected_slot / 3 * 3 + battle.category_for(battle.hand[index])
+	if not battle.hero_slots[selected_slot].get("flexible", false):
+		selected_slot = selected_slot / 3 * 3 + battle.category_for(battle.hand[index])
 	sound.play_sound("select")
 	_refresh(battle.snapshot())
 
@@ -370,6 +393,9 @@ func _resolve() -> void:
 	selected_card = -1
 	if battle.phase == "finished":
 		battle.next_round()
+		if battle.hero_slots[3].get("flexible", false):
+			selected_slot = 3
+			hand_view.show_shared = false
 		last_second = -1
 		log_label.text = "下一回合：敌方已重新安排，速度重新生成，cost +8。"
 	_refresh(battle.snapshot())

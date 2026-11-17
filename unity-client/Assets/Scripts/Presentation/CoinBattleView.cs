@@ -33,7 +33,7 @@ namespace ClashRoguelike
         }
         void DrawCoinPanel(CoinStep c,string type,float animation,int damage)
         {
-            const float x=493,y=120,w=522,h=350;Panel(new Rect(x,y,w,h),Hex("0B1721"),Gold);bool done=type=="clash_end"||type=="attack_end";
+            const float x=493,w=522,h=350;float y=adventureMode&&portRules!=null?167:120;Panel(new Rect(x,y,w,h),Hex("0B1721"),Gold);bool done=type=="clash_end"||type=="attack_end";
             if(c.Type=="clash")
             {
                 Label(x+15,y+12,w-30,29,done?"拼点结束 / 最终胜者":"拼点 / 第 "+c.Round+" 轮",20,Gold,TextAnchor.MiddleCenter);
@@ -68,10 +68,11 @@ namespace ClashRoguelike
         }
         void DrawBattleJournal()
         {
-            Panel(new Rect(1080,535,330,132),Hex("111C24"),Hex("35474F"));Label(1094,541,302,23,"战斗记录 · 可滚动查看",13,Gold);
+            bool port=adventureMode&&portRules!=null;float journalY=port?527:535,journalHeight=port?112:132;
+            Panel(new Rect(1080,journalY,330,journalHeight),Hex("111C24"),Hex("35474F"));Label(1094,journalY+6,302,23,"战斗记录 · 可滚动查看",13,Gold);
             text.fontSize=11;text.wordWrap=true;var heights=log.Select(s=>Math.Max(22,text.CalcHeight(new GUIContent(s),283)+6)).ToArray();float total=heights.Sum();string last=log.LastOrDefault()??"";
             if(coinLogCount!=log.Count||coinLogLast!=last){coinLogCount=log.Count;coinLogLast=last;coinLogScroll.y=total;}
-            coinLogScroll=GUI.BeginScrollView(new Rect(1090,569,310,89),coinLogScroll,new Rect(0,0,289,total));float top=0;
+            coinLogScroll=GUI.BeginScrollView(new Rect(1090,journalY+34,310,journalHeight-43),coinLogScroll,new Rect(0,0,289,total));float top=0;
             for(int i=0;i<log.Count;i++){Label(1,top,283,heights[i],log[i],11,i==log.Count-1?Pale:Muted);top+=heights[i];}GUI.EndScrollView();
         }
     }
