@@ -165,7 +165,7 @@ namespace ClashRoguelike
             bool selected=allied&&portHero==index;Color tint=u.Hp<=0?Hex("35414A"):allied?(index==2?Cyan:Gold):Red;
             if(portEvent!=null&&(portEvent.Hero==index&&allied||portEvent.Enemy==index&&!allied)){
                 bool attacker=portEvent.Type=="clash"||portEvent.Type=="strike"&&portEvent.AttackerAllied==allied;
-                if(attacker)x+=(allied?1:-1)*ImpactTravel(portPhase);
+                if(attacker){float travel=ImpactTravel(portPhase);x+=(allied?1:-1)*(travel<0?travel:travel*.27f);}
                 else if(portEvent.Type=="strike"){x+=(allied?-1:1)*ImpactRecoil(portPhase);if(portPhase>=.45f&&portPhase<.58f)tint=Pale;}
             }
             bool legal=!allied&&PortTargetLegal(DefaultTarget(index));if(selected||legal)Outline(new Rect(x-61,y-127,128,169),selected?Gold:Cyan,2);
