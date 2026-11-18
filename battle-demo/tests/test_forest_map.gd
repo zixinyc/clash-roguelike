@@ -1,0 +1,210 @@
+extends SceneTree
+
+const ForestMapGraph = preload("res://scripts/forest_map_graph.gd")
+const ForestRandomGenerator = preload("res://scripts/forest_random_generator.gd")
+const RelicSystem = preload("res://scripts/relic_system.gd")
+const ForestRun = preload("res://scripts/forest_run.gd")
+const DemoBattleRules = preload("res://scripts/battle_rules.gd")
+
+var checks := 0
+var failures := 0
+
+func _init() -> void:
+	print("--- Running Forest Map & Relic Tests ---")
+	_test_relic_database()
+	_test_map_generator()
+	_test_forest_run_navigation()
+	_test_forest_run_nodes_and_patrol()
+	_test_forest_run_center_boss_and_escape()
+	_test_battle_relic_effects()
+	_test_battle_consumables()
+	
+	print("FOREST_MAP_TESTS checks=%d failures=%d" % [checks, failures])
+	quit(1 if failures > 0 else 0)
+
+func check(condition: bool, message: String) -> void:
+	checks += 1
+	if not condition:
+		failures += 1
+		print("FAIL: %s" % message)
+
+func _test_relic_database() -> void:
+	check(RelicSystem.RELIC_DB.size() >= 12, "Relic database contains at least 12 universal relics")
+	check(RelicSystem.CONSUMABLE_DB.size() >= 4, "Consumable database contains at least 4 items")
+	
+	var r_mercury: Dictionary = RelicSystem.get_relic("mercury_die")
+	check(r_mercury.get("name", "") == "水银骰子", "mercury_die has correct name")
+	check(r_mercury.get("rarity", "") == "rare", "mercury_die rarity is rare")
+	
+	var unowned := RelicSystem.get_unowned_relics(["mercury_die", "adversity_blade"])
+	check(not unowned.has("mercury_die") and not unowned.has("adversity_blade"), "Unowned relics correctly filters owned ones")
+	check(unowned.size() == RelicSystem.RELIC_DB.size() - 2, "Unowned relics count is correct")
+
+func _test_map_generator() -> void:
+	var map = ForestRandomGenerator.generate(42)
+	check(map != null, "Map generated successfully")
+	check(map.nodes.size() >= 15, "Map has sufficient nodes (actual: %d)" % map.nodes.size())
+	check(map.edges.size() >= 15, "Map has sufficient edges (actual: %d)" % map.edges.size())
+	check(not map.start_id.is_empty() and map.has_node(map.start_id), "Map has valid start node")
+	check(not map.exit_id.is_empty() and map.has_node(map.exit_id), "Map has valid exit node")
+	check(not map.center_id.is_empty() and map.has_node(map.center_id), "Map has valid center boss node")
+	check(not map.patrol_route.is_empty(), "Map has patrol route defined")
+	
+	var start_node = map.get_node(map.start_id)
+	check(start_node.kind == ForestMapGraph.NodeKind.SPAWN, "Start node is SPAWN")
+	var exit_node = map.get_node(map.exit_id)
+	check(exit_node.kind == ForestMapGraph.NodeKind.EXIT, "Exit node is EXIT")
+	var center_node = map.get_node(map.center_id)
+	check(center_node.kind == ForestMapGraph.NodeKind.CENTER, "Center node is CENTER")
+	
+	var dist: float = float(map.distance(map.start_id, map.center_id))
+	check(dist < 999.0, "Path exists from start to center (distance: %.1f)" % dist)
+	var exit_dist: float = float(map.distance(map.center_id, map.exit_id))
+	check(exit_dist < 999.0, "Path exists from center to exit (distance: %.1f)" % exit_dist)
+
+func _test_forest_run_navigation() -> void:
+	var map = ForestRandomGenerator.generate(100)
+	var run = ForestRun.new()
+	run.initialize(map, 0, ["mercury_die"], ["dense_smoke"], 100)
+	
+	check(run.position == map.start_id, "Run starts at map start_id")
+	check(run.actions_left == 2, "Initial actions_left is 2")
+	check(run.action_budget == 2, "Initial action_budget is 2")
+	check(run.carried_cost == 30, "Initial carried cost is 30")
+	check(run.relics == ["mercury_die"], "Initial relics contains mercury_die")
+	check(run.items == ["dense_smoke"], "Initial items contains dense_smoke")
+	check(not run.ember_core, "Initial ember_core is false")
+	
+	# Find adjacent node
+	var links: Array = map.get_links(run.position)
+	check(not links.is_empty(), "Start node has links")
+	var next_id: String = links[0].other(run.position)
+	check(run.can_move(next_id), "Can move to adjacent node")
+	
+	var moved := run.move(next_id)
+	check(moved, "Movement to next_id succeeded")
+	check(run.position == next_id, "Current position updated")
+	check(run.actions_left == 1, "Actions left deducted by 1 (now %d)" % run.actions_left)
+	check(run.fatigue == 1, "Fatigue increased to 1")
+	check(run.visited.has(next_id), "Node marked visited")
+	
+	if run.in_battle:
+		run.apply_battle_result(true, run.party_hp, run.carried_cost)
+	elif not run.pending.is_empty():
+		run.apply_choice(0)
+	
+	# End turn
+	var end_ok := run.end_turn()
+	check(end_ok, "End turn succeeded")
+	check(run.turn == 2, "Turn advanced to 2")
+	check(run.actions_left == 2, "Actions refreshed to 2")
+
+func _test_forest_run_nodes_and_patrol() -> void:
+	var map = ForestRandomGenerator.generate(200)
+	var run = ForestRun.new()
+	run.initialize(map, 0, [], [], 200)
+	
+	# Test camp
+	run.pending = "camp"
+	var party_prev_hp: int = run.party_hp[0]
+	run.party_hp[0] = 30 # Injured
+	run.fatigue = 4
+	var camp_choice_ok := run.apply_choice(0) # Rest (+10 HP, -3 fatigue)
+	check(camp_choice_ok, "Camp rest applied")
+	check(run.party_hp[0] == 40, "Party hero healed to 40 (was 30)")
+	check(run.fatigue == 1, "Fatigue reduced to 1 (was 4)")
+	check(run.pending.is_empty(), "Pending cleared after choice")
+	
+	# Test shop buy relic
+	run.pending = "shop"
+	run.carried_cost = 25
+	var buy_relic_ok := run.apply_choice(1) # Buy relic (-12 cost)
+	check(buy_relic_ok, "Shop buy relic applied")
+	check(run.carried_cost == 13, "Carried cost deducted by 12 (now 13)")
+	check(run.relics.size() == 1, "Relics acquired (size 1)")
+	
+	# Test shrine blessing
+	run.pending = "shrine"
+	var prev_max_hp: int = run.party_max_hp[0]
+	var shrine_ok := run.apply_choice(1) # Sacred blessing (+4 max HP)
+	check(shrine_ok, "Shrine blessing applied")
+	check(run.party_max_hp[0] == prev_max_hp + 4, "Party max HP increased by 4")
+	
+	# Test hideout stealth vs patrol
+	run.hidden_turns = 2
+	run.patrol_node = run.position # Force patrol onto current position
+	run._check_patrol_contact()
+	check(not run.in_battle, "Patrol contact avoided due to hidden_turns > 0")
+
+func _test_forest_run_center_boss_and_escape() -> void:
+	var map = ForestRandomGenerator.generate(300)
+	var run = ForestRun.new()
+	run.initialize(map, 0, [], [], 300)
+	
+	# Move run to Center Boss node
+	run.position = map.center_id
+	run.enter_node()
+	check(run.in_battle, "Center node triggered battle")
+	check(run.current_encounter == 5, "Center node encounter is Boss (5)")
+	
+	# Simulate boss victory
+	run.apply_battle_result(true, [40, 35, 38], 45)
+	check(not run.in_battle, "Battle resolved")
+	check(run.ember_core, "Ember Core acquired from center boss!")
+	check(run.relics.size() >= 1, "Relic rewarded from center boss victory")
+	
+	# Move to Exit node
+	run.position = map.exit_id
+	run.enter_node()
+	check(run.finished, "Run finished upon reaching exit with Ember Core")
+
+func _test_battle_relic_effects() -> void:
+	var rules := DemoBattleRules.new()
+	
+	# 1. Warden Bell (+5 shield at start)
+	rules.start(1234, 0, false, false, [], null, false, ["warden_bell"])
+	check(rules.heroes[0].shield == 5, "warden_bell gives 5 shield at turn 1")
+	
+	# 2. Everburning Tinder (+10 income on next round)
+	rules.cost = 10
+	rules.phase = "finished"
+	rules.active_relics = ["everburning_tinder"]
+	rules.next_round()
+	check(rules.cost == 20, "everburning_tinder gives 10 income (was 10 -> 20)")
+	
+	# 3. Weight of Balance (wins tie clash)
+	rules.active_relics = ["weight_of_balance"]
+	check(rules.has_relic("weight_of_balance"), "weight_of_balance is active")
+	
+	# 4. Adversity Blade
+	rules.active_relics = ["adversity_blade"]
+	check(rules.has_relic("adversity_blade"), "adversity_blade is active")
+	
+	# 5. New Encounters setup
+	rules.start(1234, 3)
+	check(rules.enemies.size() == 2 and rules.enemies[0].name == "迷雾潜伏犬", "Encounter 3 (Forest beasts) loaded correctly")
+	rules.start(1234, 4)
+	check(rules.enemies.size() == 2 and rules.enemies[0].name == "鸦天狗斥候", "Encounter 4 (Scout & Bear) loaded correctly")
+	rules.start(1234, 5)
+	check(rules.enemies.size() == 1 and rules.enemies[0].name == "烬心巨像 · 赫斯提斯", "Encounter 5 (Colossus Boss) loaded correctly")
+
+func _test_battle_consumables() -> void:
+	var rules := DemoBattleRules.new()
+	rules.start(1234, 0, false, false, [], null, false, [], ["ember_catalyst", "dense_smoke", "field_poultice"])
+	
+	# Test ember_catalyst
+	var initial_cost: int = rules.cost
+	var cat_res := rules.use_item("ember_catalyst")
+	check(cat_res.ok, "ember_catalyst used successfully")
+	check(rules.cost == initial_cost + 5, "Cost increased by 5 (was %d, now %d)" % [initial_cost, rules.cost])
+	
+	# Test dense_smoke
+	var smoke_res := rules.use_item("dense_smoke")
+	check(smoke_res.ok, "dense_smoke used successfully")
+	check(rules.heroes[0].shield == 8, "Hero shield increased to 8")
+	
+	# Test field_poultice
+	rules.heroes[0].hp = 20
+	var poultice_res := rules.use_item("field_poultice")
+	check(poultice_res.ok, "field_poultice used successfully")
+	check(rules.heroes[0].hp == 32, "Hero healed by 12 HP (was 20, now 32)")

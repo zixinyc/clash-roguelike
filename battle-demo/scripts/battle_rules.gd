@@ -81,6 +81,41 @@ var marisa_slot := -1
 var enemy_cost := START_COST
 var configured_hand: Array[String] = []
 var extra_income := 0
+var active_relics: Array[String] = []
+var active_items: Array[String] = []
+var guaranteed_heads := false
+
+func has_relic(key: String) -> bool:
+	return active_relics.has(key)
+
+func use_item(item_key: String) -> Dictionary:
+	var idx := active_items.find(item_key)
+	if idx < 0:
+		return {"ok": false, "message": "未持有该道具"}
+	active_items.remove_at(idx)
+	match item_key:
+		"ember_catalyst":
+			cost += 5
+			return {"ok": true, "message": "使用了余烬催化剂：获得 5 cost！"}
+		"dense_smoke":
+			for h in heroes:
+				if h.hp > 0:
+					h.shield += 8
+			return {"ok": true, "message": "使用了浓缩烟幕弹：全体存活队员获得 8 护盾！"}
+		"weighted_coin":
+			guaranteed_heads = true
+			return {"ok": true, "message": "使用了灌铅硬币：下次掷币必定全出正面！"}
+		"field_poultice":
+			var lowest := -1
+			var low_hp := 9999
+			for i in heroes.size():
+				if heroes[i].hp > 0 and heroes[i].hp < low_hp:
+					low_hp = heroes[i].hp
+					lowest = i
+			if lowest >= 0:
+				heroes[lowest].hp = mini(int(heroes[lowest].max_hp), int(heroes[lowest].hp) + 12)
+				return {"ok": true, "message": "使用了战地敷药：%s 恢复了 12 生命！" % heroes[lowest].name}
+	return {"ok": true, "message": "道具使用成功"}
 
 enum { ASH_ID, BLADE_ID, WEAVER_ID, SAKUYA_ID, REIMU_ID, ZIXI_ID, ZIXINGYC_ID, MARISA_ID }
 const DEFAULT_LINEUP := [ASH_ID, BLADE_ID, WEAVER_ID]
@@ -119,7 +154,7 @@ static func available_cards(members: Array) -> Array:
 	return cards.filter(func(key: String) -> bool: return card_owner(key) < 0 or members.has(card_owner(key)))
 
 
-func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = false, use_zixi_team: bool = false, lineup: Array = [], deck: Variant = null, use_zixingyc_team: bool = false) -> void:
+func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = false, use_zixi_team: bool = false, lineup: Array = [], deck: Variant = null, use_zixingyc_team: bool = false, relics: Array = [], items: Array = []) -> void:
 	rng.seed = seed_value
 	var members: Array = lineup if not lineup.is_empty() else (ZIXINGYC_LINEUP if use_zixingyc_team else (ZIXI_LINEUP if use_zixi_team else (TOUHOU_LINEUP if use_touhou_team else DEFAULT_LINEUP)))
 	var roster := create_roster()
@@ -131,6 +166,9 @@ func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = 
 	marisa_slot = members.find(MARISA_ID)
 	touhou_team = sakuya_slot >= 0 and reimu_slot >= 0
 	enemy_cost = START_COST
+	active_relics.assign(relics)
+	active_items.assign(items)
+	guaranteed_heads = false
 	var available := available_cards(members)
 	configured_hand.assign(available if deck == null else available.filter(func(key: String) -> bool: return deck.has(key)))
 	enemies.assign([
@@ -146,9 +184,26 @@ func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = 
 		enemies.assign([
 			{"name": "高血量沙包", "kind": "training_dummy", "hp": TRAINING_HP, "max_hp": TRAINING_HP, "shield": 0, "spent": false, "speed_min": 1, "speed_max": 1},
 		])
+	elif encounter == 3:
+		enemies.assign([
+			{"name": "迷雾潜伏犬", "kind": "beast", "hp": 50, "max_hp": 50, "shield": 0, "spent": false, "speed_min": 5, "speed_max": 8},
+			{"name": "腐殖毒蛛", "kind": "spider", "hp": 62, "max_hp": 62, "shield": 0, "spent": false, "speed_min": 3, "speed_max": 5}
+		])
+	elif encounter == 4:
+		enemies.assign([
+			{"name": "鸦天狗斥候", "kind": "tengu", "hp": 55, "max_hp": 55, "shield": 0, "spent": false, "speed_min": 7, "speed_max": 10},
+			{"name": "狂暴黑熊", "kind": "bear", "hp": 110, "max_hp": 110, "shield": 0, "spent": false, "speed_min": 2, "speed_max": 4}
+		])
+	elif encounter == 5:
+		enemies.assign([
+			{"name": "烬心巨像 · 赫斯提斯", "kind": "colossus", "hp": 180, "max_hp": 180, "shield": 0, "spent": false, "speed_min": 3, "speed_max": 6}
+		])
 	cost = START_COST
 	turn = 1
 	outcome = ""
+	if has_relic("warden_bell"):
+		for h in heroes:
+			h.shield += 5
 	_prepare_round()
 
 func _prepare_round() -> void:
@@ -179,6 +234,8 @@ func _prepare_round() -> void:
 				ZiXi.prepare_round(units[u], turn)
 			else:
 				units[u].shield = 0
+			if side == 0 and turn == 1 and has_relic("warden_bell"):
+				units[u].shield += 5
 			if units[u].has("memory_log"):
 				ZiXingYC.prepare_round(units[u])
 			if side == 0:
@@ -436,7 +493,8 @@ func next_round() -> void:
 	if phase != "finished":
 		return
 	turn += 1
-	cost += BASE_INCOME
+	var income: int = 10 if has_relic("everburning_tinder") else BASE_INCOME
+	cost += income
 	if touhou_team:
 		enemy_cost += BASE_INCOME
 	extra_income = 0
@@ -463,8 +521,18 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 			_emit(events, {"type": "ability", "message": "天球仪：本回合及下回合每次受击减伤 5，火花 %d / 10" % sp})
 			return
 		var guard_amount := GUARD_AMOUNT
-		if not allied and units[slot.unit].kind == "warden":
-			guard_amount = 14
+		if not allied:
+			match units[slot.unit].kind:
+				"warden":
+					guard_amount = 14
+				"bear":
+					guard_amount = 12
+				"colossus":
+					guard_amount = 18
+				"spider":
+					guard_amount = 10
+				"beast":
+					guard_amount = 8
 		units[slot.unit].shield += guard_amount
 		if not allied and units[slot.unit].kind == "priest":
 			for i in enemies.size():
@@ -541,6 +609,9 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 	var rc := int(right_skill.coins)
 	var ties := 0
 	var margin := 0
+	if has_relic("adversity_blade") and int(e.get("speed", 0)) > int(h.get("speed", 0)):
+		left_skill.base += 2
+		_emit(events, {"type": "ability", "message": "逆境断刃：目标速度高于自身，拼点基础威力 +2"})
 	_emit(events, {"type": "intercept" if h.unit != e.target else "engage", "hero": h.unit, "enemy": e.unit})
 	while lc > 0 and rc > 0:
 		var left_min := maxi(0, int(left_skill.base) + mini(0, int(left_skill.power) * lc))
@@ -567,6 +638,9 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 		var right := _roll(right_base, right_skill.power, rc, 0.5)
 		margin = int(left.value) - int(right.value)
 		var winner := -1 if left.value == right.value else (0 if left.value > right.value else 1)
+		if winner == -1 and has_relic("weight_of_balance"):
+			winner = 0
+			_emit(events, {"type": "ability", "message": "天平之重：拼点平局判定为获胜"})
 		var old_lc := lc
 		var old_rc := rc
 		if winner == 0:
@@ -757,10 +831,14 @@ func _detonate_dream(events: Array[Dictionary]) -> void:
 
 func _roll(base: int, power: int, coins: int, chance: float) -> Dictionary:
 	var heads := 0
+	var forced := guaranteed_heads
+	if forced:
+		guaranteed_heads = false
 	for i in coins:
-		if rng.randf() < chance:
+		if forced or rng.randf() < chance:
 			heads += 1
-	return {"value": maxi(0, base + power * heads), "heads": heads}
+	var actual_power := power + (1 if has_relic("mercury_die") else 0)
+	return {"value": maxi(0, base + actual_power * heads), "heads": heads}
 
 func _attack(events: Array[Dictionary], allied: bool, source: int, target: int, base: int, power: int, coins: int, chance: float, key: String = "", scale: float = 1.0) -> void:
 	var victims: Array[Dictionary] = enemies if allied else heroes
@@ -842,6 +920,15 @@ func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int
 	victim.shield -= blocked
 	var damage := maxi(0, hit - blocked)
 	victim.hp = maxi(0, int(victim.hp) - damage)
+	if allied and has_relic("piercing_cone") and blocked > 0 and victim.hp > 0:
+		var pierce: int = mini(3, int(victim.hp))
+		victim.hp = maxi(0, int(victim.hp) - pierce)
+		_emit(events, {"type": "ability", "message": "穿刺圆锥：穿透护盾直接造成 %d 点伤害" % pierce})
+	if allied and damage > 0 and victim.hp == 0 and has_relic("leech_shard"):
+		for h in heroes:
+			if h.hp > 0:
+				h.hp = mini(int(h.max_hp), int(h.hp) + 3)
+		_emit(events, {"type": "ability", "message": "汲血结晶：击败敌人，存活队员恢复 3 点生命"})
 	if not allied and target == reimu_slot and victim.hp == 0:
 		victim.dream_due = 0
 		victim.dream_orbs = 0
@@ -864,6 +951,9 @@ func _check_outcome(events: Array[Dictionary]) -> void:
 	var alive_heroes := heroes.any(func(unit: Dictionary) -> bool: return unit.hp > 0)
 	if not alive_enemies:
 		outcome = "victory"
+		if has_relic("ember_pouch"):
+			cost += 4
+			_emit(events, {"type": "reward", "amount": 4, "message": "余烬小袋：胜利额外获得 4 cost"})
 	elif not alive_heroes:
 		outcome = "defeat"
 	if not outcome.is_empty():
