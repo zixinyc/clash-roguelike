@@ -94,7 +94,10 @@ static func win_clash(hero: Dictionary, key: String, margin: int, turn: int) -> 
 	match key:
 		CENTRAL_LIMIT: hero.next_clash[CENTRAL_LIMIT] = 1
 		CONVERGENCE: hero.next_clash[CONVERGENCE] = 2
-	var reward := 2 if margin >= 5 and hero.no_margin_round != turn else 1
+	var reward := 3 if margin >= 5 and hero.no_margin_round != turn else 2
+	return gain_metaphysics(hero, reward)
+
+static func gain_metaphysics(hero: Dictionary, reward: int) -> int:
 	var gained := mini(reward, mini(ROUND_GAIN_MAX - int(hero.round_gain), METAPHYSICS_MAX - int(hero.metaphysics)))
 	hero.round_gain += gained
 	hero.metaphysics += gained
@@ -120,7 +123,7 @@ static func absorb_carried_shield(hero: Dictionary, blocked: int) -> void:
 		if hero.shield_until[expiry] == 0:
 			hero.shield_until.erase(expiry)
 
-static func finish_clash(hero: Dictionary, key: String, result: int, enhanced: bool, turn: int) -> Dictionary:
+static func finish_clash(hero: Dictionary, key: String, result: int, enhanced: bool, turn: int, margin: int) -> Dictionary:
 	var shield := 0
 	if key == MARTINGALE and result >= 0:
 		shield = (12 if enhanced else 8) if result == 0 else 4
@@ -128,6 +131,7 @@ static func finish_clash(hero: Dictionary, key: String, result: int, enhanced: b
 		if result == 1 and enhanced:
 			hero.next_clash[MARTINGALE] = 3
 	if enhanced:
-		hero.causality = mini(CAUSALITY_MAX, int(hero.causality) + 1)
+		var gained := 2 if result == 0 and margin >= 5 else 1
+		hero.causality = mini(CAUSALITY_MAX, int(hero.causality) + gained)
 	var blast := 6 + 5 * int(hero.causality) if enhanced and key == ALMOST_SURE and result == 0 else 0
 	return {"shield": shield, "blast": blast}

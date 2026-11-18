@@ -2,6 +2,9 @@ class_name DemoCardView
 extends Button
 
 const Rules = preload("res://scripts/battle_rules.gd")
+const SELECTION_LIFT := 10.0
+const GLINT_PATH := "res://art/card-selection-glint.png"
+static var selection_glint: Texture2D
 const USE_HINTS := {
 	"probe": "低费接招", "observe": "积累准备", "exploit": "消耗准备强化拼点",
 	"follow": "拼赢后追加攻击", "steady_edge": "同费下限更高", "all_in": "同费上限更高",
@@ -23,7 +26,21 @@ var skill: Dictionary = {}
 var skill_key := ""
 var hand_index := -1
 var key_number := 1
-var selected := false
+var selected := false:
+	set(value):
+		if value == selected:
+			return
+		selected = value
+		if lift_tween != null:
+			lift_tween.kill()
+		var offset := SELECTION_LIFT if selected else 0.0
+		if is_visible_in_tree():
+			lift_tween = create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			lift_tween.tween_method(_set_lift, lift, offset, 0.16)
+		else:
+			_set_lift(offset)
+var lift := 0.0
+var lift_tween: Tween
 var enhanced := false
 var can_enhance := false
 var hovered := false
@@ -35,7 +52,9 @@ var chinese_font: Font
 var number_font: Font
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(130, 133)
+	custom_minimum_size = Vector2(130, 133 + SELECTION_LIFT)
+	if selection_glint == null and ResourceLoader.exists(GLINT_PATH):
+		selection_glint = load(GLINT_PATH) as Texture2D
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	chinese_font = get_theme_font("font")
@@ -67,6 +86,10 @@ func effect_text() -> String:
 			return "消耗 1 层准备，拼点威力 +%d" % bonus if bonus > 0 else "获得准备后，下次用它拼点可强化威力"
 	return skill.description
 
+func _set_lift(value: float) -> void:
+	lift = value
+	queue_redraw()
+
 func _draw() -> void:
 	if skill.is_empty() or chinese_font == null:
 		return
@@ -77,7 +100,11 @@ func _draw() -> void:
 	var ink := Color("f2eee3") if not disabled else Color("a3b1b4")
 	var muted := Color("a8bac0") if not disabled else Color("86989d")
 	var bright := accent if not disabled else accent.lerp(muted, 0.65)
-	var rect := Rect2(Vector2.ZERO, size)
+	var rect := Rect2(Vector2.ZERO, size - Vector2(0, SELECTION_LIFT))
+	draw_set_transform(Vector2(0, SELECTION_LIFT - lift))
+	if lift > 0.0 and selection_glint != null:
+		var glint := Rect2(0, rect.size.y - 11, rect.size.x, 23)
+		draw_texture_rect(selection_glint, glint, false, Color(1, 1, 1, lift / SELECTION_LIFT))
 	var style := StyleBoxFlat.new()
 	style.bg_color = tint
 	style.border_color = Color("a8cfff") if enhanced else (bright if active else Color("354751"))
@@ -112,6 +139,7 @@ func _draw() -> void:
 	elif can_enhance:
 		_text("可强化", Vector2(10, 122), 12, Color("a8cfff"))
 	_right(str(key_number), Vector2(size.x - 10, 122), 13, muted, number_font)
+	draw_set_transform(Vector2.ZERO)
 
 func _text(value: String, origin: Vector2, font_size: int, color: Color, font: Font = null) -> void:
 	var used_font := chinese_font if font == null else font

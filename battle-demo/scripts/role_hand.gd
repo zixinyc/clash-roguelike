@@ -164,7 +164,7 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 		role_summary.text = "超形上学 %d/%d   ·   因果律 %d/%d" % [hero.metaphysics, Rules.ZiXi.METAPHYSICS_MAX, hero.causality, Rules.ZiXi.CAUSALITY_MAX]
 		enhancement_error = Rules.ZiXi.enhancement_error(hero, slot_id)
 		enhance_toggle.disabled = not planning or selection < 0 or hero.hp <= 0 or not enhancement_error.is_empty()
-		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else "消耗 3 层超形上学，每回合可强化一张符卡"
+		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else "消耗 3 层超形上学。本回合可强化一张，结算后因果律 +1，拼胜分差至少 5 时 +2。"
 		enhance_toggle.set_pressed_no_signal(enhance)
 	role_summary.add_theme_color_override("font_color", ROLE_COLORS[unit])
 	detail.add_theme_color_override("font_color", Color("d7e0e1"))

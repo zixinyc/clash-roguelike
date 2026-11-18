@@ -56,7 +56,7 @@ const SKILLS := {
 	"marisa_laser": Marisa.MARISA_LASER,
 	"marisa_orrery": Marisa.MARISA_ORRERY,
 	"marisa_spark": Marisa.MARISA_SPARK,
-	"training_tap": {"name": "练习迎击", "base": 1, "power": 0, "coins": 1, "kind": "attack", "no_damage": true},
+	"training_tap": {"name": "练习迎击", "cost": 0, "base": 1, "power": 0, "coins": 1, "kind": "attack", "no_damage": true},
 }
 
 const CATEGORIES := ["进攻", "大招", "防御"]
@@ -196,14 +196,12 @@ func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = 
 		])
 	elif encounter == 5:
 		enemies.assign([
-			{"name": "烬心巨像 · 赫斯提斯", "kind": "colossus", "hp": 180, "max_hp": 180, "shield": 0, "spent": false, "speed_min": 3, "speed_max": 6}
+			{"name": "烬心巨像 · 赫斯提斯", "kind": "colossus", "hp": 210, "max_hp": 210, "shield": 0, "spent": false, "speed_min": 3, "speed_max": 6}
 		])
 	cost = START_COST
+	extra_income = 0
 	turn = 1
 	outcome = ""
-	if has_relic("warden_bell"):
-		for h in heroes:
-			h.shield += 5
 	_prepare_round()
 
 func _prepare_round() -> void:
@@ -248,13 +246,16 @@ func _prepare_round() -> void:
 					slot.frozen = u != sakuya_slot
 					slot.flexible = u == sakuya_slot
 				if side == 1 and units[u].hp > 0 and not stopped:
-					var second := 1 if (turn + u) % 2 == 0 else 2
+					var boss: bool = units[u].kind == "colossus"
+					var second := 1 if boss or (turn + u) % 2 == 0 else 2
 					var training: bool = units[u].kind == "training_dummy"
 					slot.active = category == 0 or (not training and category == second)
 					if slot.active:
 						slot.key = ["ember", "nova", "guard"][category]
 						if training:
 							slot.key = "training_tap"
+						elif boss and category == 1 and turn % 2 == 1:
+							slot.key = "ember"
 						elif category == 0 and units[u].kind == "scout":
 							slot.key = "needle"
 						elif category == 0 and units[u].kind == "elite":
@@ -563,6 +564,11 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 			_attack_marisa(events, slot, target, int(skill.coins), false)
 		else:
 			_resolve_hero_skill(events, slot, target, skill.coins)
+		if hero.has("memory_log") and not skill.get("no_damage", false):
+			for i in (2 if slot.key == ZiXingYC.RESIDUAL else 1):
+				var observation := ZiXingYC.write_memory(hero, ZiXingYC.OBSERVATION)
+				if observation >= 0:
+					_emit_zixingyc_memory(events, ZiXingYC.OBSERVATION, observation)
 		if slot.key != ZiXingYC.PARADOX:
 			_zixingyc_archive(events, hero, skill.get("archive_corpus", ""))
 	else:
@@ -662,9 +668,7 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 					if enemies[target].hp > 0:
 						_deal_hit(events, true, h.unit, target, int(zxy_win.ending), 1, 1)
 		if not zixi_clash.is_empty():
-			var gained := ZiXi.win_clash(heroes[h.unit], h.key, margin, turn)
-			if gained > 0:
-				_emit(events, {"type": "ability", "message": "ZiXi：超形上学 +%d" % gained})
+			_emit_metaphysics(events, ZiXi.win_clash(hero, h.key, margin, turn))
 		if h.unit == reimu_slot:
 			for message in Reimu.release_on_win(hero, enemies, h.key, e.unit, turn):
 				_emit(events, {"type": "ability", "message": message})
@@ -721,13 +725,19 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 				_emit(events, {"type": "ability", "message": "ZiXingYC · 被删除的昨天：本次拼败伤害降低 %d%%" % int(round((1.0 - scale) * 100.0))})
 		if not right_skill.get("no_damage", false):
 			_attack(events, false, e.unit, h.unit, right_skill.base, right_skill.power, rc, 0.5, "", scale)
-		if h.key == ZiXingYC.ATTENTION:
+		if not zixi_clash.is_empty() and hero.hp > 0:
+			_emit_metaphysics(events, ZiXi.gain_metaphysics(hero, 1))
+		if h.key in [ZiXingYC.ATTENTION, ZiXingYC.RESIDUAL]:
 			_zixingyc_archive(events, hero, left_skill.archive_corpus)
 	if not zixi_clash.is_empty() and heroes[h.unit].hp > 0:
-		_finish_zixi_clash(events, h, 0 if lc > 0 else 1, zixi_clash)
+		_finish_zixi_clash(events, h, 0 if lc > 0 else 1, zixi_clash, margin)
 	if h.key == "observe" and hero.hp > 0:
 		hero.preparation = 1
 		_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
+
+func _emit_metaphysics(events: Array[Dictionary], gained: int) -> void:
+	if gained > 0:
+		_emit(events, {"type": "ability", "message": "ZiXi：超形上学 +%d" % gained})
 
 func _attack_with_zixi_spell(events: Array[Dictionary], slot: Dictionary, target: int, coins: int, clash: Dictionary) -> void:
 	var skill: Dictionary = SKILLS[slot.key]
@@ -791,9 +801,9 @@ func _emit_zixingyc_memories(events: Array[Dictionary], result: Dictionary) -> v
 func _emit_zixingyc_memory(events: Array[Dictionary], kind: String, id: int) -> void:
 	_emit(events, {"type": "ability", "message": "ZiXingYC · 记忆：写入%s #%d" % [ZiXingYC.memory_name(kind), id]})
 
-func _finish_zixi_clash(events: Array[Dictionary], slot: Dictionary, result: int, clash: Dictionary) -> void:
+func _finish_zixi_clash(events: Array[Dictionary], slot: Dictionary, result: int, clash: Dictionary, margin: int = 0) -> void:
 	var hero := heroes[slot.unit]
-	var finished := ZiXi.finish_clash(hero, slot.key, result, clash.enhanced, turn)
+	var finished := ZiXi.finish_clash(hero, slot.key, result, clash.enhanced, turn, margin)
 	if finished.shield > 0:
 		_emit(events, {"type": "guard", "hero": slot.unit, "amount": finished.shield})
 	if clash.enhanced:

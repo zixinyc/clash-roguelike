@@ -266,6 +266,7 @@ func test_yesterday() -> void:
 	var events := battle.lock_and_resolve()
 	check(int(hero.shield) == 10, "winning yesterday grants ten shield")
 	check(strikes(events).is_empty(), "the defense card deals no damage")
+	check(hero.memory_log.any(func(entry: Dictionary) -> bool: return entry.type == ZiXingYC.REFLECTION), "winning Yesterday also grants reflection")
 	battle = fresh()
 	hero = hero_of(battle)
 	seed_memories(hero, [ZiXingYC.OBSERVATION, ZiXingYC.OBSERVATION, ZiXingYC.OBSERVATION], true)
@@ -292,10 +293,10 @@ func test_yesterday() -> void:
 func test_corpora_effects() -> void:
 	var battle := fresh()
 	var hero := hero_of(battle)
-	hero.corpora[ZiXingYC.REASONING] = 2
+	hero.corpora[ZiXingYC.REASONING] = 1
 	battle.phase = "finished"
 	battle.next_round()
-	check(battle.cost == 39, "two reasoning corpora give one extra cost next round")
+	check(battle.cost == 39, "the first reasoning corpus grants one extra cost next round")
 	check(int(battle.extra_income) == 1, "the extra income is reported in the snapshot")
 	hero.corpora[ZiXingYC.REASONING] = 6
 	battle.phase = "finished"
@@ -303,11 +304,11 @@ func test_corpora_effects() -> void:
 	check(int(battle.extra_income) == 2, "the reasoning income stops at two")
 	battle = fresh()
 	hero = hero_of(battle)
-	hero.corpora[ZiXingYC.RETRIEVAL] = 2
+	hero.corpora[ZiXingYC.RETRIEVAL] = 1
 	battle.ally_heads = 2
 	play(battle, ZiXingYC.ATTENTION, 0, 0)
 	var clash := first_clash(battle.lock_and_resolve())
-	check(int(clash.right) == 2, "two retrieval corpora weaken the opponent by one")
+	check(int(clash.right) == 2, "the first retrieval corpus weakens the opponent by one")
 	battle = fresh()
 	hero = hero_of(battle)
 	hero.corpora[ZiXingYC.GENERATION] = 3
@@ -334,6 +335,12 @@ func test_corpora_effects() -> void:
 func test_residual_bonus() -> void:
 	var battle := fresh()
 	var hero := hero_of(battle)
+	seed_memories(hero, [ZiXingYC.OBSERVATION])
+	check(play(battle, ZiXingYC.RESIDUAL, 0, 1), "residual can use an idle slot")
+	battle.lock_and_resolve()
+	check(hero.memory_log.size() == 3 and hero.corpora.generation == 1, "an unopposed Residual records two observations and archives")
+	battle = fresh()
+	hero = hero_of(battle)
 	seed_memories(hero, [ZiXingYC.OBSERVATION, ZiXingYC.OBSERVATION, ZiXingYC.OBSERVATION], true)
 	check(ZiXingYC.residual_bonus(hero) == 2, "three organized memories give two extra damage")
 	seed_memories(hero, [ZiXingYC.OBSERVATION, ZiXingYC.OBSERVATION, ZiXingYC.OBSERVATION, ZiXingYC.OBSERVATION, ZiXingYC.OBSERVATION, ZiXingYC.OBSERVATION], true)

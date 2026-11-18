@@ -3,6 +3,7 @@ extends Control
 signal setup_requested
 var lineup: Array = []
 var deck: Variant = null
+var exploration_run: RefCounted
 var setup_button: Button
 
 const Rules = preload("res://scripts/battle_rules.gd")
@@ -37,7 +38,7 @@ var zixingyc_button: Button
 var zixingyc_team := false
 var enhance_selected := false
 var busy := false
-var speed := 2.0
+var speed := 1.0
 var last_second := -1
 var ally_status: Label
 var enemy_status: Label
@@ -90,7 +91,7 @@ func _ready() -> void:
 		top.add_child(setup_button)
 	restart_button = button("重新开始", new_battle)
 	top.add_child(restart_button)
-	var fast := button("演出 ×2", func() -> void: speed = 4.0 if speed == 2.0 else 2.0)
+	var fast := button("演出 ×1", func() -> void: speed = 1.0 if speed >= 4.0 else speed * 2.0)
 	fast.pressed.connect(func() -> void: fast.text = "演出 ×%d" % int(speed))
 	top.add_child(fast)
 	var statuses := HBoxContainer.new()
@@ -227,8 +228,19 @@ func _switch_zixingyc() -> void:
 func new_battle() -> void:
 	if busy:
 		return
-	battle.start(73129, encounter, touhou_team, zixi_team, lineup, deck, zixingyc_team)
-	encounter_button.text = "敌组：%s（重开）" % Rules.ENCOUNTER_NAMES[encounter]
+	if exploration_run == null:
+		battle.start(73129, encounter, touhou_team, zixi_team, lineup, deck, zixingyc_team)
+	else:
+		battle.start(randi(), encounter, false, false, lineup, deck, false, exploration_run.relics, exploration_run.items)
+		battle.cost = exploration_run.carried_cost
+		for i in battle.heroes.size():
+			battle.heroes[i].hp = exploration_run.party_hp[i]
+			battle.heroes[i].max_hp = exploration_run.party_max_hp[i]
+		for slot in battle.enemy_slots:
+			if slot.active and slot.category != 2:
+				slot.target = battle._living_target(slot.target)
+	if encounter >= 0 and encounter < Rules.ENCOUNTER_NAMES.size():
+		encounter_button.text = "敌组：%s（重开）" % Rules.ENCOUNTER_NAMES[encounter]
 	team_button.text = "原阵容" if touhou_team else "测试阵容"
 	zixi_button.text = "原阵容" if zixi_team else "ZiXi"
 	zixingyc_button.text = "原阵容" if zixingyc_team else "ZiXingYC"
@@ -458,23 +470,43 @@ func _auto_plan() -> void:
 	for slot in battle.hero_slots:
 		if slot.active and Rules.targets_enemy(slot.key) and battle.can_clash(slot, battle.enemy_slots[slot.target]):
 			covered[slot.target] = true
-	for slot in battle.hero_slots:
+	var slots: Array[Dictionary] = battle.hero_slots.duplicate()
+	slots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _auto_slot_order(a) < _auto_slot_order(b))
+	for slot in slots:
 		if slot.active:
 			continue
-		var targets: Array[int] = []
+		var own_targets: Array[int] = []
+		var intercepts: Array[int] = []
+		var remaining_targets: Array[int] = []
 		for enemy in battle.enemy_slots:
-			if battle.enemies[enemy.unit].hp > 0 and battle.can_clash(slot, enemy) and not covered.has(enemy.id):
-				targets.append(enemy.id)
-		for enemy in battle.enemy_slots:
-			if battle.enemies[enemy.unit].hp > 0 and not targets.has(enemy.id):
-				targets.append(enemy.id)
+			if battle.enemies[enemy.unit].hp <= 0:
+				continue
+			if covered.has(enemy.id) or not battle.can_clash(slot, enemy):
+				remaining_targets.append(enemy.id)
+			elif enemy.target == slot.unit:
+				own_targets.append(enemy.id)
+			else:
+				intercepts.append(enemy.id)
+		var targets := own_targets + intercepts + remaining_targets
 		for card in _card_order(slot.unit):
-			if Rules.targets_enemy(battle.hand[card]):
-				for target in targets:
-					if covered.has(target) and Rules.SKILLS[battle.hand[card]].get("requires_clash", false):
+			var key: String = battle.hand[card]
+			if Rules.targets_enemy(key):
+				var hero: Dictionary = battle.heroes[slot.unit]
+				var card_targets := targets
+				if key == Rules.ZiXingYC.RESIDUAL and not hero.organized_this_round:
+					card_targets = targets.filter(func(id: int) -> bool: return not battle.enemy_slots[id].active)
+					card_targets += targets.filter(func(id: int) -> bool: return battle.enemy_slots[id].active)
+				for target in card_targets:
+					var clashes := battle.can_clash(slot, battle.enemy_slots[target])
+					if covered.has(target) and (clashes or Rules.SKILLS[key].get("requires_clash", false)):
 						continue
-					if battle.assign(card, slot.id, target).is_empty():
-						if battle.can_clash(slot, battle.enemy_slots[target]):
+					var enhance := false
+					if key in Rules.ZiXi.CARDS and clashes:
+						var is_finisher := key == Rules.ZiXi.ALMOST_SURE
+						var full_causality: bool = hero.causality == Rules.ZiXi.CAUSALITY_MAX
+						enhance = is_finisher == full_causality and Rules.ZiXi.enhancement_error(hero, slot.id).is_empty()
+					if battle.assign(card, slot.id, target, enhance).is_empty():
+						if clashes:
 							covered[target] = true
 						break
 			else:
@@ -484,12 +516,27 @@ func _auto_plan() -> void:
 	_refresh(battle.snapshot())
 	log_label.text = "已自动安排，仍可修改；点击准备完成开始。"
 
-# 自动安排先试该成员自己的专属牌，再试全队通用牌。
+func _auto_slot_order(slot: Dictionary) -> int:
+	var hero: Dictionary = battle.heroes[slot.unit]
+	var priority := 2
+	if hero.character_id == Rules.ZIXI_ID:
+		var finisher: bool = hero.causality == Rules.ZiXi.CAUSALITY_MAX and hero.metaphysics >= Rules.ZiXi.ENHANCE_COST
+		if slot.category == (1 if finisher else 0):
+			priority = 0
+	elif hero.character_id == Rules.ZIXINGYC_ID and slot.category != 1:
+		priority = slot.category / 2
+	return priority * battle.hero_slots.size() + slot.id
+
 func _card_order(unit: int) -> Array:
-	var owner_id := int(battle.heroes[unit].character_id)
+	var hero: Dictionary = battle.heroes[unit]
+	var owner_id := int(hero.character_id)
 	var order: Array = []
+	if owner_id == Rules.ZIXINGYC_ID:
+		var preferred := battle.hand.find(Rules.ZiXingYC.preferred_attack(hero))
+		if preferred >= 0:
+			order.append(preferred)
 	for card in battle.hand.size():
-		if Rules.card_owner(battle.hand[card]) == owner_id:
+		if Rules.card_owner(battle.hand[card]) == owner_id and not order.has(card):
 			order.append(card)
 	for card in battle.hand.size():
 		if Rules.card_owner(battle.hand[card]) < 0:

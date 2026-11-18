@@ -49,5 +49,27 @@ func _run() -> void:
 	m.battle.battle.outcome = "defeat"
 	m._return_from_battle()
 	check(m.carried_cost == 38 and m.finished and not m.cleared.has(Vector2i(2,1)), "defeat grants no reward")
+	m._restart()
+	m.run.carried_cost = 14
+	m.run.party_hp.assign([22, 0, 45])
+	m.run.party_max_hp[0] = 52
+	m.run.in_battle = true
+	m.run.current_encounter = 0
+	m._start_battle(0)
+	await process_frame
+	check(m.battle.battle.cost == 14 and m.battle.battle.heroes[0].max_hp == 52, "graph battle uses current run cost and max HP")
+	check(not m.battle.restart_button.visible, "map battle hides standalone restart")
+	check(m.battle.battle.use_item("dense_smoke").ok, "graph battle uses run items")
+	m.battle.battle.cost = 10
+	m.battle.battle.outcome = "victory"
+	m._return_from_battle()
+	check(m.run.carried_cost == 16 and m.run.party_hp == [28, 0, 46], "graph battle applies its own reward and six HP rest once")
+	check(not m.run.items.has("dense_smoke"), "consumed item stays spent on the map")
+	m.run.in_battle = true
+	m.run.current_encounter = 5
+	m._start_battle(5)
+	check(m.battle.battle.enemies[0].kind == "colossus" and m.battle.stage.state.enemies.size() == 1, "map-only boss initializes and refreshes its battle scene")
+	m.queue_free()
+	await process_frame
 	print("NODE_TEST failures=", failures)
 	quit(1 if failures else 0)

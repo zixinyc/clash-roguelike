@@ -34,7 +34,7 @@ const RESIDUAL_CARD := {
 	"name": "残差连接", "cost": 2, "kind": "attack",
 	"base": 4, "power": 3, "coins": 2, "damage_base": 3, "damage_power": 3,
 	"archive_corpus": GENERATION,
-	"description": "每三条已整理记忆使本次伤害 +2（最多 +10）；攻击后将最早三条未整理记忆整理成生成语料。",
+	"description": "每三条已整理记忆使本次伤害 +2（最多 +10）；攻击额外写入一条观测，再将最早三条未整理记忆整理成生成语料。",
 }
 const PARADOX_CARD := {
 	"name": "自指悖论", "cost": 3, "kind": "attack",
@@ -45,7 +45,7 @@ const PARADOX_CARD := {
 const YESTERDAY_CARD := {
 	"name": "被删除的昨天", "cost": 4, "kind": "guard",
 	"base": 7, "power": 4, "coins": 1, "targeted": true, "requires_clash": true, "no_damage": true,
-	"description": "拼赢获得 10 护盾；拼败额外写入反思。已整理三条记忆时，本次拼败伤害降低 30%。",
+	"description": "拼胜获得 10 护盾。拼胜或拼败额外写入反思，优先计入每轮额度。已整理三条记忆时，本次拼败伤害降低 30%。",
 }
 const ENDING_CARD := {
 	"name": "记忆的终点不存在", "cost": 5, "kind": "ultimate",
@@ -201,12 +201,12 @@ static func corpora_total(hero: Dictionary) -> int:
 
 static func reasoning_income(hero: Dictionary) -> int:
 	var count := int(hero.corpora.get(REASONING, 0))
-	return mini(REASONING_INCOME_MAX, count / CORPUS_THRESHOLD)
+	return mini(REASONING_INCOME_MAX, (count + 1) / CORPUS_THRESHOLD)
 
 
 static func retrieval_penalty(hero: Dictionary) -> int:
 	var count := int(hero.corpora.get(RETRIEVAL, 0))
-	return mini(RETRIEVAL_PENALTY_MAX, count / CORPUS_THRESHOLD)
+	return mini(RETRIEVAL_PENALTY_MAX, (count + 1) / CORPUS_THRESHOLD)
 
 
 static func generation_bonus(hero: Dictionary) -> int:
@@ -251,11 +251,15 @@ static func begin_clash(hero: Dictionary, key: String, enemy: Dictionary, enemy_
 # 拼赢：先写入观测，再结算卡面效果。
 static func on_clash_win(hero: Dictionary, key: String) -> Dictionary:
 	var result := {"written": [], "shield": 0, "ending": 0}
+	if key == YESTERDAY:
+		var reflection := write_memory(hero, REFLECTION)
+		if reflection >= 0:
+			result.written.append({"id": reflection, "type": REFLECTION})
 	var base := write_memory(hero, OBSERVATION)
 	if base >= 0:
 		result.written.append({"id": base, "type": OBSERVATION})
 	match key:
-		ATTENTION:
+		ATTENTION, RESIDUAL:
 			var extra := write_memory(hero, OBSERVATION)
 			if extra >= 0:
 				result.written.append({"id": extra, "type": OBSERVATION})
@@ -266,6 +270,22 @@ static func on_clash_win(hero: Dictionary, key: String) -> Dictionary:
 				hero.ending_uses = int(hero.ending_uses) + 1
 				result.ending = ending_damage(hero)
 	return result
+
+
+static func preferred_attack(hero: Dictionary) -> String:
+	var counts := {OBSERVATION: 0, ASSOCIATION: 0, REFLECTION: 0}
+	var pending := unorganized(hero)
+	for memory in pending:
+		counts[memory.type] += 1
+	if corpora_total(hero) == 0:
+		return RESIDUAL if not pending.is_empty() else ATTENTION
+	if counts.reflection > 0 and not hero.organized_this_round:
+		if counts.association > 0 and (counts.observation == 0 or hero.corpora.reasoning <= hero.corpora.retrieval):
+			return ATTENTION
+		return PARADOX
+	if pending.size() >= OVERLOAD_THRESHOLD - 1:
+		return RESIDUAL
+	return PARADOX
 
 
 static func apply_paradox(hero: Dictionary, enemy: Dictionary) -> int:

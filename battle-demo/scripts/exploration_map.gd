@@ -1124,38 +1124,20 @@ func _refresh_ui() -> void:
 
 func _start_battle(encounter: int) -> void:
 	battle = BattleScene.instantiate()
-	add_child(battle)
 	battle.encounter = encounter
-	
-	# Determine team lineup flags
-	var use_touhou: bool = run.roster_id == 1 and run.lineup.is_empty()
-	var use_zixi: bool = run.roster_id == 2 and run.lineup.is_empty()
-	var use_zixingyc: bool = run.roster_id == 3 and run.lineup.is_empty()
-	
 	battle.lineup = run.lineup.duplicate()
 	battle.deck = run.deck.duplicate() if not run.deck.is_empty() else null
-	
-	battle.battle.start(randi(), encounter, use_touhou, use_zixi, run.lineup, (run.deck if not run.deck.is_empty() else null), use_zixingyc, run.relics, run.items)
-	battle.battle.cost = carried_cost
-	for i in mini(carried_hp.size(), battle.battle.heroes.size()):
-		battle.battle.heroes[i].hp = carried_hp[i]
-		
-	for slot in battle.battle.enemy_slots:
-		if slot.active and slot.category != 2:
-			slot.target = battle.battle._living_target(slot.target)
-			
-	battle._refresh(battle.battle.snapshot())
-	
-	# Hide standalone controls in battle view
-	if battle.has_node("EncounterButton"):
-		battle.encounter_button.visible = false
-	if battle.has_node("TeamButton"):
-		battle.team_button.visible = false
-	if battle.has_node("ZiXiButton"):
-		battle.zixi_button.visible = false
-	if battle.has_node("RestartButton"):
-		battle.restart_button.visible = false
-		
+	if run.in_battle:
+		battle.exploration_run = run
+	add_child(battle)
+	if battle.exploration_run == null:
+		battle.battle.cost = carried_cost
+		for i in mini(carried_hp.size(), battle.battle.heroes.size()):
+			battle.battle.heroes[i].hp = carried_hp[i]
+		battle._refresh(battle.battle.snapshot())
+	for control in [battle.encounter_button, battle.team_button, battle.zixi_button, battle.zixingyc_button, battle.restart_button, battle.setup_button]:
+		if control != null:
+			control.hide()
 	return_button.visible = false
 	move_child(return_button, get_child_count() - 1)
 
@@ -1169,11 +1151,22 @@ func _return_from_battle() -> void:
 		surviving_hp.append(int(h.hp))
 	var final_cost: int = battle.battle.cost
 	var enc: int = battle.encounter
+	var graph_battle: bool = battle.exploration_run != null
+	if graph_battle:
+		run.items.assign(battle.battle.active_items)
 	
 	battle.queue_free()
 	battle = null
 	return_button.visible = false
-	
+	if graph_battle:
+		run.apply_battle_result(victory, surviving_hp, final_cost)
+		carried_cost = run.carried_cost
+		carried_hp.assign(run.party_hp)
+		_refresh_ui()
+		if run.floor_cleared:
+			_show_next_floor_modal()
+		return
+
 	carried_cost = final_cost
 	for i in carried_hp.size():
 		if i < surviving_hp.size():
@@ -1185,16 +1178,6 @@ func _return_from_battle() -> void:
 	else:
 		finished = true
 		
-	if run:
-		run.apply_battle_result(victory, surviving_hp, final_cost)
-		run.carried_cost = carried_cost
-		for i in run.party_hp.size():
-			if i < carried_hp.size():
-				carried_hp[i] = run.party_hp[i]
-	_refresh_ui()
-	
-	if run and run.floor_cleared:
-		_show_next_floor_modal()
 	_refresh_ui()
 
 # Legacy Grid & Event Compatibility

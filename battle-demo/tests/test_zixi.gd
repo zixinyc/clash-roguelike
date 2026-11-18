@@ -96,9 +96,9 @@ func test_gain() -> void:
 	var events := battle.lock_and_resolve()
 	var rolls := clashes(events)
 	check(rolls[0].left == 17 and rolls[0].right == 0, "causality changes both scores and different next-clash effects add")
-	check(hero.metaphysics == 1 and hero.next_clash.size() == 1 and hero.next_clash[ZiXi.CENTRAL_LIMIT] == 1, "suppressed margin pays only the basic layer")
+	check(hero.metaphysics == 2 and hero.next_clash.size() == 1 and hero.next_clash[ZiXi.CENTRAL_LIMIT] == 1, "suppressed margin pays only the basic two layers")
 	hero = ZiXi.create_unit()
-	check(ZiXi.win_clash(hero, ZiXi.CENTRAL_LIMIT, 4, 1) == 1 and ZiXi.win_clash(hero, ZiXi.CENTRAL_LIMIT, 5, 1) == 2, "margin bonus begins exactly at five points")
+	check(ZiXi.win_clash(hero, ZiXi.CENTRAL_LIMIT, 4, 1) == 2 and ZiXi.win_clash(ZiXi.create_unit(), ZiXi.CENTRAL_LIMIT, 5, 1) == 3, "margin bonus begins exactly at five points")
 
 func test_coins() -> void:
 	var battle := fresh()
@@ -109,7 +109,7 @@ func test_coins() -> void:
 	var events := battle.lock_and_resolve()
 	var rolls := clashes(events)
 	check(rolls[0].left_heads == 1 and rolls[1].left_heads == 0, "only the skill's first tail flips")
-	check(hits_to(events, 0) == 2 and hero.causality == 1, "clash flip is not reused during attack")
+	check(hits_to(events, 0) == 2 and hero.causality == 2, "large-margin enhanced win grants two causality without reusing the clash flip")
 	check(hero.next_clash[ZiXi.CONVERGENCE] == 2, "convergence grants +2 to the next clash")
 	battle = fresh()
 	hero = battle.heroes[1]
@@ -175,7 +175,7 @@ func test_blast() -> void:
 	play(battle, ZiXi.ALMOST_SURE, 4, 0, true)
 	var events := battle.lock_and_resolve()
 	check(hits_to(events, 0) == 38 and hits_to(events, 1) == 21, "bomb uses new third causality layer; single hit uses original two")
-	check(hero.causality == 0 and hero.metaphysics == 2 and hero.no_margin_round == 2, "winning bomb clears causality after learning and suppresses next margin")
+	check(hero.causality == 0 and hero.metaphysics == 3 and hero.no_margin_round == 2, "winning bomb clears causality after learning and suppresses next margin")
 	battle = fresh()
 	hero = battle.heroes[1]
 	hero.metaphysics = 3
@@ -184,7 +184,7 @@ func test_blast() -> void:
 	set_attacks(battle, [0])
 	play(battle, ZiXi.ALMOST_SURE, 4, 0, true)
 	events = battle.lock_and_resolve()
-	check(hits_to(events, 1) == 0 and hero.causality == 2 and hero.metaphysics == 0 and hero.no_margin_round == 0, "losing enhancement gives causality but cannot bomb or refund layers")
+	check(hits_to(events, 1) == 0 and hero.causality == 2 and hero.metaphysics == 1 and hero.no_margin_round == 0, "surviving a loss earns one layer without firing the bomb")
 	battle = fresh()
 	hero = battle.heroes[1]
 	hero.metaphysics = 3

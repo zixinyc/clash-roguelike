@@ -248,6 +248,10 @@ func _test_floor_progression_and_exit_boss() -> void:
 	check(run.party_hp == [45, 40, 42], "Party HP preserved across floors")
 	check(run.relics.has("mercury_die"), "Relics preserved across floors")
 	check(run.carried_cost == 65, "Cost preserved (50 + 15 boss reward = 65)")
+	check(not run.ember_core, "the next floor starts without the previous Ember Core")
+	run.position = map2.exit_id
+	run.enter_node()
+	check(run.in_battle and run.current_encounter == 5, "the next floor still requires its own boss battle")
 
 func _test_custom_lineup_and_shop_adjustment() -> void:
 	var map = ForestRandomGenerator.generate(600)

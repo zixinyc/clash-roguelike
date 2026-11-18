@@ -35,6 +35,7 @@ var motions: Array[Vector2] = [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2
 var flashes: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
 var impact := 0.0
 var sparks := 0.0
+var contact_position := Vector2.ZERO
 var holding_impact := false
 var overlay: Dictionary = {}
 var banner := ""
@@ -46,6 +47,7 @@ var actors_texture: Texture2D
 var priest_texture: Texture2D
 var zixi_texture: Texture2D
 var zixingyc_texture: Texture2D
+var impact_texture: Texture2D
 
 func _ready() -> void:
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -58,6 +60,7 @@ func _ready() -> void:
 	priest_texture = _optional_texture("res://art/grave-priest.png")
 	zixi_texture = _optional_texture("res://art/zixi.png")
 	zixingyc_texture = _optional_texture("res://art/zixingyc-placeholder.png")
+	impact_texture = _optional_texture("res://art/battle-impact.png")
 
 func _optional_texture(path: String) -> Texture2D:
 	return load(path) as Texture2D if ResourceLoader.exists(path) else null
@@ -77,9 +80,10 @@ func reset_visuals() -> void:
 	holding_impact = false
 
 func _process(delta: float) -> void:
-	if holding_impact:
-		return
 	time += delta
+	if holding_impact:
+		queue_redraw()
+		return
 	impact = maxf(0.0, impact - delta * 3.5)
 	sparks = maxf(0.0, sparks - delta * 2.0)
 	for i in flashes.size():
@@ -338,7 +342,10 @@ func _draw_overlay() -> void:
 				var p := Vector2(center_x + (i - (count - 1) / 2.0) * 17, 142)
 				draw_circle(p, 4.0, GOLD if i < heads else Color("3e4c51"))
 	if sparks > 0:
-		var center := Vector2(690, 190)
+		var center := contact_position
+		if impact_texture != null:
+			var extent := Vector2(176, 176) * (1.2 - sparks * 0.2)
+			draw_texture_rect(impact_texture, Rect2(center - extent / 2.0, extent), false, Color(1, 1, 1, sparks))
 		for i in 18:
 			var angle := i * TAU / 18.0 + 0.17
 			var length := (25.0 + (i % 5) * 14) * (1.3 - sparks * 0.4)
@@ -355,6 +362,16 @@ func _move_pair(a: int, b: int, offset_a: Vector2, offset_b: Vector2, duration: 
 	tween.tween_method(_set_motion.bind(b), motions[b], offset_b, duration)
 	await tween.finished
 
+func _contact(at: Vector2, strength: float, sound_kind: String, hold: float) -> void:
+	contact_position = at
+	impact_sound.emit(sound_kind)
+	sparks = strength
+	impact = strength
+	holding_impact = true
+	queue_redraw()
+	await get_tree().create_timer(hold).timeout
+	holding_impact = false
+
 func play_event(event: Dictionary, speed: float) -> void:
 	var duration := 1.0 / speed
 	match event.type:
@@ -368,13 +385,7 @@ func play_event(event: Dictionary, speed: float) -> void:
 			overlay = event
 			await _move_pair(hero_id, enemy_id, Vector2(-12, 0), Vector2(12, 0), 0.12 * duration)
 			await _move_pair(hero_id, enemy_id, Vector2(620, 282) - _actor_position(hero_id), Vector2(766, 282) - _actor_position(enemy_id), 0.16 * duration)
-			impact_sound.emit("strike" if decisive else "clash")
-			sparks = 1.0
-			impact = 1.0 if decisive else 0.65
-			holding_impact = true
-			queue_redraw()
-			await get_tree().create_timer((0.30 if decisive else 0.18) * duration).timeout
-			holding_impact = false
+			await _contact(Vector2(690, 190), 1.0 if decisive else 0.65, "strike" if decisive else "clash", (0.30 if decisive else 0.18) * duration)
 			await get_tree().create_timer(0.20 * duration).timeout
 			var result_text := "平局 · 再次交锋"
 			if event.decider:
@@ -394,14 +405,9 @@ func play_event(event: Dictionary, speed: float) -> void:
 			var travel: Vector2 = _actor_position(victim) - _actor_position(attacker) - Vector2(92 * direction, 0)
 			await _move_pair(attacker, victim, Vector2(-14 * direction, 0), Vector2.ZERO, 0.10 * duration)
 			await _move_pair(attacker, victim, travel, Vector2.ZERO, 0.15 * duration)
-			impact_sound.emit("strike")
-			impact = 1.0
 			flashes[victim] = 1.0
 			floaters.append({"text": "−%d" % event.damage, "position": _actor_position(victim) + Vector2((event.hit - 1) * 18 - 12, -152 - (event.hit - 1) * 19), "age": 0.0, "color": RED if not event.allied else GOLD, "size": 33})
-			holding_impact = true
-			queue_redraw()
-			await get_tree().create_timer((0.28 if event.hit == event.total else 0.17) * duration).timeout
-			holding_impact = false
+			await _contact(_actor_position(victim) + Vector2(0, -82), 1.0, "strike", (0.28 if event.hit == event.total else 0.17) * duration)
 			await _move_pair(attacker, victim, Vector2.ZERO, Vector2(26 * direction, 0), 0.13 * duration)
 			await _move_pair(attacker, victim, Vector2.ZERO, Vector2.ZERO, 0.11 * duration)
 		"guard":

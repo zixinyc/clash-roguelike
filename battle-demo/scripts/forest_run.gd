@@ -567,6 +567,9 @@ func apply_battle_result(victory: bool, remaining_hp: Array, remaining_cost: int
 		var reward_cost := 15 if is_boss else (10 if is_elite else 6)
 		carried_cost += reward_cost
 		log_event("战斗胜利！缴获 %d cost。" % reward_cost)
+		if not is_boss and not is_elite:
+			heal_party(6)
+			log_event("战后休整：存活队员恢复 6 生命。")
 		
 		# Boss drops Ember Core and sets floor_cleared
 		if is_boss:
@@ -599,6 +602,7 @@ func apply_battle_result(victory: bool, remaining_hp: Array, remaining_cost: int
 func advance_to_next_floor(new_map: RefCounted, seed_val: int = -1) -> void:
 	floor_level += 1
 	floor_cleared = false
+	ember_core = false
 	finished = false
 	in_battle = false
 	pending = ""
