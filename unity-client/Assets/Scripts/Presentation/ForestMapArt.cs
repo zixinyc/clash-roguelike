@@ -53,15 +53,16 @@ namespace ClashRoguelike
         {
             const int size=64;var colors=new Color[size*size];for(int y=0;y<size;y++)for(int x=0;x<size;x++){float r=new Vector2((x-31.5f)/31.5f,(y-31.5f)/31.5f).magnitude;float a=ring?Mathf.Clamp01(1-Mathf.Abs(r-.77f)*22):Mathf.Pow(Mathf.Clamp01(1-r),2.4f);colors[y*size+x]=new Color(1,1,1,a);}var texture=new Texture2D(size,size,TextureFormat.RGBA32,false);texture.SetPixels(colors);texture.Apply();return texture;
         }
-        public void UpdateFog(ForestRun run,ForestIntel intel)
+          public void UpdateFog(ForestRun run,ForestIntel intel,Func<ForestNode,Vector2> project=null)
         {
             if(fogVersion==run.Version)return;fogVersion=run.Version;int w=Fog.width,h=Fog.height;var pixels=new Color32[w*h];
-            var known=run.Map.Nodes.Where(n=>intel.Known.Contains(n.Id)).ToArray();var visible=run.Map.Nodes.Where(n=>intel.Visible.Contains(n.Id)).ToArray();
+              if(project==null)project=n=>new Vector2(n.X,n.Y);
+              var known=run.Map.Nodes.Where(n=>intel.Known.Contains(n.Id)).Select(project).ToArray();var visible=run.Map.Nodes.Where(n=>intel.Visible.Contains(n.Id)).Select(project).ToArray();
             for(int y=0;y<h;y++)for(int x=0;x<w;x++)
             {
                 float u=(float)x/(w-1),v=1-(float)y/(h-1),dk=100,dv=100;
-                foreach(var n in known){float dx=(u-n.X)*1.5f,dy=v-n.Y;dk=Math.Min(dk,dx*dx+dy*dy);}
-                foreach(var n in visible){float dx=(u-n.X)*1.5f,dy=v-n.Y;dv=Math.Min(dv,dx*dx+dy*dy);}
+                  foreach(var n in known){float dx=(u-n.x)*1.5f,dy=v-n.y;dk=Math.Min(dk,dx*dx+dy*dy);}
+                  foreach(var n in visible){float dx=(u-n.x)*1.5f,dy=v-n.y;dv=Math.Min(dv,dx*dx+dy*dy);}
                 float k=1-Mathf.SmoothStep(0,1,Mathf.InverseLerp(.005f,.035f,dk)),s=1-Mathf.SmoothStep(0,1,Mathf.InverseLerp(.002f,.019f,dv));float alpha=Mathf.Lerp(.94f,.63f,k);alpha=Mathf.Lerp(alpha,.08f,s);
                 float cloud=Mathf.Sin(u*32+Mathf.Sin(v*17))*Mathf.Sin(v*26+u*11);alpha=Mathf.Clamp01(alpha+cloud*.025f);byte gray=(byte)(20+Math.Max(0,cloud)*10);pixels[y*w+x]=new Color32(gray,(byte)(gray+2),(byte)(gray+4),(byte)(alpha*255));
             }

@@ -1,4 +1,4 @@
-param([string]$ProjectRoot = (Split-Path $PSScriptRoot -Parent))
+﻿param([string]$ProjectRoot = (Split-Path $PSScriptRoot -Parent))
 $ErrorActionPreference='Stop'
 $projectPath=(Resolve-Path -LiteralPath $ProjectRoot).Path
 $managedPath=Join-Path $projectPath 'Builds\Windows\ClashRoguelike_Data\Managed'

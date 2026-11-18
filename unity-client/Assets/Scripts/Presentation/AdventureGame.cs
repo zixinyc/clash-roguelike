@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Collections;
@@ -91,7 +91,7 @@ namespace ClashRoguelike
         void SkipPort()
         {if(portBusy){portSkip=true;portNotice="快速结算中；平局仍按规则重投。";}}
         void ReturnPortMap()
-        {if(portBusy||portRules.State.Outcome=="")return;if(fromMap){if(forestMode)forest.FinishBattle(portRules.State);else exploration.FinishBattle(portRules.State);}portRules=null;portShown=null;portPrepared=false;}
+        {if(portBusy||portRules.State.Outcome=="")return;if(fromMap){if(forestMode)forest.FinishBattle(portRules.State);else exploration.FinishBattle(portRules.State);}portRules=null;portShown=null;portPrepared=false;if(forestPassAfterBattle){forestPassAfterBattle=false;PassForestPlayer();}}
         void DrawAdventure()
         {
             float scale=Mathf.Min(Screen.width/1440f,Screen.height/900f);GUI.matrix=Matrix4x4.TRS(new Vector3((Screen.width-1440*scale)/2,(Screen.height-900*scale)/2,0),Quaternion.identity,new Vector3(scale,scale,1));
@@ -147,7 +147,7 @@ namespace ClashRoguelike
             DrawPortStatuses();
             Panel(new Rect(30,162,1380,355),Hex("12202A"),Hex("35474F"));Fill(new Rect(31,391,1378,125),Hex("0D1922"));Line(new Vector2(31,414),new Vector2(1408,414),Hex("3F4A47"),2);
             if(!portBusy)DrawPlannedClashes();
-            for(int active=0;active<2;active++){for(int i=0;i<3;i++)if(DuelParticipant(true,i)==(active==1))DrawPortUnit(true,i);for(int i=0;i<2;i++)if(DuelParticipant(false,i)==(active==1))DrawPortUnit(false,i);}
+            for(int active=0;active<2;active++){for(int i=0;i<3;i++)if(DuelParticipant(true,i)==(active==1))DrawPortUnit(true,i);for(int i=0;i<portShown.Enemies.Count;i++)if(DuelParticipant(false,i)==(active==1))DrawPortUnit(false,i);}
             DrawDuelStage();
             if(portEvent!=null&&portEvent.Coin!=null)DrawCoinPanel(portEvent.Coin,portEvent.Type,portPhase,portEvent.Damage);
             Label(40,527,1000,32,PortGuide(),15,Gold,TextAnchor.MiddleCenter);
@@ -185,8 +185,8 @@ namespace ClashRoguelike
             if(portBusy)return;
             foreach(var s in slots.Where(a=>a.Unit==index&&!(allied&&portShown.WorldActive&&index==1&&a.Category==2&&!a.Active)))
             {
-                Rect r=new Rect(x-71,168+s.Category*25,150,23);bool target=!allied&&PortTargetLegal(s.Id);string label=(s.Frozen?"停时":s.Flexible?"技能"+(s.Category+1):categoryNames[s.Category])+" "+s.Speed;
-                if(s.Active)label+=" · "+(allied?PortContent.Card(s.Key).Name:portShown.Phase=="response"?s.Category==2?"防御":"→ "+PortHeroName(s.Target):PortContent.Card(s.Key).Name);
+                float slotWidth=!allied&&portShown.Enemies.Count>2?130:150;Rect r=new Rect(x-slotWidth/2,168+s.Category*25,slotWidth,23);bool target=!allied&&PortTargetLegal(s.Id);string label=(s.Frozen?"停时":s.Flexible?"技能"+(s.Category+1):categoryNames[s.Category])+" "+s.Speed;
+                if(s.Active)label+=" · "+(allied?PortContent.Card(s.Key).Name:portRules.EnemySkillVisible(s.Id)?PortContent.Card(portRules.State.EnemySlots[s.Id].Key).Name:s.Category==2?"防御":"→ "+PortHeroName(s.Target));
                 else label+=" · 空";
                 Panel(r,Hex("172630"),target?Cyan:allied&&portSlot==s.Id?Gold:s.Active?Hex("667369"):Hex("293941"));Label(r.x+4,r.y+2,r.width-8,23,label,12,s.Active?Pale:Muted,TextAnchor.MiddleCenter);
                 GUI.enabled=!portBusy&&!portPrepared&&(allied?u.Hp>0&&!s.Frozen:target);

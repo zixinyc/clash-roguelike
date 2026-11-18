@@ -15,17 +15,17 @@ namespace ClashRoguelike
         public static readonly string[] ReimuCards={"yin_yang_orb","fantasy_seal","demon_seal","fantasy_nature"};
         public static PortCard[] Cards()
         {return new[]{
-            new PortCard("murder_doll","杀人玩偶","咲夜专属",2,5,3,3,1,"单币突刺 · 反面5 / 正面8，再结算银色小刀","银刃落下。",1,"attack"),
+            new PortCard("murder_doll","杀人玩偶","咲夜专属",2,5,5,5,1,"单币突刺 · 反面5 / 正面10，再结算银色小刀","银刃落下。",1,"attack"),
             new PortCard("stopwatch","咲夜特制秒表","咲夜专属",4,5,15,15,1,"辅助无伤害 · 接下来两回合敌速−3；全队每快2点拼点+1，最多+3","时间由我掌握。",1,"ultimate",noDamage:true),
             new PortCard("private_square","私人空间","咲夜专属",3,5,10,10,1,"定向防御拼点 · 无伤害/护盾；下回合自身速度+3，每击原始+5","留下属于自己的空间。",1,"guard",targeted:true,noDamage:true),
             new PortCard("the_world","咲夜的世界","咲夜专属",5,5,20,20,1,"辅助无伤害 · 下回合仅咲夜行动，两次不限类别行动，可重复同一技能；每场一次","世界，静止吧。",1,"ultimate",noDamage:true),
-            new PortCard("yin_yang_orb","阴阳宝玉","灵梦专属",1,3,2,2,2,"初始3 · 正面攻币+2，逐币累计 · 伤害后退治+1，每次技能最多1层","退治开始。",2,"attack"),
-            new PortCard("fantasy_seal","梦想妙珠","灵梦专属",2,1,2,2,5,"五币 · 初始1，正面攻币+2逐币累计 · 伤害后叠退治，每次技能最多2层","让宝玉追逐目标。",2,"attack"),
-            new PortCard("demon_seal","封魔阵","灵梦专属",4,5,5,5,1,"必须拼点 · 无伤害/护盾；获胜使目标和左侧最近存活敌人下回合拼点−2","封魔之阵。",2,"guard",targeted:true,requiresClash:true,noDamage:true),
+            new PortCard("yin_yang_orb","阴阳宝玉","灵梦专属",1,3,3,3,2,"初始3 · 正面攻币+3，逐币累计 · 伤害后退治+1，每次技能最多1层","退治开始。",2,"attack"),
+            new PortCard("fantasy_seal","梦想妙珠","灵梦专属",2,1,3,3,5,"五币 · 初始1，正面攻币+3逐币累计 · 伤害后叠退治，每次技能最多2层","让宝玉追逐目标。",2,"attack"),
+            new PortCard("demon_seal","封魔阵","灵梦专属",4,5,7,7,1,"必须拼点 · 无伤害/护盾；获胜使目标和左侧最近存活敌人下回合拼点−2","封魔之阵。",2,"guard",targeted:true,requiresClash:true,noDamage:true),
             new PortCard("fantasy_nature","梦想天生","灵梦专属",5,10,10,10,1,"必须拼赢 · 无直接伤害；宝玉1层，后续拼赢至多3层；三回合后按宝玉×退治×5结算，灵梦退场","短暂离开现世。",2,"ultimate",requiresClash:true,noDamage:true)
         }.Concat(MarisaDefinitions()).ToArray();}
         public static Unit Sakuya(){return new Unit{Name="十六夜咲夜",Role="时停",CharacterId="sakuya",Hp=40,MaxHp=40,MinSpeed=5,MaxSpeed=9,RoleState=new TouhouRoleState()};}
-        public static Unit Reimu(){return new Unit{Name="博丽灵梦",Role="退治",CharacterId="reimu",Hp=50,MaxHp=50,MinSpeed=5,MaxSpeed=7,RoleState=new TouhouRoleState()};}
+        public static Unit Reimu(){return new Unit{Name="博丽灵梦",Role="退治",CharacterId="reimu",Hp=50,MaxHp=50,MinSpeed=4,MaxSpeed=6,RoleState=new TouhouRoleState()};}
         public static int SilverKnife(int turn){return turn<=2?5:turn==3?2:0;}
     }
     public partial class PortBattleRules
@@ -79,7 +79,7 @@ namespace ClashRoguelike
             Emit(events,"ability","梦想天生：持续状态结算，不产生额外攻击或硬币",2);
             for(int i=0;i<State.Enemies.Count;i++)
             {
-                var e=State.Enemies[i];int raw=5*r.DreamOrbs*e.Exorcism;if(e.Hp<=0||raw<=0)continue;int blocked=Math.Min(e.Shield,raw),damage=raw-blocked;e.Shield-=blocked;e.Hp=Math.Max(0,e.Hp-damage);
+                var e=State.Enemies[i];int raw=5*r.DreamOrbs*e.Exorcism;if(e.Hp<=0||raw<=0)continue;int blocked=Math.Min(e.Shield,raw),damage=raw-blocked;damage=MapFinalDamage(true,true,damage);e.Shield-=blocked;e.Hp=Math.Max(0,e.Hp-damage);
                 var ev=Emit(events,"status_damage",e.Name+" 梦想天生状态伤害 "+damage+"（原始 "+raw+"）",2,i);ev.Damage=damage;
             }
             hero.Hp=0;r.DreamDue=0;r.DreamOrbs=0;Emit(events,"ability","博丽灵梦因梦想天生退场",2);

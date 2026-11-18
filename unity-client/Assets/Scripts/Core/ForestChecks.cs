@@ -62,7 +62,7 @@ namespace ClashRoguelike
             evade.EndTurn();evade.EndTurn();Check(evade.Intel().PatrolNode==null&&evade.Intel().Signals.Any(s=>s.Kind=="track"),"patrol leaves current vision while nearby historical traces remain");
             Check(evade.UseTracker()&&evade.Intel().PatrolNode==null&&evade.Intel().Signals.Any(s=>s.Kind=="noise"&&s.NodeId=="n12"),"tracker gives filtered distant clue, never a live hidden patrol marker");
             foreach(int variant in new[]{0,1}){var invalid=ForestMapDefinition.Generate(73129,false);if(variant==0)invalid.Node("n1").X=float.NaN;else invalid.Edges[0].IntelCost=-1;bool rejected=false;try{invalid.Validate();}catch(InvalidOperationException){rejected=true;}Check(rejected,"reject invalid configurable coordinates or costs");}
-            return checks;
+            return checks+ForestCampaignChecks.Run();
         }
     }
 }

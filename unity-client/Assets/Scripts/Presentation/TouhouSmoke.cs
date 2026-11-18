@@ -25,7 +25,7 @@ namespace ClashRoguelike
                 {
                     previous=ev;if(ev.Type=="strike")
                     {
-                        hits++;int raw=1+2*hits;total+=raw;
+                        hits++;int raw=1+3*hits;total+=raw;
                         SmokeCheck(ev.Coin.RawDamage==raw&&ev.Damage==raw&&portShown.Enemies[0].Hp==1000-total,"dream head number and displayed HP snapshot agree on each cumulative hit");
                         rows.Add("hit="+hits+" raw="+ev.Coin.RawDamage+" damage="+ev.Damage+" hp="+portShown.Enemies[0].Hp+" accumulated="+ev.Coin.AttackAccumulated);
                     }

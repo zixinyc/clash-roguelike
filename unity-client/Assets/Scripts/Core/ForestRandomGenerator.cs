@@ -1,44 +1,319 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+
 namespace ClashRoguelike
 {
     public static class ForestRandomGenerator
     {
-        public static ForestMapDefinition Generate(int seed)
+        public static ForestMapDefinition Generate(int seed) { return GenerateFloor(seed, 1, 5); }
+
+        public static ForestMapDefinition[] GenerateFloors(int seed, bool pvp)
         {
-            var r=new Random(seed);var m=new ForestMapDefinition{Seed=seed};int[] sizes={1,r.Next(2,4),r.Next(3,5),r.Next(3,5),4,r.Next(3,5),r.Next(2,4),1};
-            var layers=new System.Collections.Generic.List<string[]>();int id=0;
-            ForestNodeKind[] pool={ForestNodeKind.Battle,ForestNodeKind.Supply,ForestNodeKind.Event,ForestNodeKind.Hideout,ForestNodeKind.Lookout,ForestNodeKind.Danger,ForestNodeKind.Camp,ForestNodeKind.Shop,ForestNodeKind.Elite};
-            for(int layer=0;layer<sizes.Length;layer++)
-            {
-                var names=new string[sizes[layer]];
-                for(int j=0;j<names.Length;j++)
-                {
-                    string key="r"+id++;names[j]=key;var kind=layer==0?ForestNodeKind.Spawn:layer==7?ForestNodeKind.Exit:pool[r.Next(pool.Length)];
-                    float x=.065f+layer*.123f+(float)(r.NextDouble()-.5)*.028f,y=names.Length==1?.51f:.12f+.76f*j/(names.Length-1)+(float)(r.NextDouble()-.5)*.06f;
-                    m.Nodes.Add(new ForestNode(key,x,y,kind,Title(kind,r.Next(4))));
-                }
-                layers.Add(names);
-            }
-            m.StartId=layers[0][0];Set(m,layers[1][0],ForestNodeKind.Supply);Set(m,layers[1][1],ForestNodeKind.Battle);
-            Set(m,layers[2][0],ForestNodeKind.Lookout);Set(m,layers[2][1],ForestNodeKind.Event);Set(m,layers[3][0],ForestNodeKind.Hideout);Set(m,layers[3][1],ForestNodeKind.Danger);
-            Set(m,layers[4][1],ForestNodeKind.Center);Set(m,layers[5][0],ForestNodeKind.Elite);Set(m,layers[5][1],ForestNodeKind.Shop);Set(m,layers[6][0],ForestNodeKind.Camp);
-            for(int layer=1;layer<layers.Count;layer++)
-            {
-                var prev=layers[layer-1];var next=layers[layer];int mainPrev=layer-1==4?1:0,mainNext=layer==4?1:0;
-                Add(m,prev[mainPrev],next[mainNext],ForestRouteKind.Main,r);
-                foreach(string n in next)if(!m.Links(n).Any())Add(m,prev[r.Next(prev.Length)],n,ForestRouteKind.Branch,r);
-                foreach(string p in prev)if(!m.Links(p).Any(e=>next.Contains(e.Other(p))))Add(m,p,next[r.Next(next.Length)],ForestRouteKind.Branch,r);
-                for(int j=0;j<next.Length;j++)if(r.NextDouble()<.65)Add(m,prev[r.Next(prev.Length)],next[j],ForestRouteKind.Loop,r);
-                if(next.Length>2)Add(m,next[0],next[1],ForestRouteKind.Loop,r);
-            }
-            // An ordinary four-edge cycle also gives the environmental patrol a valid closed route.
-            string a=layers[3][0],b=layers[4][0],c=layers[3][1],d=layers[4][1];Add(m,a,b,ForestRouteKind.Loop,r);Add(m,b,c,ForestRouteKind.Loop,r);Add(m,c,d,ForestRouteKind.Loop,r);Add(m,d,a,ForestRouteKind.Loop,r);m.PatrolRoute.AddRange(new[]{a,b,c,d});
-            string from=layers[2].Last(),to=layers[6].Last();Add(m,from,to,ForestRouteKind.Shortcut,r);var shortcut=m.Edge(from,to);shortcut.Hidden=true;shortcut.ActionCost=2;shortcut.IntelCost=1;
-            m.Validate();return m;
+            int count = pvp ? 4 : 5;
+            return Enumerable.Range(1, count).Select(floor => GenerateFloor(seed, floor, count)).ToArray();
         }
-        static void Set(ForestMapDefinition m,string id,ForestNodeKind kind){m.Node(id).Kind=kind;m.Node(id).Name=Title(kind,0);}
-        static void Add(ForestMapDefinition m,string a,string b,ForestRouteKind kind,Random r){if(a==b||m.Edge(a,b)!=null)return;m.Edges.Add(new ForestEdge{Id="random-edge-"+m.Edges.Count,From=a,To=b,Kind=kind,Bend=(r.Next(2)==0?-1:1)*(.025f+(float)r.NextDouble()*.04f)});}
-        static string Title(ForestNodeKind k,int variant){string[] prefixes={"焦木","迷雾","余烬","残月"};string suffix=k==ForestNodeKind.Spawn?"入口":k==ForestNodeKind.Exit?"归途":k==ForestNodeKind.Supply?"行囊":k==ForestNodeKind.Battle?"伏击地":k==ForestNodeKind.Event?"残碑":k==ForestNodeKind.Hideout?"树洞":k==ForestNodeKind.Lookout?"高台":k==ForestNodeKind.Danger?"险地":k==ForestNodeKind.Center?"烬心祭坛":k==ForestNodeKind.Elite?"追猎者":k==ForestNodeKind.Camp?"营火":"行商";return prefixes[variant%4]+suffix;}
+
+        public static ForestMapDefinition GenerateFloor(int seed, int floor, int total)
+        {
+            for (int attempt = 0; attempt < 128; attempt++)
+            {
+                var random = new Random(unchecked(seed * 31337 + floor * 7919 + total * 48611 + attempt * 104729));
+                var map = new FloorBuilder(seed, floor, total, random).Build();
+                if (map == null || !Playable(map,floor,total)) continue;
+                map.Validate();
+                return map;
+            }
+            throw new InvalidOperationException("Cannot generate forest road network: seed " + seed + ", floor " + floor);
+        }
+
+        static bool Playable(ForestMapDefinition map,int floor,int total)
+        {
+            var goals=map.Nodes.Where(n=>n.Kind==ForestNodeKind.DownwardTransition||n.Kind==ForestNodeKind.MutationStone).ToArray();
+            if(map.Nodes.Count(n=>n.Kind==ForestNodeKind.Eientei)!=1||
+                map.Nodes.Count(n=>n.Kind==ForestNodeKind.UpwardEntrance)!=(floor>1?1:0)||
+                map.Nodes.Count(n=>n.Kind==ForestNodeKind.MutationStone)!=(floor==total?1:0)||
+                map.Nodes.Count(n=>n.Kind==ForestNodeKind.DownwardTransition)!=(floor==total?0:goals.Length)||
+                goals.Length==0||map.Edges.Count(e=>!e.Hidden)-map.Nodes.Count+1<3) return false;
+            var starts=map.Nodes.Where(n=>n.Kind==ForestNodeKind.Spawn||n.Kind==ForestNodeKind.UpwardEntrance);
+            if(starts.Any(start=>goals.Any(goal=>Path(map,start.Id,goal.Id,n=>!Risk(n.Kind)).Count==0)))return false;
+            var recovery=map.Nodes.Where(n=>n.Kind==ForestNodeKind.Camp||n.Kind==ForestNodeKind.Supply).ToArray();
+            if(map.Nodes.Where(n=>n.Kind==ForestNodeKind.Elite).Any(elite=>
+                !recovery.Any(stop=>map.Distance(elite.Id,stop.Id,false)<=2)))return false;
+            var shortcuts=map.Edges.Where(e=>e.Hidden&&e.IntelCost>0).ToArray();
+            if(shortcuts.Any(e=>map.Distance(e.From,e.To,false)<=e.ActionCost))return false;
+            return map.Nodes.Where(n=>n.Kind==ForestNodeKind.Danger).All(danger=>
+                shortcuts.Any(e=>Math.Min(map.Distance(danger.Id,e.From,false),map.Distance(danger.Id,e.To,false))<=3));
+        }
+
+        sealed class Corridor
+        {
+            public int A, B;
+            public int Mid { get { return (A+B)/2; } }
+        }
+
+        sealed class FloorBuilder
+        {
+            const int Width = ForestMapDefinition.RoadColumns;
+            readonly int floor, total;
+            readonly Random random;
+            readonly ForestMapDefinition map;
+            readonly Dictionary<int, ForestNode> cells = new Dictionary<int, ForestNode>();
+            readonly List<Corridor> unused = new List<Corridor>();
+            readonly List<ForestNode> reservedRecovery = new List<ForestNode>();
+
+            public FloorBuilder(int seed, int floor, int total, Random random)
+            {
+                this.floor = floor;
+                this.total = total;
+                this.random = random;
+                map = new ForestMapDefinition { Seed = seed, FormatVersion = 2, RoadGrid = true };
+            }
+
+            public ForestMapDefinition Build()
+            {
+                BuildRoads();
+                var shortcut = TakeCorridor();
+                var danger = Tile(shortcut.Mid);
+                Set(danger, ForestNodeKind.Danger);
+                Connect(cells[shortcut.A], danger, ForestRouteKind.Branch);
+                Connect(danger, cells[shortcut.B], ForestRouteKind.Shortcut);
+                var hidden = map.Edge(danger.Id, cells[shortcut.B].Id);
+                hidden.Hidden = true;
+                hidden.ActionCost = 2;
+                hidden.IntelCost = 1;
+
+                if ((floor == 1 || floor == total-1) && AddSpur(ForestNodeKind.Elite, true) == null) return null;
+                bool patrol = floor == 1 || floor == total - 1;
+                if (patrol && !BuildPatrol()) return null;
+                if ((floor == 1 || floor == total) && AddSpur(ForestNodeKind.Anomaly, false) == null) return null;
+                if (floor > 1 && !patrol && random.Next(3) < floor-1 && AddSpur(ForestNodeKind.Battle, false) == null) return null;
+
+                var free = map.Nodes.Where(n => n.Kind == ForestNodeKind.Road).ToList();
+                free.RemoveAll(reservedRecovery.Contains);
+                var start = Draw(free, ForestNodeKind.Spawn);
+                Draw(free, ForestNodeKind.Spawn);
+                Draw(free, ForestNodeKind.Spawn);
+                map.StartId = start.Id;
+                var goals = new List<ForestNode>();
+                int goalCount = floor == total ? 1 : random.Next(1,3);
+                for (int i = 0; i < goalCount; i++)
+                {
+                    var candidates = free.Where(n => n.Kind == ForestNodeKind.Road).ToArray();
+                    if (candidates.Length == 0) return null;
+                    var goal = candidates[random.Next(candidates.Length)];
+                    Set(goal, floor == total ? ForestNodeKind.MutationStone : ForestNodeKind.DownwardTransition);
+                    free.Remove(goal);
+                    goals.Add(goal);
+                }
+                if (floor > 1)
+                {
+                    var arrivals = free.Where(n => goals.All(g => map.Distance(n.Id,g.Id,false) >= 3)).ToArray();
+                    if (arrivals.Length == 0) return null;
+                    var arrival = arrivals[random.Next(arrivals.Length)];
+                    Set(arrival, ForestNodeKind.UpwardEntrance);
+                    free.Remove(arrival);
+                }
+                Draw(free, ForestNodeKind.Eientei);
+                foreach (var node in reservedRecovery) Set(node, floor % 2 == 0 ? ForestNodeKind.Camp : ForestNodeKind.Supply);
+
+                // Keep the opening floor's existing inventory of activities. Later floors
+                // use fewer stops, with the stage weighting the extra optional destination.
+                if (floor == 1)
+                {
+                    foreach (var kind in new[] { ForestNodeKind.Camp, ForestNodeKind.Shop, ForestNodeKind.Lookout,
+                        ForestNodeKind.Hideout, ForestNodeKind.Event, ForestNodeKind.Center, ForestNodeKind.Encounter })
+                        Draw(free, kind);
+                }
+                else
+                {
+                    Draw(free, floor % 2 == 0 ? ForestNodeKind.Lookout : ForestNodeKind.Hideout);
+                    if(reservedRecovery.Count==0 && floor==2)Draw(free,ForestNodeKind.Camp);
+                    Draw(free, floor == total ? ForestNodeKind.Shop : ForestNodeKind.Encounter);
+                    var pool = floor >= total-1
+                        ? new[] { ForestNodeKind.Event, ForestNodeKind.Camp, ForestNodeKind.Camp, ForestNodeKind.Lookout }
+                        : new[] { ForestNodeKind.Supply, ForestNodeKind.Shop, ForestNodeKind.Encounter };
+                    Draw(free, pool[random.Next(pool.Length)]);
+                }
+
+                foreach (var goal in goals)
+                    foreach (var edge in Path(map, start.Id, goal.Id, n => !Risk(n.Kind))) edge.Kind = ForestRouteKind.Main;
+                return map;
+            }
+
+            void BuildRoads()
+            {
+                var vertices = new List<int>();
+                for (int y = 0; y < ForestMapDefinition.RoadRows; y += 2)
+                    for (int x = 0; x < Width; x += 2)
+                    {
+                        int cell = y*Width+x;
+                        vertices.Add(cell);
+                        Tile(cell);
+                        if (x+2 < Width) unused.Add(new Corridor { A=cell, B=cell+2 });
+                        if (y+2 < ForestMapDefinition.RoadRows) unused.Add(new Corridor { A=cell, B=cell+2*Width });
+                    }
+                var reached = new HashSet<int> { vertices[random.Next(vertices.Count)] };
+                while (reached.Count < vertices.Count)
+                {
+                    var frontier = unused.Where(e => reached.Contains(e.A) != reached.Contains(e.B)).ToArray();
+                    var edge = frontier[random.Next(frontier.Length)];
+                    unused.Remove(edge);
+                    AddCorridor(edge, ForestRouteKind.Branch);
+                    reached.Add(edge.A);
+                    reached.Add(edge.B);
+                }
+                int loopCount = random.Next(4,7);
+                for (int i=0; i<loopCount; i++) AddCorridor(TakeCorridor(), ForestRouteKind.Loop);
+            }
+
+            Corridor TakeCorridor()
+            {
+                int i = random.Next(unused.Count);
+                var result = unused[i];
+                unused.RemoveAt(i);
+                return result;
+            }
+
+            void AddCorridor(Corridor corridor, ForestRouteKind kind)
+            {
+                var tile = Tile(corridor.Mid);
+                Connect(cells[corridor.A], tile, kind);
+                Connect(tile, cells[corridor.B], kind);
+            }
+
+            ForestNode AddSpur(ForestNodeKind kind, bool recovery)
+            {
+                var exits = unused.Where(e => !cells.ContainsKey(e.Mid) &&
+                    (!recovery || cells[e.A].Kind == ForestNodeKind.Road || cells[e.B].Kind == ForestNodeKind.Road)).ToArray();
+                if (exits.Length == 0) return null;
+                var corridor = exits[random.Next(exits.Length)];
+                unused.Remove(corridor);
+                var node = Tile(corridor.Mid);
+                Set(node, kind);
+                Connect(cells[corridor.A], node, ForestRouteKind.Branch);
+                Connect(node, cells[corridor.B], ForestRouteKind.Branch);
+                if (recovery) reservedRecovery.Add(cells[corridor.A].Kind == ForestNodeKind.Road ? cells[corridor.A] : cells[corridor.B]);
+                return node;
+            }
+
+            bool BuildPatrol()
+            {
+                // Two connected battle tiles outside the safe skeleton keep the patrol
+                // present without placing it on a compulsory route.
+                var pairs = from y in new[] { 1, 3, 5 }
+                            from x in new[] { 1, 3, 5, 7 }
+                            let pocket = y*Width+x
+                            from first in unused
+                            where ForestMapDefinition.RoadAdjacent(first.Mid,pocket)
+                            from second in unused
+                            where first != second && ForestMapDefinition.RoadAdjacent(second.Mid,pocket)
+                            select new { Pocket=pocket, First=first, Second=second };
+                var options = pairs.ToArray();
+                if (options.Length == 0) return false;
+                var pair = options[random.Next(options.Length)];
+                var firstTile = Tile(pair.First.Mid);
+                var secondTile = Tile(pair.Pocket);
+                var access = Tile(pair.Second.Mid);
+                unused.Remove(pair.First);
+                unused.Remove(pair.Second);
+                Set(firstTile, ForestNodeKind.Battle);
+                Set(secondTile, ForestNodeKind.Battle);
+                Connect(cells[pair.First.A], firstTile, ForestRouteKind.Branch);
+                Connect(firstTile, secondTile, ForestRouteKind.Branch);
+                Connect(secondTile, access, ForestRouteKind.Branch);
+                Connect(access, cells[pair.Second.B], ForestRouteKind.Branch);
+                map.PatrolRoute.Add(firstTile.Id);
+                map.PatrolRoute.Add(secondTile.Id);
+                return true;
+            }
+
+            ForestNode Tile(int cell)
+            {
+                var node = new ForestNode("f"+floor+"c"+cell, ForestMapDefinition.RoadX(cell%Width),
+                    ForestMapDefinition.RoadY(cell/Width), ForestNodeKind.Road, Name(ForestNodeKind.Road))
+                    { FloorIndex = floor-1 };
+                cells.Add(cell,node);
+                map.Nodes.Add(node);
+                return node;
+            }
+
+            ForestNode Draw(List<ForestNode> free, ForestNodeKind kind)
+            {
+                int index = random.Next(free.Count);
+                var node = free[index];
+                free.RemoveAt(index);
+                Set(node,kind);
+                return node;
+            }
+
+            void Connect(ForestNode a, ForestNode b, ForestRouteKind kind)
+            {
+                map.Edges.Add(new ForestEdge { Id="f"+floor+"e"+map.Edges.Count, From=a.Id, To=b.Id, Kind=kind });
+            }
+        }
+
+        public static bool Risk(ForestNodeKind kind)
+        {
+            return kind == ForestNodeKind.Battle || kind == ForestNodeKind.Elite ||
+                kind == ForestNodeKind.Danger || kind == ForestNodeKind.Anomaly;
+        }
+
+        public static List<ForestEdge> Path(ForestMapDefinition map,string from,string to,Func<ForestNode,bool> allowed)
+        {
+            var queue = new Queue<string>();
+            var previous = new Dictionary<string,ForestEdge>();
+            queue.Enqueue(from);
+            previous[from] = null;
+            while (queue.Count > 0)
+            {
+                string current = queue.Dequeue();
+                if (current == to) break;
+                foreach (var edge in map.Links(current).Where(e => !e.Hidden))
+                {
+                    string next = edge.Other(current);
+                    if (previous.ContainsKey(next) || !allowed(map.Node(next))) continue;
+                    previous[next] = edge;
+                    queue.Enqueue(next);
+                }
+            }
+            var result = new List<ForestEdge>();
+            if (!previous.ContainsKey(to)) return result;
+            for (string node = to; node != from;)
+            {
+                var edge = previous[node];
+                result.Add(edge);
+                node = edge.Other(node);
+            }
+            result.Reverse();
+            return result;
+        }
+
+        static void Set(ForestNode node, ForestNodeKind kind) { node.Kind = kind; node.Name = Name(kind); }
+        public static string Name(ForestNodeKind kind)
+        {
+            switch(kind)
+            {
+                case ForestNodeKind.Road:return "竹林石径";
+                case ForestNodeKind.Spawn:return "竹林入口";
+                case ForestNodeKind.Eientei:return "永远亭";
+                case ForestNodeKind.DownwardTransition:return "下层传送";
+                case ForestNodeKind.UpwardEntrance:return "上层入口";
+                case ForestNodeKind.MutationStone:return "异动石";
+                case ForestNodeKind.Anomaly:return "异变妖群";
+                case ForestNodeKind.Battle:return "妖怪遭遇";
+                case ForestNodeKind.Elite:return "精英试炼";
+                case ForestNodeKind.Supply:return "旅途补给";
+                case ForestNodeKind.Camp:return "篝火小憩";
+                case ForestNodeKind.Shop:return "林间行商";
+                case ForestNodeKind.Lookout:return "月见台";
+                case ForestNodeKind.Hideout:return "隐竹丛";
+                case ForestNodeKind.Danger:return "瘴气竹径";
+                case ForestNodeKind.Center:return "奉纳祭坛";
+                case ForestNodeKind.Exit:return "逃亡出口";
+                case ForestNodeKind.Encounter:return "竹影奇遇";
+                default:return "竹林事件";
+            }
+        }
     }
 }

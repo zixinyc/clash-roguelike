@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 namespace ClashRoguelike
@@ -154,7 +154,7 @@ namespace ClashRoguelike
         public void NextRound() { if(State.Phase!="finished")return;State.Turn++;State.Cost+=8;if(State.TouhouTeam)State.EnemyCost+=8;foreach(var unit in State.Heroes.Concat(State.Enemies))CoinStatus.NextRound(unit.Statuses);PrepareRound(); }
         protected virtual bool FlipCoin(double chance) {return rng.Flip(chance);}
         CoinAction CoinRuntime(PortCard skill,bool allied,int source,int target,IEnumerable<CoinEffect> extra=null)
-        {return new CoinAction(skill.CoinData,allied?.65:.5,(allied?State.Heroes:State.Enemies)[source].Statuses,(allied?State.Enemies:State.Heroes)[target].Statuses,(extra??new CoinEffect[0]).Concat(TouhouAttackEffects(allied,source)));}
+        {return new CoinAction(skill.CoinData,allied?.65:.5,(allied?State.Heroes:State.Enemies)[source].Statuses,(allied?State.Enemies:State.Heroes)[target].Statuses,(extra??new CoinEffect[0]).Concat(TouhouAttackEffects(allied,source)).Concat(MapEffects(allied)));}
         void Solo(List<PortEvent> events,PortSlot slot,bool allied)
         {
             var skill=PortContent.Card(slot.Key);var units=allied?State.Heroes:State.Enemies;
@@ -218,7 +218,7 @@ namespace ClashRoguelike
             while((step=action.NextAttack(gameRandom))!=null)
             {
                 bool live=victim.Hp>0&&!skill.NoDamage;int positive=Math.Max(0,step.RawDamage);if(!allied&&State.TouhouTeam&&State.Enemies[source].ExorcismActive)positive/=2;if(!allied&&IsMarisa(target)&&State.Heroes[target].RoleState.OrreryUntil>=State.Turn)positive=Math.Max(0,positive-5);
-                int blocked=live?Math.Min(victim.Shield,positive):0,damage=live?positive-blocked:0;AbsorbZixiShield(victim,blocked);victim.Shield-=blocked;victim.Hp=Math.Max(0,victim.Hp-damage);
+                int blocked=live?Math.Min(victim.Shield,positive):0,damage=live?positive-blocked:0;damage=MapFinalDamage(allied,live,damage);AbsorbZixiShield(victim,blocked);victim.Shield-=blocked;victim.Hp=Math.Max(0,victim.Hp-damage);
                 if(allied)MarkTouhouHit(events,skill.Id,source,target,damage,ref marks);
                 if(!allied&&State.TouhouTeam&&target==2&&victim.Hp==0){victim.RoleState.DreamDue=0;victim.RoleState.DreamOrbs=0;}
                 if(live)action.NotifyHit(step.Heads);step.Effects=step.Effects.Concat(action.DrainEffects()).ToArray();last=step;

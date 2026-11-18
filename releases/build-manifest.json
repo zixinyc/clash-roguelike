@@ -3,16 +3,29 @@
   "branch": "touhou",
   "unity": "2022.3.62f3c1",
   "platform": "Windows x64 Mono",
-  "build_method": "C# assembly compiled in existing Unity player, no new full Editor build",
-  "archive_bytes": 28168977,
-  "archive_sha256": "BACB3BB505D505C984844DE8ECD437EDC09BDFCD265FCAD1FA00EA09EC6EE91C",
-  "assembly_sha256": "79BBA8BC3CB5B8B8D05F021127629159D920212BF3201693D3CB9B781269B137",
-  "checks": 5282,
-  "prototype_checks": 1617,
-  "runtime": "Random map seed replay, A/B groups and locked rounds, actual pairing lines, original portraits fight with following coins, complete actual battle and resource return (latest auto-plan defeat; earlier victory path also verified), two window sizes",
-  "portraits": {
-    "十六夜咲夜.png": "8E337FB04D8371CE1636B2F6181567091A35300A7113C95EEEF05562B108F35F",
-    "博丽灵梦.png": "6E8EA4DEE3663E205F72A4196ACAEFF70C640EFC062AE588436AAFF047714198",
-    "雾雨魔理沙.png": "4BF956912E15B9400C5B88F9F15E452531F172F44BE6C9BDB31E755714ECF3FC"
-  }
+  "build_method": "Recompiled game scripts for the existing Unity Mono player",
+  "archive": "ClashRoguelike-Unity-Windows-touhou.zip",
+  "archive_bytes": 28959786,
+  "archive_sha256": "01897E69C34A35EB688AA48A42E60072AC4C23ADF984E7C87B3155242B8946F2",
+  "assembly_sha256": "0FE5C57474D87C851E50D6EBF7FF947D133DFEB426A6D70AD1A24EB3BE2CAD9F",
+  "checks": {
+    "SPEED_RULE_CHECKS": 1688,
+    "DIRECT_CLICK_CHECKS": 28,
+    "DYNAMIC_PANEL_CHECKS": 25,
+    "GODOT_PORT_CHECKS": 131,
+    "FOREST_CHECKS": 20335,
+    "COIN_CHECKS": 1313,
+    "TOUHOU_CHECKS": 277,
+    "NEW_CHARACTER_CHECKS": 72,
+    "PROTOTYPE_CHECKS": 1620
+  },
+  "total_checks": 25489.0,
+  "runtime_result": [
+    "Touhou battle and cumulative coin playback",
+    "five-floor single-player",
+    "four-floor local hotseat PVP with third- and fourth-floor exits",
+    "same-floor revival",
+    "paid hidden shortcut",
+    "1440x900 and 1000x650"
+  ]
 }

@@ -1,14 +1,11 @@
-# touhou · 随机关卡与战斗UI雏形
+# touhou · 东方竹林与角色修订
 
-已接入随机森林、战前A/B角色技能组、彩色拼点连线与风险、原战场立绘直接交锋和硬币跟随；不再创建独立交锋框。保留东方三人、ZiXi和原小队，兼容现有透明立绘与当前战斗数值。
+这个分支包含《神秘拼点小游戏》的 Unity 试玩版。默认使用东方三人队，可在游戏中切换为 ZiXi 队或原小队。
 
-- [下载Windows成品](https://github.com/zixinyc/clash-roguelike/raw/refs/heads/touhou/releases/ClashRoguelike-Unity-Windows-touhou.zip)：解压运行EXE，无需安装Unity。
-- [本轮设计、修改清单与限制](unity-client/PROTOTYPE.md)
-- [Unity运行与构建](unity-client/README.md)
-- [验证记录](unity-client/VALIDATION.md)：九组5,282项与实际战斗完整结算/地图返回通过。
+- [下载 Windows 试玩版](releases/ClashRoguelike-Unity-Windows-touhou.zip)。解压后运行 `ClashRoguelike.exe`，无需安装 Unity。下载整个分支源码后也可以双击根目录的 `启动Unity单机版.cmd`。
+- [Unity 项目与操作说明](unity-client/README.md)。源码位于 `unity-client/`。
+- [本次更新与实机验收](unity-client/VALIDATION.md) · [下载包 SHA-256 与自动检查](releases/build-manifest.json)。
 
-风险为基础牌面预估，不泄露隐藏敌方具体技能；A/B方案暂存当前会话。立绘位移/刀光是雏形，完整动画、存档、联机未完成；Editor全量构建受许可限制，本次为已实测的Windows Mono播放器更新。
+主地图采用斜俯视石板路。单机走五层并取得异动石，本地双队在第四层取得异动石后需要追踪和撤离。角色修订包含魔理沙、咲夜、灵梦的已确认技能调整，以及每名角色独立的 A/B 配装方案。
 
-![原战场交锋](unity-client/Preview/prototype-duel-contact.png)
-
-Godot参考工程保留此前main同步成果；本轮UI雏形实现在Unity，未宣称两个引擎功能完全一致。Godot入口与原设计见battle-demo和docs目录。
+Godot 参考工程仍在 `battle-demo/`。

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using UnityEngine;
@@ -16,19 +16,21 @@ namespace ClashRoguelike
         string forestSeedText="";
         void InitializeForest(int seed=-1,bool variation=true)
         {
+            forestPassAfterBattle=false;
             if(seed<0)seed=Guid.NewGuid().GetHashCode()&int.MaxValue;
             ForestMapDefinition definition=null;forestSource=variation?"随机关卡":"预设地图";forestSeedText=seed.ToString();
             string path=Path.Combine(Application.streamingAssetsPath,"forest-maze.forest");
             if(!variation&&File.Exists(path))try{definition=ForestMapDefinition.Parse(File.ReadAllText(path));}catch(Exception e){Debug.LogWarning("Forest preset invalid: "+e.Message);forestSource="内置安全预设";}
-            if(definition==null)definition=variation?ForestRandomGenerator.Generate(seed):ForestMapDefinition.Generate(seed,false);
-            forest=new ForestRun(definition);forest.Party.ConfigureRoster(selectedRoster);heroNames=CharacterRoster.Team(selectedRoster).Select(x=>x.Name).ToArray();forestMode=true;forestSettings=false;forestRosterMenu=false;forestLogCount=0;forestLogScroll=Vector2.zero;
+            if(variation){forestCampaign=new ForestCampaign(seed,forestPvpMode,selectedRoster);forest=forestCampaign.Current;definition=forest.Map;forestSource=forestPvpMode?"本地双队追猎 · 4层":"单机竹林 · 5层";}
+            else{forestCampaign=null;if(definition==null)definition=ForestMapDefinition.Generate(seed,false);forest=new ForestRun(definition);forest.Party.ConfigureRoster(selectedRoster);}
+            heroNames=CharacterRoster.Team(forest.Party.Roster).Select(x=>x.Name).ToArray();forestMode=true;forestSettings=false;forestRosterMenu=false;forestLogCount=0;forestLogScroll=Vector2.zero;
             if(forestArt!=null)forestArt.Dispose();forestArt=new ForestMapArt(definition.Seed);
         }
         void ForestUpdate()
         {if(Input.GetKeyDown(KeyCode.Return)&&!forestSettings)ForestEndTurn();if(Input.GetKeyDown(KeyCode.Escape))forestSettings=false;}
         void ForestClick(string id)
         {if(forestSettings)return;forest.ClickNode(id);ForestBattleHook();}
-        void ForestEndTurn(){forest.EndTurn();ForestBattleHook();}
+        void ForestEndTurn(){if(forest.EndTurn()&&forestCampaign!=null&&forestCampaign.Pvp){if(forest.InBattle)forestPassAfterBattle=true;else PassForestPlayer();}ForestBattleHook();}
         void ForestBattleHook(){if(forest.InBattle&&portRules==null)OpenPortBattle(true);}
         Vector2 ForestPoint(ForestNode n){return new Vector2(forestRect.x+n.X*forestRect.width,forestRect.y+n.Y*forestRect.height);}
         Color ForestColor(ForestNodeKind kind)
@@ -90,6 +92,7 @@ namespace ClashRoguelike
         }
         void DrawForest()
         {
+            if(forest!=null&&forest.Modern){DrawLayeredForest();return;}
             if(forest==null)InitializeForest();var intel=forest.Intel();forestArt.UpdateFog(forest,intel);
             Label(28,20,590,42,"余烬交锋 / 废林追猎",30,Hex("D8C7A5"));Label(30,70,590,26,forestSource+" · 种子 "+forest.Map.Seed+" / 夺取烬核后撤离",13,Muted);
             Label(650,27,190,36,"回合 "+forest.Turn.ToString("00"),23,Gold);Label(845,30,385,30,"小队行动 · "+forest.Phase,16,Pale);
@@ -139,12 +142,14 @@ namespace ClashRoguelike
             for(int i=0;i<3;i++){float x=1084+i*106;Label(x,326,103,21,heroNames[i]+" "+forest.Party.Hp[i]+"/"+forest.Party.MaxHp[i],11,Muted);Fill(new Rect(x,350,94,3),Hex("35474F"));Fill(new Rect(x,350,94*(float)forest.Party.Hp[i]/forest.Party.MaxHp[i],3),Cyan);}
             Label(1084,365,310,24,"可见度（暴露） "+forest.Exposure+"%   "+(forest.HiddenTurns>0?"隐蔽 "+forest.HiddenTurns+" 回合":"未隐蔽"),12,forest.HiddenTurns>0?Cyan:Muted);
             Label(1084,393,310,25,"警戒 "+forest.Alert+" / 5        疲劳 "+forest.Fatigue+" / 8",13,forest.Alert>=3?Red:Muted);
+            if(forest.Modern){var modifier=forest.PreviewMapModifier();Label(1084,413,315,17,"遗物 "+forest.Relics.Count+"/2 · 下战 拼+"+modifier.ClashBonus+" 伤+"+modifier.DamageBonus+" 侦察"+modifier.RevealEnemyCards,10,Cyan);}
             ForestModule(new Rect(1068,442,350,190),"最近行动");
             var entries=forest.Journal.ToArray();text.fontSize=12;text.wordWrap=true;float contentHeight=0;var heights=new float[entries.Length];for(int i=0;i<entries.Length;i++){heights[i]=Math.Max(23,text.CalcHeight(new GUIContent("["+entries[i].Turn.ToString("00")+"] "+entries[i].Message),284)+8);contentHeight+=heights[i];}
             if(forestLogCount!=entries.Length){forestLogCount=entries.Length;forestLogScroll.y=contentHeight;}
             forestLogScroll=GUI.BeginScrollView(new Rect(1080,480,326,140),forestLogScroll,new Rect(0,0,294,contentHeight));float y=0;
             for(int i=0;i<entries.Length;i++){Label(2,y,284,heights[i],"["+entries[i].Turn.ToString("00")+"] "+entries[i].Message,12,i==entries.Length-1?Pale:Muted);y+=heights[i];}GUI.EndScrollView();
             ForestModule(new Rect(1068,644,350,136),"周边异动 / 环境情报");
+            if(forestCampaign!=null&&forestCampaign.StoneHolder>=0)return;
             int line=0;if(intel.PatrolNode!=null){Label(1084,680,316,28,"兽群可见："+forest.Map.Node(intel.PatrolNode).Name,12,Red);line++;}
             foreach(var s in intel.Signals.OrderByDescending(s=>s.CreatedTurn).Take(3-line)){Label(1084,680+line*28,316,28,(forest.Turn-s.CreatedTurn)+" 回合前 · "+forest.Map.Node(s.NodeId).Name+" / "+(s.Kind=="track"?"兽群足迹":s.Kind=="noise"?"枝木断裂声":s.Kind=="battle"?"战斗痕迹":"危险变化"),11,Muted);line++;}
             if(line==0)Label(1084,685,312,55,"风声掩盖了异动。\n当前视野内暂无可靠踪迹。",12,Muted);
@@ -162,6 +167,7 @@ namespace ClashRoguelike
         }
         void DrawForestChoice()
         {
+            if(forest.Modern){DrawLayeredChoice();return;}
             Fill(new Rect(0,0,1440,900),new Color(0,0,0,.78f));Panel(new Rect(425,270,590,350),Hex("12202A"),Gold);
             string kind=forest.Pending,title=kind=="shop"?"废林行商":kind=="camp"?"旧猎人营":forest.EventVariant==1?"迷途猎人":forest.EventVariant==2?"烧焦的残信":"灰碑遗物";
             Label(455,296,530,46,title,28,Gold);Label(455,356,530,66,kind=="shop"?"使用现有钱包购买治疗；倒下的队员不会复活。":kind=="camp"?"在余火旁休整，或收集可用物资。":"林中的选择会改变真实资源与小队状态。",17,Pale);
@@ -174,6 +180,7 @@ namespace ClashRoguelike
         void DrawForestSettings()
         {
             if(forestRosterMenu){DrawMainRosterPicker();return;}
+            if(forest.Modern){DrawLayeredSettings();return;}
             Fill(new Rect(0,0,1440,900),new Color(0,0,0,.8f));Panel(new Rect(455,200,530,530),Hex("12202A"),Gold);Label(485,225,470,44,"废林设定",27,Gold);
             Label(485,287,470,70,forestSource+" · 种子 "+forest.Map.Seed+"\n单机小队探索；兽群是环境敌人。",16,Pale);
             if(Btn(new Rect(485,375,470,40),forestAmbient?"环境余火：开":"环境余火：关"))forestAmbient=!forestAmbient;

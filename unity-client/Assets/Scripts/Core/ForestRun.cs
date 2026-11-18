@@ -14,9 +14,9 @@ namespace ClashRoguelike
         public HashSet<string> Known,Visible,Visited,KnownEdges,Travelled;
         public List<ForestSignal> Signals;public string PatrolNode;
     }
-    public sealed class ForestRun
+    public sealed partial class ForestRun
     {
-        public readonly ForestMapDefinition Map;
+        public ForestMapDefinition Map {get;private set;}
         public readonly ExpeditionResources Party=new ExpeditionResources();
         public string Position {get;private set;} public string Selected {get;private set;}
         public int Turn=1,ActionsLeft=2,ActionBudget=2,Fatigue,Alert,HiddenTurns,Supply=1,Trackers=1,Smoke=1,IntelFragments,Version;
@@ -33,6 +33,7 @@ namespace ClashRoguelike
         public int Exposure {get{return HiddenTurns>0?15:Math.Min(100,45+Alert*9+(Map.Node(Position).Kind==ForestNodeKind.Danger?10:0));}}
         public string MoveError(string id)
         {
+            if(RecoveryTurns>0)return "永远亭复活休整，本回合不能行动。";
             if(Finished||InBattle||Pending!="")return "请先处理当前地点或战斗。";
             if(Map.Node(id)==null||!known.Contains(id))return "尚未发现该地点。";
             if(id==Position)return "当前位置。";
@@ -53,11 +54,13 @@ namespace ClashRoguelike
         {
             if(!CanMove(id))return false;var edge=Map.Edge(Position,id);string previous=Position;ActionsLeft-=edge.ActionCost;IntelFragments-=edge.IntelCost;travelled.Add(edge.Id);Position=id;Selected=id;visited.Add(id);Fatigue=Math.Min(8,Fatigue+edge.ActionCost);
             if(edge.Kind==ForestRouteKind.Shortcut)Log("通过特殊通道，消耗 "+edge.ActionCost+" 移动力与 "+edge.IntelCost+" 情报。");
+            if(edge.HpCost>0){for(int i=0;i<Party.Hp.Length;i++)if(Party.Hp[i]>0)Party.Hp[i]=Math.Max(1,Party.Hp[i]-edge.HpCost);Log("路线代价：存活成员 −"+edge.HpCost+" HP，最低保留1。");}
             Log("从 "+Map.Node(previous).Name+" 移动至 "+Map.Node(id).Name+"。");Reveal();EnterNode();CheckPatrolContact();Version++;return true;
         }
         void EnterNode()
         {
             var n=Map.Node(Position);Message="抵达 "+n.Name+"。";
+            if(Modern){EnterModernNode();return;}
             if(Cleared.Contains(Position)){Message+=" 地点已处理，收益不可重复领取。";return;}
             switch(n.Kind)
             {
@@ -79,10 +82,11 @@ namespace ClashRoguelike
             }
         }
         void BeginBattle(int encounter){InBattle=true;Encounter=encounter;patrolEncounter=false;Log("遭遇"+(encounter==1?"精英":"敌人")+"，进入原有战斗系统。");}
-        public PortBattleRules CreateBattle(){if(!InBattle)throw new InvalidOperationException("No forest battle pending");return Party.CreateBattle(Encounter);}
+        public PortBattleRules CreateBattle(){if(!InBattle)throw new InvalidOperationException("No forest battle pending");return Modern?CreateMapBattle():Party.CreateBattle(Encounter);}
         public bool FinishBattle(PortState result)
         {
             if(!InBattle||result.Outcome=="")return false;Party.ApplyBattleResult(result,Encounter);InBattle=false;
+            if(Modern)return FinishModernBattle(result);
             if(result.Outcome=="victory")
             {
                 if(!patrolEncounter)Cleared.Add(Position);AddSignal(Position,"battle","此地留有刚结束的战斗痕迹。",4);
@@ -92,7 +96,7 @@ namespace ClashRoguelike
             }
             else{Finished=true;Log("小队战败，本次探索结束。");}Message=Journal.Last().Message;Reveal();Version++;return true;
         }
-        bool CanAct {get{return !InBattle&&!Finished&&Pending==""&&ActionsLeft>0;}}
+        bool CanAct {get{return RecoveryTurns==0&&!InBattle&&!Finished&&Pending==""&&ActionsLeft>0;}}
         public bool UseSupply()
         {if(!CanAct||Supply<=0||!Party.Hp.Where((h,i)=>h>0&&h<Party.MaxHp[i]).Any())return false;Supply--;ActionsLeft--;Party.Heal(6);Log("使用补给：存活成员恢复 6 生命，补给 −1。");Version++;return true;}
         public bool UseSmoke()
@@ -100,17 +104,19 @@ namespace ClashRoguelike
         public bool UseTracker()
         {if(!CanAct||Trackers<=0)return false;Trackers--;ActionsLeft--;trackingExpires=Turn+2;foreach(var n in Within(Position,2))known.Add(n);Log("使用追踪工具：辨认两条道路内的环境踪迹，持续两回合。");Message="追踪工具不会直接透视视野外的敌人。";RefreshSignals();Version++;return true;}
         public bool Hide()
-        {if(!CanAct||Map.Node(Position).Kind!=ForestNodeKind.Hideout)return false;ActionsLeft--;HiddenTurns=2;Alert=Math.Max(0,Alert-2);Log("重新隐蔽，降低暴露与警戒。");Version++;return true;}
+        {if(!CanAct||Map.Node(Position).Kind!=ForestNodeKind.Hideout)return false;ActionsLeft--;ApplyHideout();Log(Map.RoadGrid?"重新隐蔽，刷新持续时间。":"重新隐蔽，降低暴露与警戒。");Version++;return true;}
         public bool Observe(bool consume=true)
         {
             if(consume&&(!CanAct||Map.Node(Position).Kind!=ForestNodeKind.Lookout))return false;
             if(consume)ActionsLeft--;observationExpires=Turn+2;
+            if(Modern){NextBattle.RevealEnemyCards=1;observationExpires=Turn+1;}
             var reach=Within(Position,2);foreach(var e in Map.Edges.Where(x=>x.Hidden&&(reach.Contains(x.From)||reach.Contains(x.To))))
                 if(knownEdges.Add(e.Id)){known.Add(e.From);known.Add(e.To);Log("发现隐藏通道："+Map.Node(e.From).Name+" ↔ "+Map.Node(e.To).Name+"。");}
             Reveal();Log("登高观察，当前视野扩展至两条普通道路，持续两回合。");Version++;return true;
         }
         public bool Choose(int choice)
         {
+            if(Modern)return ChooseModern(choice);
             if(Pending==""||choice<0||choice>1||Finished||InBattle)return false;
             if(Pending=="event"&&EventVariant==1&&choice==1)
             {
@@ -129,7 +135,8 @@ namespace ClashRoguelike
         public bool LeaveShop(){if(Pending!="shop")return false;Pending="";Message="离开行商，可以稍后再来。";Version++;return true;}
         public bool EndTurn()
         {
-            if(InBattle||Finished||Pending!="")return false;bool rested=ActionsLeft==ActionBudget;Turn++;HiddenTurns=Math.Max(0,HiddenTurns-1);Fatigue=Math.Max(0,Fatigue-(rested?2:1));Alert=Math.Max(0,Alert-(HiddenTurns>0?2:rested?1:0));
+            if(InBattle||Finished||Pending!="")return false;bool rested=ActionsLeft==ActionBudget;Turn++;HiddenTurns=Math.Max(0,HiddenTurns-1);Fatigue=Math.Max(0,Fatigue-(rested?2:1));Alert=Math.Max(0,Alert-(!Map.RoadGrid&&HiddenTurns>0?2:rested?1:0));
+            if(RecoveryTurns>0)RecoveryTurns--;
             ActionBudget=Fatigue>=6?1:2;ActionsLeft=ActionBudget;signals.RemoveAll(x=>x.ExpiresTurn<Turn);MovePatrol();Reveal();CheckPatrolContact();
             if(!InBattle)Log("第 "+Turn+" 回合开始，移动力 "+ActionBudget+"。" + (HiddenTurns>0?" 隐蔽仍生效。":""));Version++;return true;
         }
@@ -164,6 +171,7 @@ namespace ClashRoguelike
         {foreach(var s in signals.Where(SignalVisible))if(reportedSignals.Add(s.Id))Log("发现异动："+Map.Node(s.NodeId).Name+" · "+s.Text);}
         public ForestIntel Intel()
         {
+            if(Campaign!=null&&Campaign.Pvp&&Campaign.LockNode!=null&&Campaign.LockFloor==FloorIndex&&Campaign.StoneHolder!=PlayerId)known.Add(Campaign.LockNode);
             return new ForestIntel{Known=new HashSet<string>(known),Visible=new HashSet<string>(visible),Visited=new HashSet<string>(visited),KnownEdges=new HashSet<string>(knownEdges),Travelled=new HashSet<string>(travelled),Signals=signals.Where(SignalVisible).Select(x=>x.Copy()).ToList(),PatrolNode=patrol!=null&&visible.Contains(patrol)&&Turn>=patrolReturnTurn?patrol:null};
         }
         void Log(string text)

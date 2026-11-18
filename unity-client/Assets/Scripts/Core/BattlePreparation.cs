@@ -5,15 +5,16 @@ namespace ClashRoguelike
 {
     public sealed class SkillGroups
     {
+        public const int MaxExclusiveCards = 4;
         readonly Dictionary<string,HashSet<string>[]> groups=new Dictionary<string,HashSet<string>[]>();
         readonly Dictionary<string,int> active=new Dictionary<string,int>();
         void Ensure(string character,string[] available)
-        {if(groups.ContainsKey(character))return;var attacks=available.Where(k=>PortContent.Card(k).TargetsEnemy&&!PortContent.Card(k).NoDamage).Take(2).ToArray();groups[character]=new[]{new HashSet<string>(available),new HashSet<string>(attacks.Length>0?attacks:available.Take(1))};active[character]=0;}
+        {if(groups.ContainsKey(character))return;var attacks=available.Where(k=>PortContent.Card(k).TargetsEnemy&&!PortContent.Card(k).NoDamage).Take(2).ToArray();groups[character]=new[]{new HashSet<string>(available.Take(MaxExclusiveCards)),new HashSet<string>(attacks.Length>0?attacks:available.Take(1))};active[character]=0;}
         public int Current(string character,string[] available){Ensure(character,available);return active[character];}
         public void Select(string character,string[] available,int index){Ensure(character,available);if(index<0||index>1)throw new ArgumentOutOfRangeException("index");active[character]=index;}
-        public string[] Cards(string character,string[] available){Ensure(character,available);return available.Where(k=>groups[character][active[character]].Contains(k)).ToArray();}
-        public bool Toggle(string character,string[] available,string key){Ensure(character,available);if(!available.Contains(key))return false;var g=groups[character][active[character]];if(g.Contains(key)){if(g.Count<=1)return false;g.Remove(key);}else g.Add(key);return true;}
-        public void Reset(string character,string[] available){Ensure(character,available);groups[character][active[character]]=new HashSet<string>(available);}
+        public string[] Cards(string character,string[] available){Ensure(character,available);return available.Where(k=>groups[character][active[character]].Contains(k)).Take(MaxExclusiveCards).ToArray();}
+        public bool Toggle(string character,string[] available,string key){Ensure(character,available);if(!available.Contains(key))return false;var g=groups[character][active[character]];if(g.Contains(key)){if(g.Count<=1)return false;g.Remove(key);}else{if(Cards(character,available).Length>=MaxExclusiveCards)return false;g.Add(key);}return true;}
+        public void Reset(string character,string[] available){Ensure(character,available);groups[character][active[character]]=new HashSet<string>(available.Take(MaxExclusiveCards));}
     }
     public sealed class ClashForecast
     {
@@ -35,7 +36,11 @@ namespace ClashRoguelike
         {
             if(LoadoutLocked||State.Turn!=1||State.Plays!=0||State.PlanCount!=0||State.Phase!="response")return false;
             var chosen=new HashSet<string>(keys??new string[0]);if(chosen.Any(k=>!State.Hand.Contains(k)))return false;
-            for(int actor=0;actor<3;actor++)if(!chosen.Any(k=>PortContent.Card(k).Owner==actor))return false;
+            for(int actor=0;actor<3;actor++)
+            {
+                int count=chosen.Count(k=>PortContent.Card(k).Owner==actor);
+                if(count<1||count>SkillGroups.MaxExclusiveCards)return false;
+            }
             foreach(string shared in State.Hand.Where(k=>PortContent.Card(k).Owner<0))chosen.Add(shared);
             equippedSkills=chosen;State.Hand=State.Hand.Where(chosen.Contains).ToArray();LoadoutLocked=true;return true;
         }

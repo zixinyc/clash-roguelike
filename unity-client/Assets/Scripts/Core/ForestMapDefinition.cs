@@ -5,16 +5,16 @@ using System.Linq;
 using System.Text;
 namespace ClashRoguelike
 {
-    public enum ForestNodeKind { Spawn,Battle,Elite,Supply,Event,Hideout,Lookout,Danger,Center,Passage,Camp,Shop,Exit }
+    public enum ForestNodeKind { Spawn,Battle,Elite,Supply,Event,Hideout,Lookout,Danger,Center,Passage,Camp,Shop,Exit,Eientei,DownwardTransition,UpwardEntrance,Anomaly,MutationStone,Road,Encounter }
     public enum ForestRouteKind { Main,Branch,Loop,Shortcut }
     public sealed class ForestNode
     {
-        public string Id,Name; public ForestNodeKind Kind; public float X,Y;
+        public string Id,Name; public ForestNodeKind Kind; public float X,Y;public int Tier,FloorIndex;
         public ForestNode(string id,float x,float y,ForestNodeKind kind,string name){Id=id;X=x;Y=y;Kind=kind;Name=name;}
     }
     public sealed class ForestEdge
     {
-        public string Id,From,To;public ForestRouteKind Kind;public bool Hidden;public int ActionCost=1,IntelCost;public float Bend;
+        public string Id,From,To;public ForestRouteKind Kind;public bool Hidden;public int ActionCost=1,IntelCost,HpCost;public float Bend;
         public string Other(string node){return From==node?To:From;}
     }
     public sealed class ForestMapDefinition
@@ -22,7 +22,15 @@ namespace ClashRoguelike
         public readonly List<ForestNode> Nodes=new List<ForestNode>();
         public readonly List<ForestEdge> Edges=new List<ForestEdge>();
         public readonly List<string> PatrolRoute=new List<string>();
-        public int Seed=73129;public string StartId="n0";
+        public int Seed=73129,FormatVersion=1;public string StartId="n0";
+        public bool RoadGrid;
+        public const int RoadColumns=9, RoadRows=7;
+        public static float RoadX(int column) { return .07f + column * .1075f; }
+        public static float RoadY(int row) { return .10f + row * (.80f / 6); }
+        public static int RoadColumn(ForestNode node) { return (int)Math.Round((node.X-RoadX(0))/(RoadX(1)-RoadX(0))); }
+        public static int RoadRow(ForestNode node) { return (int)Math.Round((node.Y-RoadY(0))/(RoadY(1)-RoadY(0))); }
+        public static bool RoadAdjacent(int a,int b)
+        { return Math.Abs(a%RoadColumns-b%RoadColumns)+Math.Abs(a/RoadColumns-b/RoadColumns)==1; }
         public ForestNode Node(string id){return Nodes.FirstOrDefault(x=>x.Id==id);}
         public IEnumerable<ForestEdge> Links(string id){return Edges.Where(x=>x.From==id||x.To==id);}
         public ForestEdge Edge(string a,string b){return Edges.FirstOrDefault(x=>(x.From==a&&x.To==b)||(x.From==b&&x.To==a));}
@@ -35,9 +43,42 @@ namespace ClashRoguelike
         {
             if(Nodes.Count<2||Nodes.Any(x=>string.IsNullOrEmpty(x.Id)||string.IsNullOrEmpty(x.Name))||Nodes.Select(x=>x.Id).Distinct().Count()!=Nodes.Count||Node(StartId)==null)throw new InvalidOperationException("Invalid map nodes");
             if(Edges.Select(x=>x.Id).Distinct().Count()!=Edges.Count)throw new InvalidOperationException("Duplicate edge IDs");
-            var keys=new HashSet<string>();foreach(var e in Edges){if(string.IsNullOrEmpty(e.Id)||e.From==e.To||Node(e.From)==null||Node(e.To)==null||e.ActionCost<1||e.IntelCost<0||float.IsNaN(e.Bend)||float.IsInfinity(e.Bend)||!Enum.IsDefined(typeof(ForestRouteKind),e.Kind))throw new InvalidOperationException("Invalid edge");string key=string.CompareOrdinal(e.From,e.To)<0?e.From+"/"+e.To:e.To+"/"+e.From;if(!keys.Add(key))throw new InvalidOperationException("Duplicate connection");}
-            foreach(var n in Nodes)if(float.IsNaN(n.X)||float.IsNaN(n.Y)||n.X<0||n.X>1||n.Y<0||n.Y>1||!Enum.IsDefined(typeof(ForestNodeKind),n.Kind)||Distance(StartId,n.Id,false)==int.MaxValue)throw new InvalidOperationException("Unreachable or invalid node "+n.Id);
+            var keys=new HashSet<string>();foreach(var e in Edges){if(string.IsNullOrEmpty(e.Id)||e.From==e.To||Node(e.From)==null||Node(e.To)==null||e.ActionCost<1||e.IntelCost<0||e.HpCost<0||float.IsNaN(e.Bend)||float.IsInfinity(e.Bend)||!Enum.IsDefined(typeof(ForestRouteKind),e.Kind))throw new InvalidOperationException("Invalid edge");string key=string.CompareOrdinal(e.From,e.To)<0?e.From+"/"+e.To:e.To+"/"+e.From;if(!keys.Add(key))throw new InvalidOperationException("Duplicate connection");}
+            var reachable=OrdinaryReach(StartId);
+            foreach(var n in Nodes)if(n.Tier<0||n.FloorIndex<0||n.FloorIndex>4||float.IsNaN(n.X)||float.IsNaN(n.Y)||n.X<0||n.X>1||n.Y<0||n.Y>1||!Enum.IsDefined(typeof(ForestNodeKind),n.Kind)||!reachable.Contains(n.Id))throw new InvalidOperationException("Unreachable or invalid node "+n.Id);
             for(int i=0;i<PatrolRoute.Count;i++)if(Node(PatrolRoute[i])==null||Distance(PatrolRoute[i],PatrolRoute[(i+1)%PatrolRoute.Count],false)!=1)throw new InvalidOperationException("Invalid environmental patrol route");
+            if (RoadGrid) ValidateRoadGrid();
+        }
+        HashSet<string> OrdinaryReach(string start)
+        {
+            var reach = new HashSet<string> { start };
+            var pending = new Queue<string>();
+            pending.Enqueue(start);
+            while (pending.Count > 0)
+            {
+                string current = pending.Dequeue();
+                foreach (var edge in Links(current).Where(e => e.Kind != ForestRouteKind.Shortcut))
+                    if (reach.Add(edge.Other(current))) pending.Enqueue(edge.Other(current));
+            }
+            return reach;
+        }
+        void ValidateRoadGrid()
+        {
+            var coordinates = new Dictionary<string,int>();
+            var occupied = new HashSet<int>();
+            int floor = Node(StartId).FloorIndex;
+            foreach (var node in Nodes)
+            {
+                int x = RoadColumn(node), y = RoadRow(node);
+                int cell = y*RoadColumns+x;
+                if (x < 0 || x >= RoadColumns || y < 0 || y >= RoadRows ||
+                    Math.Abs(node.X-RoadX(x)) > .00001f || Math.Abs(node.Y-RoadY(y)) > .00001f ||
+                    node.FloorIndex != floor || !occupied.Add(cell))
+                    throw new InvalidOperationException("Invalid or overlapping road tile "+node.Id);
+                coordinates.Add(node.Id,cell);
+            }
+            if (Edges.Any(e => !RoadAdjacent(coordinates[e.From],coordinates[e.To])))
+                throw new InvalidOperationException("Road edge skips a tile");
         }
         public static ForestMapDefinition Generate(int seed,bool jitter=true)
         {
@@ -57,17 +98,19 @@ namespace ClashRoguelike
         }
         public string Serialize()
         {
-            var b=new StringBuilder();b.AppendLine("FOREST|1|"+Seed+"|"+StartId);
-            foreach(var n in Nodes)b.AppendLine("N|"+n.Id+"|"+n.X.ToString("R",CultureInfo.InvariantCulture)+"|"+n.Y.ToString("R",CultureInfo.InvariantCulture)+"|"+n.Kind+"|"+n.Name);
-            foreach(var e in Edges)b.AppendLine("E|"+e.Id+"|"+e.From+"|"+e.To+"|"+e.Kind+"|"+e.Hidden+"|"+e.ActionCost+"|"+e.IntelCost+"|"+e.Bend.ToString("R",CultureInfo.InvariantCulture));if(PatrolRoute.Count>0)b.AppendLine("P|"+string.Join("|",PatrolRoute.ToArray()));return b.ToString();
+            bool v2=FormatVersion>=2||RoadGrid||Nodes.Any(n=>n.Tier!=0||n.FloorIndex!=0)||Edges.Any(e=>e.HpCost!=0);var b=new StringBuilder();b.AppendLine("FOREST|"+(v2?2:1)+"|"+Seed+"|"+StartId);
+            if(RoadGrid)b.AppendLine("G|1");
+            foreach(var n in Nodes)b.AppendLine("N|"+n.Id+"|"+n.X.ToString("R",CultureInfo.InvariantCulture)+"|"+n.Y.ToString("R",CultureInfo.InvariantCulture)+"|"+n.Kind+"|"+n.Name+(v2?"|"+n.Tier+"|"+n.FloorIndex:""));
+            foreach(var e in Edges)b.AppendLine("E|"+e.Id+"|"+e.From+"|"+e.To+"|"+e.Kind+"|"+e.Hidden+"|"+e.ActionCost+"|"+e.IntelCost+"|"+e.Bend.ToString("R",CultureInfo.InvariantCulture)+(v2?"|"+e.HpCost:""));if(PatrolRoute.Count>0)b.AppendLine("P|"+string.Join("|",PatrolRoute.ToArray()));return b.ToString();
         }
         public static ForestMapDefinition Parse(string text)
         {
             var map=new ForestMapDefinition();foreach(string line in text.Split(new[]{'\r','\n'},StringSplitOptions.RemoveEmptyEntries))
             {
-                var p=line.Split('|');if(p[0]=="FOREST"){if(p.Length!=4||p[1]!="1")throw new FormatException("Unsupported forest preset");map.Seed=int.Parse(p[2],CultureInfo.InvariantCulture);map.StartId=p[3];}
-                else if(p[0]=="N"&&p.Length==6)map.Nodes.Add(new ForestNode(p[1],float.Parse(p[2],CultureInfo.InvariantCulture),float.Parse(p[3],CultureInfo.InvariantCulture),(ForestNodeKind)Enum.Parse(typeof(ForestNodeKind),p[4]),p[5]));
-                else if(p[0]=="E"&&p.Length==9)map.Edges.Add(new ForestEdge{Id=p[1],From=p[2],To=p[3],Kind=(ForestRouteKind)Enum.Parse(typeof(ForestRouteKind),p[4]),Hidden=bool.Parse(p[5]),ActionCost=int.Parse(p[6]),IntelCost=int.Parse(p[7]),Bend=float.Parse(p[8],CultureInfo.InvariantCulture)});
+                var p=line.Split('|');if(p[0]=="FOREST"){if(p.Length<4||(p[1]!="1"&&p[1]!="2"))throw new FormatException("Unsupported forest preset");map.FormatVersion=int.Parse(p[1],CultureInfo.InvariantCulture);map.Seed=int.Parse(p[2],CultureInfo.InvariantCulture);map.StartId=p[3];}
+                else if(p[0]=="G"&&p.Length>=2&&p[1]=="1")map.RoadGrid=true;
+                else if(p[0]=="N"&&p.Length>=6)map.Nodes.Add(new ForestNode(p[1],float.Parse(p[2],CultureInfo.InvariantCulture),float.Parse(p[3],CultureInfo.InvariantCulture),(ForestNodeKind)Enum.Parse(typeof(ForestNodeKind),p[4]),p[5]){Tier=p.Length>6?int.Parse(p[6],CultureInfo.InvariantCulture):0,FloorIndex=map.FormatVersion>=2&&p.Length>7?int.Parse(p[7],CultureInfo.InvariantCulture):0});
+                else if(p[0]=="E"&&p.Length>=9)map.Edges.Add(new ForestEdge{Id=p[1],From=p[2],To=p[3],Kind=(ForestRouteKind)Enum.Parse(typeof(ForestRouteKind),p[4]),Hidden=bool.Parse(p[5]),ActionCost=int.Parse(p[6]),IntelCost=int.Parse(p[7]),Bend=float.Parse(p[8],CultureInfo.InvariantCulture),HpCost=p.Length>9?int.Parse(p[9],CultureInfo.InvariantCulture):0});
                 else if(p[0]=="P"&&p.Length>1)map.PatrolRoute.AddRange(p.Skip(1));
                 else throw new FormatException("Invalid forest preset row");
             }map.Validate();return map;

@@ -14,10 +14,10 @@ namespace ClashRoguelike
         {
             checks=0;var b=new Heads();Check(b.State.TouhouTeam&&b.State.Heroes[1].Name=="十六夜咲夜"&&b.State.Heroes[1].Hp==40&&b.State.Heroes[2].Name=="博丽灵梦"&&b.State.Heroes[2].Hp==50,"source character roster and HP");
             Check(b.State.Hand.Length==18&&TouhouRoles.SakuyaCards.All(b.State.Hand.Contains)&&TouhouRoles.ReimuCards.All(b.State.Hand.Contains)&&TouhouRoles.MarisaCards.All(b.State.Hand.Contains)&&b.State.Heroes[0].Name=="雾雨魔理沙"&&!b.State.Hand.Contains("all_in"),"exclusive roster replaces old owner-one/two hand");
-            Check(b.State.Heroes[1].MinSpeed==5&&b.State.Heroes[1].MaxSpeed==9&&b.State.Heroes[2].MinSpeed==5&&b.State.Heroes[2].MaxSpeed==7,"source speed ranges");
+            Check(b.State.Heroes[1].MinSpeed==5&&b.State.Heroes[1].MaxSpeed==9&&b.State.Heroes[2].MinSpeed==4&&b.State.Heroes[2].MaxSpeed==6,"source speed ranges");
             Check(!b.Assign("murder_doll",0,0)&&!b.Assign("yin_yang_orb",1,0),"character skill ownership");
             Quiet(b,0,0);b.State.HeroSlots[3].Speed=1;b.State.EnemySlots[0].Speed=9;Check(b.Assign("murder_doll",1,0)&&b.PairFor(0)==3,"Sakuya ignores interception speed while keeping last valid designation");
-            var events=b.Resolve();var strikes=events.Where(e=>e.Type=="strike").ToArray();Check(strikes.Length==1&&strikes[0].Damage==13&&strikes[0].Coin.RawDamage==13,"Murder Doll one coin plus Silver Knife exactly once");
+            var events=b.Resolve();var strikes=events.Where(e=>e.Type=="strike").ToArray();Check(strikes.Length==1&&strikes[0].Damage==15&&strikes[0].Coin.RawDamage==15,"Murder Doll one coin plus Silver Knife exactly once");
             Check(events.Any(e=>e.Type=="clash")&&events.Where(e=>e.Type=="clash").All(e=>e.Coin.LeftBefore==1),"single fixed skill coin is not restored during clashes");
             var tails=new Tails();Quiet(tails);tails.Assign("murder_doll",1,0);strikes=tails.Resolve().Where(e=>e.Type=="strike").ToArray();Check(strikes.Length==1&&strikes[0].Damage==10,"old fixed-damage shortcut replaced by tail base plus passive");
             b=new Heads();Quiet(b);Check(b.Assign("stopwatch",1,0)&&b.Assign("private_square",1,0),"targeted utility defense shares round with ultimate");events=b.Resolve();
@@ -25,9 +25,9 @@ namespace ClashRoguelike
             Check(b.State.Heroes[1].RoleState.WatchUntil==3&&b.State.Heroes[1].RoleState.SpacePending&&!b.State.Heroes[1].RoleState.WatchActive,"utility starts on subsequent rounds");b.NextRound();
             Check(b.State.HeroSlots.Where(s=>s.Unit==1).All(s=>s.Speed>=8&&s.Speed<=12)&&b.State.EnemySlots.Where(s=>s.Unit==1).All(s=>s.Speed>=1&&s.Speed<=2),"space plus three speed; stopwatch enemy speed minus three minimum one");
             Check(b.State.Heroes[1].RoleState.SpaceActive&&b.State.Heroes[1].RoleState.WatchActive,"two utility states active next round");
-            Quiet(b);b.Assign("murder_doll",1,0);events=b.Resolve();Check(events.First(e=>e.Type=="strike").Damage==18,"Silver Knife and space each added once per attack");b.NextRound();
-            Check(b.State.Heroes[1].RoleState.WatchActive&&!b.State.Heroes[1].RoleState.SpaceActive,"watch lasts two rounds; space one");Quiet(b);b.Assign("murder_doll",1,0);Check(b.Resolve().First(e=>e.Type=="strike").Damage==10,"third-round Silver Knife is plus two");b.NextRound();
-            Check(!b.State.Heroes[1].RoleState.WatchActive,"watch expires");Quiet(b);b.Assign("murder_doll",1,0);Check(b.Resolve().First(e=>e.Type=="strike").Damage==8,"opening passive expires after third round");
+            Quiet(b);b.Assign("murder_doll",1,0);events=b.Resolve();Check(events.First(e=>e.Type=="strike").Damage==20,"Silver Knife and space each added once per attack");b.NextRound();
+            Check(b.State.Heroes[1].RoleState.WatchActive&&!b.State.Heroes[1].RoleState.SpaceActive,"watch lasts two rounds; space one");Quiet(b);b.Assign("murder_doll",1,0);Check(b.Resolve().First(e=>e.Type=="strike").Damage==12,"third-round Silver Knife is plus two");b.NextRound();
+            Check(!b.State.Heroes[1].RoleState.WatchActive,"watch expires");Quiet(b);b.Assign("murder_doll",1,0);Check(b.Resolve().First(e=>e.Type=="strike").Damage==10,"opening passive expires after third round");
             b=new Heads();Quiet(b);b.Assign("the_world",1,0);b.Resolve();Check(b.State.Heroes[1].RoleState.WorldUsed&&b.State.Heroes[1].RoleState.WorldRound==2,"world arms once for next round");b.NextRound();
             Check(b.State.WorldActive&&b.State.EnemySlots.All(s=>!s.Active)&&b.State.HeroSlots.Where(s=>s.Unit!=1).All(s=>s.Frozen),"world stops enemy attacks/defenses and other allies");
             Check(!b.Assign("cleave",0,0)&&!b.Assign("yin_yang_orb",2,0)&&!b.Assign("the_world",1,0),"frozen units cannot plan; world cannot repeat");
@@ -39,14 +39,14 @@ namespace ClashRoguelike
             Check(b.Assign("murder_doll",1,3,3)&&b.State.PlanCount==2,"explicit slot can retarget without adding an action");
             Check(b.Cancel(4)&&b.State.Reserved==2&&b.Assign("murder_doll",1,0)&&b.State.Reserved==4,"cancel releases exactly one duplicate skill reservation");
             events=b.Resolve();Check(b.State.Plays==2&&b.State.Cost==wallet-4&&!events.Any(e=>e.Type=="clash")&&events.Count(e=>e.Type=="strike")==2,"world resolves two paid independent attacks");
-            Check(events.Where(e=>e.Type=="attack_end").All(e=>e.Coin.AttackBudget==1)&&events.Where(e=>e.Type=="strike").All(e=>e.Coin.AttackCarry==0&&e.Damage==13),"repeated world skills reset coin accumulation and apply silver knife separately");
+            Check(events.Where(e=>e.Type=="attack_end").All(e=>e.Coin.AttackBudget==1)&&events.Where(e=>e.Type=="strike").All(e=>e.Coin.AttackCarry==0&&e.Damage==15),"repeated world skills reset coin accumulation and apply silver knife separately");
             b.NextRound();Check(!b.State.WorldActive&&b.State.HeroSlots.All(s=>!s.Flexible&&!s.Frozen),"normal slot rules restored after world");
             Quiet(b);Check(b.Assign("murder_doll",1,0)&&b.Assign("murder_doll",1,3)&&b.State.PlanCount==1&&b.CanAssign("murder_doll",4,3)!="","ordinary rounds retarget existing action and retain category restrictions");
             for(int mask=0;mask<32;mask++)
             {
                 var faces=Enumerable.Range(0,5).Select(i=>(mask&(1<<i))!=0).ToArray();var mixed=new Faces(faces);Quiet(mixed);mixed.State.Enemies[0].Exorcism=3;mixed.Assign("fantasy_seal",2,0);
                 var hits=mixed.Resolve().Where(e=>e.Type=="strike").ToArray();int raw=1;
-                for(int hit=0;hit<5;hit++){if(faces[hit])raw+=2;Check(hits[hit].Coin.RawDamage==raw&&hits[hit].Damage==raw&&hits[hit].Snapshot.Enemies[0].Hp==1000-hits.Take(hit+1).Sum(e=>e.Damage),"Fantasy Seal mixed faces: displayed raw, damage and HP snapshot carry prior heads through mark detonation");}
+                for(int hit=0;hit<5;hit++){if(faces[hit])raw+=3;Check(hits[hit].Coin.RawDamage==raw&&hits[hit].Damage==raw&&hits[hit].Snapshot.Enemies[0].Hp==1000-hits.Take(hit+1).Sum(e=>e.Damage),"Fantasy Seal mixed faces: displayed raw, damage and HP snapshot carry prior heads through mark detonation");}
             }
             foreach(string key in new[]{"yin_yang_orb","marisa_stars","marisa_laser","murder_doll"})
             {
@@ -64,8 +64,8 @@ namespace ClashRoguelike
                 }
             }
 
-            b=new Heads();Quiet(b);b.Assign("yin_yang_orb",2,3);events=b.Resolve();Check(events.Where(e=>e.Type=="strike").Select(e=>e.Damage).SequenceEqual(new[]{5,7})&&b.State.Enemies[1].Exorcism==1,"orb heads accumulate to five/seven; one mark limit");b.NextRound();
-            for(int i=0;i<2;i++){Quiet(b);b.Assign("fantasy_seal",2,0);events=b.Resolve();Check(events.Where(e=>e.Type=="strike").Select(e=>e.Damage).SequenceEqual(new[]{3,5,7,9,11}),"Fantasy Seal five heads accumulate without changing the five-coin budget");Check(b.State.Enemies[0].Exorcism==(i==0?2:0),"seal mark cap two and reset on four");b.NextRound();}
+            b=new Heads();Quiet(b);b.Assign("yin_yang_orb",2,3);events=b.Resolve();Check(events.Where(e=>e.Type=="strike").Select(e=>e.Damage).SequenceEqual(new[]{6,9})&&b.State.Enemies[1].Exorcism==1,"orb heads accumulate to six/nine; one mark limit");b.NextRound();
+            for(int i=0;i<2;i++){Quiet(b);b.Assign("fantasy_seal",2,0);events=b.Resolve();Check(events.Where(e=>e.Type=="strike").Select(e=>e.Damage).SequenceEqual(new[]{4,7,10,13,16}),"Fantasy Seal five heads accumulate without changing the five-coin budget");Check(b.State.Enemies[0].Exorcism==(i==0?2:0),"seal mark cap two and reset on four");b.NextRound();}
             Check(b.State.Enemies[0].ExorcismActive&&b.State.Enemies[1].Exorcism==1,"detonation next round; marks separate by enemy");Quiet(b,0,2);events=b.Resolve();
             Check(events.Where(e=>e.Type=="strike").All(e=>e.Coin.RawDamage==3&&e.Damage==1),"exorcism halves post-raw enemy damage without changing dice formula");
             b=new Heads();Quiet(b,0,2);b.State.Enemies[0].GensokyoNative=true;b.Assign("yin_yang_orb",2,0);Check(b.Resolve().First(e=>e.Type=="clash").Coin.LeftBase==4,"Reimu gains one only for marked native target");

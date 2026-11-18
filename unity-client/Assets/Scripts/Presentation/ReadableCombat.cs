@@ -17,7 +17,7 @@ namespace ClashRoguelike
         int inspectorUnit;
         string inspectorEffect="";
         Vector2 effectScroll;
-        static float CombatX(bool allied,int index){return allied?180+index*147:1010+index*215;}
+        float CombatX(bool allied,int index){return allied?180+index*147:portShown!=null&&adventureMode&&portShown.Enemies.Count>2?780+index*138:1010+index*215;}
         string Signed(int n){return n>=0?"+"+n:n.ToString();}
         string StatName(CoinStat stat)
         {switch(stat){case CoinStat.BasePower:return "初始点数";case CoinStat.ClashCoinPower:return "拼点硬币威力";case CoinStat.AttackCoinPower:return "攻击硬币威力";default:return "每击原始伤害";}}
@@ -51,7 +51,7 @@ namespace ClashRoguelike
                 {
                     var m=u.RoleState;
                     list.Add(new EffectBadge("spark","火花 "+m.Spark,"火花 "+m.Spark+" / 10；大于5层时攻击技能拼点+2、每技能每目标增伤+2。极限火花消耗全部火花。"));
-                    list.Add(new EffectBadge("steal","偷取cost","费用不足时，每5生命偷取1敌方未预留cost，生命最低保留1。仅在锁定结算时支付，撤销安排不会扣血。"));
+                    list.Add(new EffectBadge("steal","偷取cost","费用不足时，每3生命偷取1敌方未预留cost，生命最低保留1。仅在锁定结算时支付，撤销安排不会扣血。"));
                     if(portShown.Heroes[2].Hp>0)list.Add(new EffectBadge("marisa-team","组队增伤","灵梦在队：最终拼点−2，攻击每技能每目标增伤+5，不重复叠加。"));
                     if(m.OrreryUntil>=portShown.Turn)list.Add(new EffectBadge("orrery","天球仪","当前每次所受攻击减伤5，最低降至0，持续至第 "+m.OrreryUntil+" 回合结束。"));
                 }

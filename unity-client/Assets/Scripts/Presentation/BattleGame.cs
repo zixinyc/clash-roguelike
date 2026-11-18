@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -60,7 +60,10 @@ namespace ClashRoguelike
             else
             {
                 selectedRoster=Environment.GetCommandLineArgs().Contains("--zixi")?2:Environment.GetCommandLineArgs().Contains("--original-team")?0:1;
+                forestPvpMode=Environment.GetCommandLineArgs().Contains("--forest-pvp");
                 InitializeAdventure();
+                string layeredSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--multifloor-smoke="));
+                if(layeredSmoke!=null)StartCoroutine(MultifloorSmoke(layeredSmoke.Substring("--multifloor-smoke=".Length)));
                 string prototypeSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--prototype-smoke="));
                 if(prototypeSmoke!=null)StartCoroutine(PrototypeSmoke(prototypeSmoke.Substring("--prototype-smoke=".Length)));
                 string mainRosterSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--main-roster-smoke="));
