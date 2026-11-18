@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700">
+<rect width="1200" height="700" fill="#111d1e"/>
+<text x="44" y="62" fill="#efdfb7" font-family="Microsoft YaHei, sans-serif" font-size="30">废林探索 · 节点设计预览</text>
+<text x="44" y="98" fill="#a1b3ad" font-family="Microsoft YaHei, sans-serif" font-size="17">固定布局示例 · 实际探索中未发现区域被迷雾遮住</text>
+<rect x="44" y="130" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="69" cy="159" r="8" fill="#26383a"/>
+<text x="129" y="192" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="229" y="130" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#638875" stroke-width="2"/>
+<circle cx="254" cy="159" r="8" fill="#638875"/>
+<text x="314" y="192" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">补给</text>
+<rect x="414" y="130" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="439" cy="159" r="8" fill="#26383a"/>
+<text x="499" y="192" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="599" y="130" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#967ba6" stroke-width="2"/>
+<circle cx="624" cy="159" r="8" fill="#967ba6"/>
+<text x="684" y="192" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">事件</text>
+<rect x="784" y="130" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="809" cy="159" r="8" fill="#26383a"/>
+<text x="869" y="192" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="969" y="130" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#b96357" stroke-width="2"/>
+<circle cx="994" cy="159" r="8" fill="#b96357"/>
+<text x="1054" y="192" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">精英</text>
+<rect x="44" y="242" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#d6b879" stroke-width="2"/>
+<circle cx="69" cy="271" r="8" fill="#d6b879"/>
+<text x="129" y="304" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">起点</text>
+<rect x="229" y="242" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="254" cy="271" r="8" fill="#26383a"/>
+<text x="314" y="304" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="414" y="242" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#a77552" stroke-width="2"/>
+<circle cx="439" cy="271" r="8" fill="#a77552"/>
+<text x="499" y="304" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">战斗</text>
+<rect x="599" y="242" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="624" cy="271" r="8" fill="#26383a"/>
+<text x="684" y="304" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="784" y="242" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#c09157" stroke-width="2"/>
+<circle cx="809" cy="271" r="8" fill="#c09157"/>
+<text x="869" y="304" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">营地</text>
+<rect x="969" y="242" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#ddc786" stroke-width="2"/>
+<circle cx="994" cy="271" r="8" fill="#ddc786"/>
+<text x="1054" y="304" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">出口</text>
+<rect x="44" y="354" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="69" cy="383" r="8" fill="#26383a"/>
+<text x="129" y="416" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="229" y="354" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#967ba6" stroke-width="2"/>
+<circle cx="254" cy="383" r="8" fill="#967ba6"/>
+<text x="314" y="416" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">事件</text>
+<rect x="414" y="354" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="439" cy="383" r="8" fill="#26383a"/>
+<text x="499" y="416" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="599" y="354" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#7696a6" stroke-width="2"/>
+<circle cx="624" cy="383" r="8" fill="#7696a6"/>
+<text x="684" y="416" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">商店</text>
+<rect x="784" y="354" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#b96357" stroke-width="2"/>
+<circle cx="809" cy="383" r="8" fill="#b96357"/>
+<text x="869" y="416" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">精英</text>
+<rect x="969" y="354" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="994" cy="383" r="8" fill="#26383a"/>
+<text x="1054" y="416" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="44" y="466" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="69" cy="495" r="8" fill="#26383a"/>
+<text x="129" y="528" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="229" y="466" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="254" cy="495" r="8" fill="#26383a"/>
+<text x="314" y="528" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="414" y="466" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#d1aa61" stroke-width="2"/>
+<circle cx="439" cy="495" r="8" fill="#d1aa61"/>
+<text x="499" y="528" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">宝藏</text>
+<rect x="599" y="466" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="624" cy="495" r="8" fill="#26383a"/>
+<text x="684" y="528" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<rect x="784" y="466" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#a77552" stroke-width="2"/>
+<circle cx="809" cy="495" r="8" fill="#a77552"/>
+<text x="869" y="528" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">战斗</text>
+<rect x="969" y="466" width="170" height="95" rx="9" fill="#1b2a2a" stroke="#26383a" stroke-width="2"/>
+<circle cx="994" cy="495" r="8" fill="#26383a"/>
+<text x="1054" y="528" text-anchor="middle" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="22">空地</text>
+<text x="44" y="618" fill="#e8e1d2" font-family="Microsoft YaHei, sans-serif" font-size="19">战斗赢取资源  ·  营地恢复队员  ·  商店花费 cost  ·  事件做选择</text>
+<text x="44" y="654" fill="#a1b3ad" font-family="Microsoft YaHei, sans-serif" font-size="16">视觉与规则草案，节点数量、位置及收益均可调整；尚未实现。</text>
+</svg>

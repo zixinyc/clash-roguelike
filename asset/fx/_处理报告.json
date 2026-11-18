@@ -1,0 +1,32 @@
+[
+  {
+    "file": "fx_impact_spark_00.png",
+    "size": "512x512",
+    "visible_ratio": 0.131,
+    "alpha_max": 255
+  },
+  {
+    "file": "fx_impact_spark_01.png",
+    "size": "512x512",
+    "visible_ratio": 0.1132,
+    "alpha_max": 255
+  },
+  {
+    "file": "fx_swipe_arc_00.png",
+    "size": "512x512",
+    "visible_ratio": 0.1433,
+    "alpha_max": 255
+  },
+  {
+    "file": "fx_swipe_arc_01.png",
+    "size": "512x512",
+    "visible_ratio": 0.1309,
+    "alpha_max": 255
+  },
+  {
+    "file": "fx_swipe_arc_02.png",
+    "size": "512x512",
+    "visible_ratio": 0.1334,
+    "alpha_max": 255
+  }
+]
