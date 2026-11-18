@@ -10,6 +10,7 @@ var role_buttons: Array[Button] = []
 var card_list: VBoxContainer
 var enemy_picker: OptionButton
 var launch: Button
+var launch_explore: Button
 var summary: Label
 var page: MarginContainer
 var active_battle: Control
@@ -95,9 +96,15 @@ func _ready() -> void:
 	footer.add_child(summary)
 	launch = Button.new()
 	launch.text = "开始战斗"
-	launch.custom_minimum_size = Vector2(150, 42)
+	launch.custom_minimum_size = Vector2(130, 42)
 	launch.pressed.connect(_start_battle)
 	footer.add_child(launch)
+	
+	launch_explore = Button.new()
+	launch_explore.text = "🌲 开启林地探索"
+	launch_explore.custom_minimum_size = Vector2(160, 42)
+	launch_explore.pressed.connect(_start_exploration)
+	footer.add_child(launch_explore)
 	_refresh_lineup()
 	role_buttons[0].grab_focus()
 
@@ -167,6 +174,8 @@ func _selected_cards() -> Array:
 func _update_summary() -> void:
 	var count := _selected_cards().size()
 	launch.disabled = members.is_empty() or count == 0
+	if is_instance_valid(launch_explore):
+		launch_explore.disabled = launch.disabled
 	if launch.disabled:
 		summary.text = "请选择出战角色。" if members.is_empty() else "请至少携带一张牌。"
 	else:
@@ -182,6 +191,18 @@ func _start_battle() -> void:
 	active_battle.setup_requested.connect(_return_to_setup)
 	page.hide()
 	add_child(active_battle)
+
+func _start_exploration() -> void:
+	if launch.disabled or is_instance_valid(active_battle):
+		return
+	var explore_scene = load("res://exploration_map.tscn").instantiate()
+	explore_scene.initial_lineup = members.duplicate()
+	explore_scene.initial_deck = _selected_cards()
+	page.hide()
+	add_child(explore_scene)
+	active_battle = explore_scene
+	if explore_scene.has_signal("exploration_finished"):
+		explore_scene.connect("exploration_finished", _return_to_setup)
 
 func _return_to_setup() -> void:
 	remove_child(active_battle)

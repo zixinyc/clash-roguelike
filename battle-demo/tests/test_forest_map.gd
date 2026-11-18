@@ -18,6 +18,8 @@ func _init() -> void:
 	_test_forest_run_center_boss_and_escape()
 	_test_battle_relic_effects()
 	_test_battle_consumables()
+	_test_floor_progression_and_exit_boss()
+	_test_custom_lineup_and_shop_adjustment()
 	
 	print("FOREST_MAP_TESTS checks=%d failures=%d" % [checks, failures])
 	quit(1 if failures > 0 else 0)
@@ -208,3 +210,69 @@ func _test_battle_consumables() -> void:
 	var poultice_res := rules.use_item("field_poultice")
 	check(poultice_res.ok, "field_poultice used successfully")
 	check(rules.heroes[0].hp == 32, "Hero healed by 12 HP (was 20, now 32)")
+
+func _test_floor_progression_and_exit_boss() -> void:
+	var map1 = ForestRandomGenerator.generate(500)
+	var run = ForestRun.new()
+	run.initialize(map1, 0, ["mercury_die"], ["field_poultice"], 500)
+	
+	# Verify guaranteed shop before exit
+	var links: Array = map1.get_links(map1.exit_id)
+	var has_pre_boss_shop := false
+	for l in links:
+		var neighbor = map1.get_node(l.other(map1.exit_id))
+		if neighbor and neighbor.kind == ForestMapGraph.NodeKind.SHOP:
+			has_pre_boss_shop = true
+			break
+	check(has_pre_boss_shop, "Guaranteed shop before boss connected to exit")
+	
+	# Directly enter exit node
+	run.position = map1.exit_id
+	run.enter_node()
+	check(run.in_battle, "Entering exit node triggers Boss battle")
+	check(run.current_encounter == 5, "Exit encounter is Boss (5)")
+	check(not run.floor_cleared, "Floor not yet cleared during combat")
+	
+	# Win boss battle
+	run.apply_battle_result(true, [45, 40, 42], 50)
+	check(run.floor_cleared, "Boss victory clears floor (floor_cleared = true)")
+	check(run.ember_core, "Ember Core acquired upon clearing floor")
+	check(run.cleared.has(map1.exit_id), "Exit node marked cleared")
+	
+	# Advance to next floor
+	var map2 = ForestRandomGenerator.generate(501)
+	run.advance_to_next_floor(map2, 501)
+	check(run.floor_level == 2, "Floor level increased to 2")
+	check(not run.floor_cleared, "Floor 2 is not cleared upon entry")
+	check(run.position == map2.start_id, "Position reset to map2 start_id")
+	check(run.party_hp == [45, 40, 42], "Party HP preserved across floors")
+	check(run.relics.has("mercury_die"), "Relics preserved across floors")
+	check(run.carried_cost == 65, "Cost preserved (50 + 15 boss reward = 65)")
+
+func _test_custom_lineup_and_shop_adjustment() -> void:
+	var map = ForestRandomGenerator.generate(600)
+	var run = ForestRun.new()
+	
+	# Initialize with Touhou custom lineup (Reimu, Sakuya, Marisa)
+	var custom_team = [DemoBattleRules.REIMU_ID, DemoBattleRules.SAKUYA_ID, DemoBattleRules.MARISA_ID]
+	var custom_deck = ["needle", "cleave", "steady"]
+	run.initialize(map, 0, [], [], 600, custom_team, custom_deck)
+	
+	check(run.lineup == custom_team, "Custom lineup correctly initialized")
+	check(run.party_names == ["博丽灵梦", "十六夜咲夜", "雾雨魔理沙"], "Party names match custom lineup")
+	check(run.party_hp.size() == 3, "Party HP matches team size")
+	check(run.deck == custom_deck, "Custom deck initialized")
+	
+	# Simulate shop lineup adjustment (e.g. swap to ZiXi and Ash)
+	var new_team = [DemoBattleRules.ASH_ID, DemoBattleRules.ZIXI_ID]
+	var new_deck = ["ember", "nova", "guard"]
+	run.set_lineup_and_deck(new_team, new_deck)
+	
+	check(run.lineup == new_team, "Lineup updated via set_lineup_and_deck")
+	check(run.party_names == ["灰烬", "ZiXi"], "Party names updated")
+	check(run.deck == new_deck, "Deck updated")
+	
+	# Test out-of-combat field poultice healing
+	run.party_hp[1] = 10
+	run.heal_lowest_hero(12)
+	check(run.party_hp[1] == 22, "Lowest hero healed by 12 via heal_lowest_hero")

@@ -137,12 +137,21 @@ static func generate(seed_val: int = -1) -> ForestMapGraph:
 	if layers[5].size() >= 2:
 		graph.get_node(layers[5][0]).kind = ForestMapGraph.NodeKind.ELITE
 		graph.get_node(layers[5][0]).name = "追猎者驻地"
-		graph.get_node(layers[5][1]).kind = ForestMapGraph.NodeKind.SHOP
-		graph.get_node(layers[5][1]).name = "废林行商"
+		graph.get_node(layers[5][1]).kind = ForestMapGraph.NodeKind.EVENT
+		graph.get_node(layers[5][1]).name = "残碑秘窟"
 	
-	if layers[6].size() >= 1:
-		graph.get_node(layers[6][0]).kind = ForestMapGraph.NodeKind.CAMP
-		graph.get_node(layers[6][0]).name = "最后营火"
+	if layers[6].size() >= 2:
+		graph.get_node(layers[6][0]).kind = ForestMapGraph.NodeKind.SHOP
+		graph.get_node(layers[6][0]).name = "战前行商"
+		graph.get_node(layers[6][1]).kind = ForestMapGraph.NodeKind.CAMP
+		graph.get_node(layers[6][1]).name = "战前营地"
+	elif layers[6].size() >= 1:
+		graph.get_node(layers[6][0]).kind = ForestMapGraph.NodeKind.SHOP
+		graph.get_node(layers[6][0]).name = "战前行商"
+		
+	var exit_node = graph.get_node(layers[layers.size() - 1][0])
+	exit_node.kind = ForestMapGraph.NodeKind.EXIT
+	exit_node.name = "关底守卫 · 归途石门"
 	
 	# 建立层间连线 (主干、支线与环路)
 	var edge_count := 0

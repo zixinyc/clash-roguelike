@@ -5,6 +5,12 @@ const ForestMapGraph = preload("res://scripts/forest_map_graph.gd")
 const ForestRandomGenerator = preload("res://scripts/forest_random_generator.gd")
 const ForestRun = preload("res://scripts/forest_run.gd")
 const RelicSystem = preload("res://scripts/relic_system.gd")
+const DemoBattleRules = preload("res://scripts/battle_rules.gd")
+
+signal exploration_finished
+
+var initial_lineup: Array = []
+var initial_deck: Array = []
 
 const GOLD := Color("e6c38a")
 const PANEL_BG := Color("111a21")
@@ -65,7 +71,36 @@ var modal_desc: Label
 var modal_btn_1: Button
 var modal_btn_2: Button
 var modal_btn_3: Button
+var modal_shop_lineup_btn: Button
 var modal_leave_btn: Button
+
+# Item Detail Modal
+var item_detail_panel: PanelContainer
+var item_detail_title: Label
+var item_detail_type: Label
+var item_detail_desc: Label
+var item_detail_use_btn: Button
+var item_detail_close_btn: Button
+
+# Next Floor Modal
+var next_floor_panel: PanelContainer
+var next_floor_title: Label
+var next_floor_desc: Label
+var next_floor_advance_btn: Button
+var next_floor_stay_btn: Button
+
+# Lineup Configuration Modal
+var lineup_modal_panel: PanelContainer
+var lineup_modal_title: Label
+var lineup_role_buttons: Array[Button] = []
+var lineup_card_container: VBoxContainer
+var lineup_summary_label: Label
+var lineup_save_btn: Button
+var lineup_close_btn: Button
+var edit_members: Array = []
+var edit_omitted: Dictionary = {}
+
+var floor_badge: Label
 
 # Hovered / selected state
 var hovered_node_id: String = ""
@@ -138,6 +173,9 @@ func _setup_layout() -> void:
 	
 	# Modal Interaction Panel
 	_build_modal_panel()
+	_build_item_detail_modal()
+	_build_next_floor_modal()
+	_build_lineup_modal()
 	
 	# Battle Return Button
 	return_button = Button.new()
@@ -158,8 +196,17 @@ func _build_top_hud() -> PanelContainer:
 	hud.add_theme_stylebox_override("panel", _box(PANEL_BG, PANEL_BORDER, 1, 8, 8))
 	
 	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 16)
+	hbox.add_theme_constant_override("separation", 14)
 	hud.add_child(hbox)
+	
+	# Floor Level Badge
+	floor_badge = Label.new()
+	floor_badge.text = "🚩 第 1 层"
+	floor_badge.add_theme_font_size_override("font_size", 15)
+	floor_badge.add_theme_color_override("font_color", GOLD)
+	hbox.add_child(floor_badge)
+	
+	hbox.add_child(VSeparator.new())
 	
 	# Team Lineup HP Chips
 	hud_team_container = HBoxContainer.new()
@@ -236,6 +283,13 @@ func _build_top_hud() -> PanelContainer:
 	end_turn_button.pressed.connect(_on_end_turn_pressed)
 	hbox.add_child(end_turn_button)
 	
+	var exit_explore_btn := Button.new()
+	exit_explore_btn.text = "退出探索"
+	exit_explore_btn.pressed.connect(func() -> void:
+		exploration_finished.emit()
+		queue_free())
+	hbox.add_child(exit_explore_btn)
+	
 	return hud
 
 func _build_bottom_bar() -> PanelContainer:
@@ -243,7 +297,7 @@ func _build_bottom_bar() -> PanelContainer:
 	bar.add_theme_stylebox_override("panel", _box(PANEL_BG, PANEL_BORDER, 1, 6, 8))
 	
 	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 16)
+	hbox.add_theme_constant_override("separation", 14)
 	bar.add_child(hbox)
 	
 	log_label = Label.new()
@@ -253,8 +307,13 @@ func _build_bottom_bar() -> PanelContainer:
 	log_label.text = "沿亮起的林间小径探索，夺取烬核后返回归途石门。"
 	hbox.add_child(log_label)
 	
+	var config_btn := Button.new()
+	config_btn.text = "👥 调整配队与卡牌"
+	config_btn.pressed.connect(_open_lineup_modal)
+	hbox.add_child(config_btn)
+	
 	lineup_button = Button.new()
-	lineup_button.text = "阵容: 灰烬小队"
+	lineup_button.text = "预设: 灰烬小队"
 	lineup_button.pressed.connect(_toggle_lineup)
 	hbox.add_child(lineup_button)
 	
@@ -308,6 +367,12 @@ func _build_modal_panel() -> void:
 	modal_btn_3.pressed.connect(_on_modal_choice.bind(2))
 	btn_box.add_child(modal_btn_3)
 	
+	modal_shop_lineup_btn = Button.new()
+	modal_shop_lineup_btn.text = "👥 【整备】调整配队与卡牌"
+	modal_shop_lineup_btn.pressed.connect(_open_lineup_modal)
+	modal_shop_lineup_btn.visible = false
+	btn_box.add_child(modal_shop_lineup_btn)
+	
 	modal_leave_btn = Button.new()
 	modal_leave_btn.text = "稍后再来"
 	modal_leave_btn.pressed.connect(_on_modal_leave)
@@ -322,6 +387,355 @@ func _build_modal_panel() -> void:
 	choice_b = modal_btn_2
 	leave_button = modal_leave_btn
 
+func _build_item_detail_modal() -> void:
+	item_detail_panel = PanelContainer.new()
+	item_detail_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	item_detail_panel.offset_left = -210
+	item_detail_panel.offset_right = 210
+	item_detail_panel.offset_top = -130
+	item_detail_panel.offset_bottom = 130
+	item_detail_panel.add_theme_stylebox_override("panel", _box(Color("0f1a21"), GOLD, 2, 8, 14))
+	add_child(item_detail_panel)
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	item_detail_panel.add_child(vbox)
+	
+	item_detail_title = Label.new()
+	item_detail_title.add_theme_font_size_override("font_size", 17)
+	item_detail_title.add_theme_color_override("font_color", GOLD)
+	vbox.add_child(item_detail_title)
+	
+	item_detail_type = Label.new()
+	item_detail_type.add_theme_font_size_override("font_size", 12)
+	item_detail_type.add_theme_color_override("font_color", Color("81b29a"))
+	vbox.add_child(item_detail_type)
+	
+	vbox.add_child(HSeparator.new())
+	
+	item_detail_desc = Label.new()
+	item_detail_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	item_detail_desc.add_theme_font_size_override("font_size", 13)
+	item_detail_desc.add_theme_color_override("font_color", Color("cad2c5"))
+	item_detail_desc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(item_detail_desc)
+	
+	var btn_box := HBoxContainer.new()
+	btn_box.add_theme_constant_override("separation", 10)
+	vbox.add_child(btn_box)
+	
+	item_detail_use_btn = Button.new()
+	item_detail_use_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn_box.add_child(item_detail_use_btn)
+	
+	item_detail_close_btn = Button.new()
+	item_detail_close_btn.text = "关闭"
+	item_detail_close_btn.custom_minimum_size = Vector2(80, 32)
+	item_detail_close_btn.pressed.connect(func() -> void: item_detail_panel.visible = false)
+	btn_box.add_child(item_detail_close_btn)
+	
+	item_detail_panel.visible = false
+
+func _build_next_floor_modal() -> void:
+	next_floor_panel = PanelContainer.new()
+	next_floor_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	next_floor_panel.offset_left = -260
+	next_floor_panel.offset_right = 260
+	next_floor_panel.offset_top = -130
+	next_floor_panel.offset_bottom = 130
+	next_floor_panel.add_theme_stylebox_override("panel", _box(Color("0f1a21"), GOLD, 2, 8, 16))
+	add_child(next_floor_panel)
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	next_floor_panel.add_child(vbox)
+	
+	next_floor_title = Label.new()
+	next_floor_title.text = "🌟 关底首领击破！"
+	next_floor_title.add_theme_font_size_override("font_size", 18)
+	next_floor_title.add_theme_color_override("font_color", GOLD)
+	vbox.add_child(next_floor_title)
+	
+	next_floor_desc = Label.new()
+	next_floor_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	next_floor_desc.add_theme_font_size_override("font_size", 13)
+	next_floor_desc.add_theme_color_override("font_color", Color("cad2c5"))
+	vbox.add_child(next_floor_desc)
+	
+	vbox.add_child(HSeparator.new())
+	
+	var btn_box := VBoxContainer.new()
+	btn_box.add_theme_constant_override("separation", 6)
+	vbox.add_child(btn_box)
+	
+	next_floor_advance_btn = Button.new()
+	next_floor_advance_btn.text = "🌲 深入下一层"
+	next_floor_advance_btn.pressed.connect(_on_advance_next_floor_pressed)
+	btn_box.add_child(next_floor_advance_btn)
+	
+	next_floor_stay_btn = Button.new()
+	next_floor_stay_btn.text = "暂留本层 (可在石门前整备)"
+	next_floor_stay_btn.pressed.connect(func() -> void: next_floor_panel.visible = false)
+	btn_box.add_child(next_floor_stay_btn)
+	
+	next_floor_panel.visible = false
+
+func _build_lineup_modal() -> void:
+	lineup_modal_panel = PanelContainer.new()
+	lineup_modal_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	lineup_modal_panel.offset_left = -380
+	lineup_modal_panel.offset_right = 380
+	lineup_modal_panel.offset_top = -250
+	lineup_modal_panel.offset_bottom = 250
+	lineup_modal_panel.add_theme_stylebox_override("panel", _box(Color("0e181f"), GOLD, 2, 10, 14))
+	add_child(lineup_modal_panel)
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	lineup_modal_panel.add_child(vbox)
+	
+	lineup_modal_title = Label.new()
+	lineup_modal_title.text = "👥 队伍阵容与携带卡牌配置"
+	lineup_modal_title.add_theme_font_size_override("font_size", 18)
+	lineup_modal_title.add_theme_color_override("font_color", GOLD)
+	vbox.add_child(lineup_modal_title)
+	
+	var sub := Label.new()
+	sub.text = "选择 1～3 名出战队员（保留各队员当前生命），并勾选本场携带的技能符卡。"
+	sub.add_theme_font_size_override("font_size", 13)
+	sub.add_theme_color_override("font_color", Color("cad2c5"))
+	vbox.add_child(sub)
+	
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 14)
+	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(columns)
+	
+	# Left: Heroes
+	var left_panel := PanelContainer.new()
+	left_panel.custom_minimum_size = Vector2(280, 0)
+	left_panel.add_theme_stylebox_override("panel", _box(Color("132029"), PANEL_BORDER, 1, 6, 8))
+	columns.add_child(left_panel)
+	
+	var left_vbox := VBoxContainer.new()
+	left_vbox.add_theme_constant_override("separation", 6)
+	left_panel.add_child(left_vbox)
+	
+	var left_title := Label.new()
+	left_title.text = "出战队员 (1~3人)"
+	left_title.add_theme_font_size_override("font_size", 14)
+	left_title.add_theme_color_override("font_color", Color("81b29a"))
+	left_vbox.add_child(left_title)
+	
+	var roles_grid := GridContainer.new()
+	roles_grid.columns = 2
+	roles_grid.add_theme_constant_override("h_separation", 6)
+	roles_grid.add_theme_constant_override("v_separation", 6)
+	left_vbox.add_child(roles_grid)
+	
+	var roster := DemoBattleRules.create_roster()
+	lineup_role_buttons.clear()
+	for id in roster.size():
+		var btn := Button.new()
+		btn.toggle_mode = true
+		btn.custom_minimum_size = Vector2(130, 48)
+		btn.text = "%s\n%s" % [roster[id].name, roster[id].role]
+		var pressed_box := _box(Color("28454d"), GOLD, 2, 5, 4)
+		btn.add_theme_stylebox_override("pressed", pressed_box)
+		btn.toggled.connect(_on_lineup_member_toggled.bind(id))
+		roles_grid.add_child(btn)
+		lineup_role_buttons.append(btn)
+		
+	# Right: Cards
+	var right_panel := PanelContainer.new()
+	right_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_panel.add_theme_stylebox_override("panel", _box(Color("132029"), PANEL_BORDER, 1, 6, 8))
+	columns.add_child(right_panel)
+	
+	var right_vbox := VBoxContainer.new()
+	right_vbox.add_theme_constant_override("separation", 6)
+	right_panel.add_child(right_vbox)
+	
+	var right_title := Label.new()
+	right_title.text = "携带技能符卡"
+	right_title.add_theme_font_size_override("font_size", 14)
+	right_title.add_theme_color_override("font_color", Color("e07a5f"))
+	right_vbox.add_child(right_title)
+	
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right_vbox.add_child(scroll)
+	
+	lineup_card_container = VBoxContainer.new()
+	lineup_card_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lineup_card_container.add_theme_constant_override("separation", 4)
+	scroll.add_child(lineup_card_container)
+	
+	# Footer
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation", 12)
+	vbox.add_child(footer)
+	
+	lineup_summary_label = Label.new()
+	lineup_summary_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lineup_summary_label.add_theme_color_override("font_color", GOLD)
+	footer.add_child(lineup_summary_label)
+	
+	lineup_save_btn = Button.new()
+	lineup_save_btn.text = "保存并应用配置"
+	lineup_save_btn.custom_minimum_size = Vector2(130, 36)
+	lineup_save_btn.pressed.connect(_on_lineup_save_pressed)
+	footer.add_child(lineup_save_btn)
+	
+	lineup_close_btn = Button.new()
+	lineup_close_btn.text = "取消"
+	lineup_close_btn.custom_minimum_size = Vector2(80, 36)
+	lineup_close_btn.pressed.connect(func() -> void: lineup_modal_panel.visible = false)
+	footer.add_child(lineup_close_btn)
+	
+	lineup_modal_panel.visible = false
+
+func _show_item_detail(item_id: String, item_idx: int) -> void:
+	var info: Dictionary = RelicSystem.get_consumable(item_id)
+	item_detail_title.text = "%s %s" % [info.get("icon", "✦"), info.get("name", item_id)]
+	item_detail_type.text = "【战术消耗品】"
+	item_detail_desc.text = info.get("description", "")
+	
+	if item_id == "field_poultice":
+		item_detail_use_btn.visible = true
+		item_detail_use_btn.text = "【立即在探索中使用】(恢复重伤队员 12 生命)"
+		var callables = item_detail_use_btn.pressed.get_connections()
+		for c in callables:
+			item_detail_use_btn.pressed.disconnect(c.callable)
+		item_detail_use_btn.pressed.connect(_use_item_in_exploration.bind(item_id, item_idx))
+	else:
+		item_detail_use_btn.visible = false
+		item_detail_desc.text += "\n\n💡 提示：该道具为战斗消耗品，进入战斗后在行动规划界面手牌区点击使用。"
+	item_detail_panel.visible = true
+
+func _show_relic_detail(relic_id: String) -> void:
+	var info: Dictionary = RelicSystem.get_relic(relic_id)
+	item_detail_title.text = "%s %s" % [info.get("icon", "✧"), info.get("name", relic_id)]
+	item_detail_type.text = "【被动遗物】稀有度: %s" % info.get("rarity", "common")
+	item_detail_desc.text = "%s\n\n✨ 全局被动常驻生效（可在所有遭遇与战斗中发挥效力）。" % info.get("description", "")
+	item_detail_use_btn.visible = false
+	item_detail_panel.visible = true
+
+func _use_item_in_exploration(item_id: String, item_idx: int) -> void:
+	if run == null:
+		return
+	if item_id == "field_poultice":
+		run.heal_lowest_hero(12)
+		if item_idx >= 0 and item_idx < run.items.size():
+			run.items.remove_at(item_idx)
+		for i in run.party_hp.size():
+			if i < carried_hp.size():
+				carried_hp[i] = run.party_hp[i]
+		run.log_event("在探索中使用了【战地敷药】，队伍重伤队员恢复 12 点生命！")
+		item_detail_panel.visible = false
+		_refresh_ui()
+
+func _show_next_floor_modal() -> void:
+	if run == null:
+		return
+	next_floor_title.text = "🌟 第 %d 层突破！" % run.floor_level
+	next_floor_desc.text = "关底守卫【烬心巨像】已被击溃，归途石门上的远古符文已完全激活！\n石阶向下延伸，更深处迷雾翻涌，前路将更为险峻。"
+	next_floor_advance_btn.text = "🌲 深入下一层 (进入第 %d 层)" % (run.floor_level + 1)
+	next_floor_panel.visible = true
+
+func _on_advance_next_floor_pressed() -> void:
+	if run == null:
+		return
+	var new_seed := int(Time.get_unix_time_from_system() * 1000) ^ randi()
+	var new_map: ForestMapGraph = ForestRandomGenerator.generate(new_seed)
+	run.advance_to_next_floor(new_map, new_seed)
+	carried_hp.clear()
+	for hp in run.party_hp:
+		carried_hp.append(hp)
+	carried_cost = run.carried_cost
+	next_floor_panel.visible = false
+	_rebuild_team_hud()
+	_refresh_ui()
+
+func _open_lineup_modal() -> void:
+	if run == null or is_instance_valid(battle):
+		return
+	edit_members = run.lineup.duplicate()
+	edit_omitted.clear()
+	if not run.deck.is_empty():
+		var avail := DemoBattleRules.available_cards(edit_members)
+		for c in avail:
+			if not run.deck.has(c):
+				edit_omitted[c] = true
+	_refresh_lineup_modal()
+	lineup_modal_panel.visible = true
+
+func _on_lineup_member_toggled(enabled: bool, id: int) -> void:
+	if enabled and edit_members.size() < 3:
+		if not edit_members.has(id):
+			edit_members.append(id)
+	elif not enabled:
+		edit_members.erase(id)
+	_refresh_lineup_modal()
+
+func _refresh_lineup_modal() -> void:
+	var roster := DemoBattleRules.create_roster()
+	for id in lineup_role_buttons.size():
+		var selected := edit_members.has(id)
+		lineup_role_buttons[id].set_pressed_no_signal(selected)
+		lineup_role_buttons[id].text = "%s%s\n%s" % [roster[id].name, "  ✓" if selected else "", roster[id].role]
+		lineup_role_buttons[id].disabled = not selected and edit_members.size() >= 3
+		
+	for child in lineup_card_container.get_children():
+		child.queue_free()
+		
+	var available := DemoBattleRules.available_cards(edit_members)
+	for owner in [-1] + edit_members:
+		var sec_lbl := Label.new()
+		sec_lbl.text = "── 全队通用 ──" if owner == -1 else "── %s 专属 ──" % roster[owner].name
+		sec_lbl.add_theme_font_size_override("font_size", 12)
+		sec_lbl.add_theme_color_override("font_color", Color("90a955") if owner == -1 else Color("64dfdf"))
+		lineup_card_container.add_child(sec_lbl)
+		for key in available:
+			if DemoBattleRules.card_owner(key) != owner:
+				continue
+			var skill: Dictionary = DemoBattleRules.SKILLS[key]
+			var cb := CheckBox.new()
+			cb.text = "%s  (%d cost)" % [skill.get("name", key), skill.get("cost", 0)]
+			cb.tooltip_text = skill.get("description", "")
+			cb.button_pressed = not edit_omitted.has(key)
+			cb.toggled.connect(func(pressed: bool) -> void:
+				if pressed:
+					edit_omitted.erase(key)
+				else:
+					edit_omitted[key] = true
+				_update_lineup_modal_summary())
+			lineup_card_container.add_child(cb)
+			
+	_update_lineup_modal_summary()
+
+func _update_lineup_modal_summary() -> void:
+	var selected_cards := DemoBattleRules.available_cards(edit_members).filter(func(k: String) -> bool: return not edit_omitted.has(k))
+	var count := selected_cards.size()
+	lineup_save_btn.disabled = edit_members.is_empty() or count == 0
+	if lineup_save_btn.disabled:
+		lineup_summary_label.text = "请选择出战角色 (1~3人)" if edit_members.is_empty() else "请至少勾选一张卡牌"
+	else:
+		lineup_summary_label.text = "出战 %d 人  ·  携带 %d 张牌" % [edit_members.size(), count]
+
+func _on_lineup_save_pressed() -> void:
+	if edit_members.is_empty():
+		return
+	var selected_cards := DemoBattleRules.available_cards(edit_members).filter(func(k: String) -> bool: return not edit_omitted.has(k))
+	run.set_lineup_and_deck(edit_members, selected_cards)
+	carried_hp.clear()
+	for hp in run.party_hp:
+		carried_hp.append(hp)
+	lineup_modal_panel.visible = false
+	_rebuild_team_hud()
+	_refresh_ui()
+
 func _start_new_run() -> void:
 	if is_instance_valid(battle):
 		battle.queue_free()
@@ -331,7 +745,15 @@ func _start_new_run() -> void:
 	var seed_val := int(Time.get_unix_time_from_system() * 1000) ^ randi()
 	var map: ForestMapGraph = ForestRandomGenerator.generate(seed_val)
 	run = ForestRun.new()
-	run.initialize(map, selected_lineup, ["mercury_die"], ["dense_smoke"], seed_val)
+	if not initial_lineup.is_empty():
+		run.initialize(map, 0, ["mercury_die"], ["field_poultice", "dense_smoke"], seed_val, initial_lineup, initial_deck)
+	else:
+		run.initialize(map, selected_lineup, ["mercury_die"], ["field_poultice", "dense_smoke"], seed_val)
+	
+	carried_hp.clear()
+	for hp in run.party_hp:
+		carried_hp.append(hp)
+	carried_cost = run.carried_cost
 	
 	_rebuild_team_hud()
 	_refresh_ui()
@@ -517,10 +939,13 @@ func _on_map_canvas_input(event: InputEvent) -> void:
 				break
 
 func _handle_node_clicked(node_id: String) -> void:
-	if is_instance_valid(battle) or not modal_panel.visible == false:
+	if is_instance_valid(battle) or modal_panel.visible or (is_instance_valid(lineup_modal_panel) and lineup_modal_panel.visible) or (is_instance_valid(next_floor_panel) and next_floor_panel.visible):
 		return
 	if node_id == run.position:
 		var n = run.map.get_node(node_id)
+		if n and n.kind == ForestMapGraph.NodeKind.EXIT and run.floor_cleared:
+			_show_next_floor_modal()
+			return
 		log_label.text = "当前位置：%s（%s）" % [n.name, ForestMapGraph.kind_title(n.kind)]
 		return
 		
@@ -536,12 +961,15 @@ func _handle_node_clicked(node_id: String) -> void:
 			_start_battle(run.current_encounter)
 		elif not run.pending.is_empty():
 			_open_modal(run.pending)
+		elif run.floor_cleared:
+			_show_next_floor_modal()
 
 func _open_modal(kind: String) -> void:
 	modal_panel.visible = true
 	modal_btn_1.visible = true
 	modal_btn_2.visible = true
 	modal_btn_3.visible = false
+	modal_shop_lineup_btn.visible = false
 	modal_leave_btn.visible = true
 	modal_btn_1.disabled = false
 	modal_btn_2.disabled = false
@@ -549,14 +977,20 @@ func _open_modal(kind: String) -> void:
 	
 	match kind:
 		"camp":
-			modal_title.text = "▲ 余火营地"
-			modal_desc.text = "在寂静的焦木树下升起营火。你可以休整包扎伤口，或在周边搜集可用余烬。"
+			var curr_node = run.map.get_node(run.position) if (run and run.map) else null
+			var is_pre_boss_camp: bool = (curr_node != null and curr_node.name.begins_with("战前"))
+			modal_title.text = "▲ 战前营地" if is_pre_boss_camp else "▲ 余火营地"
+			modal_desc.text = "在石门前的静谧树阴下生起营火。你可以休整包扎伤口，或调整队伍阵容与符卡配置。" if is_pre_boss_camp else "在寂静的焦木树下升起营火。你可以休整包扎伤口，或在周边搜集可用余烬。"
 			modal_btn_1.text = "生火休整：存活队员恢复 10 生命，疲劳 −3"
 			modal_btn_2.text = "搜集余烬：获得 6 cost，疲劳 −1"
+			modal_shop_lineup_btn.visible = true
+			modal_shop_lineup_btn.text = "👥 【整备】调整配队与卡牌"
 			modal_leave_btn.text = "不作休整直接离开"
 		"shop":
-			modal_title.text = "◈ 废林流浪黑商"
-			modal_desc.text = "驼背行商在枯树旁摊开破旧油布，陈列着来自各地的稀有奇物。"
+			var curr_node = run.map.get_node(run.position) if (run and run.map) else null
+			var is_pre_boss: bool = (curr_node != null and curr_node.name.begins_with("战前"))
+			modal_title.text = "◈ 战前行商" if is_pre_boss else "◈ 废林流浪黑商"
+			modal_desc.text = "驼背行商在石门前的枯树旁摊开油布，陈列着各地的奇物。首领决战在即，请务必整备妥当！" if is_pre_boss else "驼背行商在枯树旁摊开破旧油布，陈列着来自各地的稀有奇物。"
 			modal_btn_1.text = "购买特效伤药（6 cost）：存活队员恢复 8 生命"
 			modal_btn_1.disabled = run.carried_cost < 6
 			modal_btn_2.text = "购买神秘通用遗物（12 cost）：获取 1 件被动遗物"
@@ -564,6 +998,8 @@ func _open_modal(kind: String) -> void:
 			modal_btn_3.visible = true
 			modal_btn_3.text = "购买战术消耗品（4 cost）：获取 1 件战斗道具"
 			modal_btn_3.disabled = run.carried_cost < 4
+			modal_shop_lineup_btn.visible = true
+			modal_shop_lineup_btn.text = "👥 【整备】调整配队与卡牌"
 			modal_leave_btn.text = "离开摊位（稍后仍可返回）"
 		"shrine":
 			modal_title.text = "⛩ 御灵神龛"
@@ -633,6 +1069,8 @@ func _on_end_turn_pressed() -> void:
 func _refresh_ui() -> void:
 	if run == null:
 		return
+	if is_instance_valid(floor_badge):
+		floor_badge.text = "🚩 第 %d 层" % run.floor_level
 	cost_label.text = "🪙 %d cost" % run.carried_cost
 	var actions_dots := ""
 	for i in run.action_budget:
@@ -652,9 +1090,10 @@ func _refresh_ui() -> void:
 	end_turn_button.disabled = run.finished or run.in_battle or not run.pending.is_empty()
 	
 	for i in run.party_hp.size():
-		hero_hp_labels[i].text = "%s  %d/%d" % [run.party_names[i], run.party_hp[i], run.party_max_hp[i]]
-		hero_hp_bars[i].max_value = run.party_max_hp[i]
-		hero_hp_bars[i].value = run.party_hp[i]
+		if i < hero_hp_labels.size() and i < hero_hp_bars.size():
+			hero_hp_labels[i].text = "%s  %d/%d" % [run.party_names[i], run.party_hp[i], run.party_max_hp[i]]
+			hero_hp_bars[i].max_value = run.party_max_hp[i]
+			hero_hp_bars[i].value = run.party_hp[i]
 		
 	# Refresh Relics Shelf
 	for child in relics_container.get_children():
@@ -663,19 +1102,22 @@ func _refresh_ui() -> void:
 		var r_data: Dictionary = RelicSystem.get_relic(r_id)
 		var btn := Button.new()
 		btn.text = r_data.get("icon", "✧")
-		btn.tooltip_text = "【%s】\n%s" % [r_data.get("name", r_id), r_data.get("description", "")]
+		btn.tooltip_text = "【%s】(点击查看详细)\n%s" % [r_data.get("name", r_id), r_data.get("description", "")]
 		btn.custom_minimum_size = Vector2(28, 28)
+		btn.pressed.connect(_show_relic_detail.bind(r_id))
 		relics_container.add_child(btn)
 		
 	# Refresh Items Shelf
 	for child in items_container.get_children():
 		child.queue_free()
-	for i_id in run.items:
+	for idx in run.items.size():
+		var i_id: String = run.items[idx]
 		var i_data: Dictionary = RelicSystem.get_consumable(i_id)
 		var btn := Button.new()
 		btn.text = i_data.get("icon", "✦")
-		btn.tooltip_text = "【%s】\n%s" % [i_data.get("name", i_id), i_data.get("description", "")]
+		btn.tooltip_text = "【%s】(点击查看详情/使用)\n%s" % [i_data.get("name", i_id), i_data.get("description", "")]
 		btn.custom_minimum_size = Vector2(28, 28)
+		btn.pressed.connect(_show_item_detail.bind(i_id, idx))
 		items_container.add_child(btn)
 		
 	map_canvas.queue_redraw()
@@ -686,11 +1128,14 @@ func _start_battle(encounter: int) -> void:
 	battle.encounter = encounter
 	
 	# Determine team lineup flags
-	var use_touhou: bool = run.roster_id == 1
-	var use_zixi: bool = run.roster_id == 2
-	var use_zixingyc: bool = run.roster_id == 3
+	var use_touhou: bool = run.roster_id == 1 and run.lineup.is_empty()
+	var use_zixi: bool = run.roster_id == 2 and run.lineup.is_empty()
+	var use_zixingyc: bool = run.roster_id == 3 and run.lineup.is_empty()
 	
-	battle.battle.start(randi(), encounter, use_touhou, use_zixi, [], null, use_zixingyc, run.relics, run.items)
+	battle.lineup = run.lineup.duplicate()
+	battle.deck = run.deck.duplicate() if not run.deck.is_empty() else null
+	
+	battle.battle.start(randi(), encounter, use_touhou, use_zixi, run.lineup, (run.deck if not run.deck.is_empty() else null), use_zixingyc, run.relics, run.items)
 	battle.battle.cost = carried_cost
 	for i in mini(carried_hp.size(), battle.battle.heroes.size()):
 		battle.battle.heroes[i].hp = carried_hp[i]
@@ -742,6 +1187,14 @@ func _return_from_battle() -> void:
 		
 	if run:
 		run.apply_battle_result(victory, surviving_hp, final_cost)
+		run.carried_cost = carried_cost
+		for i in run.party_hp.size():
+			if i < carried_hp.size():
+				carried_hp[i] = run.party_hp[i]
+	_refresh_ui()
+	
+	if run and run.floor_cleared:
+		_show_next_floor_modal()
 	_refresh_ui()
 
 # Legacy Grid & Event Compatibility

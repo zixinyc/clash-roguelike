@@ -3,12 +3,17 @@ extends RefCounted
 
 const ForestMapGraph = preload("res://scripts/forest_map_graph.gd")
 const RelicSystem = preload("res://scripts/relic_system.gd")
+const DemoBattleRules = preload("res://scripts/battle_rules.gd")
 
 var map: RefCounted
 var party_hp: Array[int] = [48, 42, 46]
 var party_max_hp: Array[int] = [48, 42, 46]
 var party_names: Array[String] = ["灰烬", "长锋", "织火"]
+var lineup: Array[int] = [0, 1, 2]
+var deck: Array[String] = []
 var roster_id: int = 0
+var floor_level: int = 1
+var floor_cleared: bool = false
 var carried_cost: int = 30
 var relics: Array[String] = []
 var items: Array[String] = []
@@ -49,11 +54,17 @@ var signal_counter: int = 0
 var observation_expires: int = 0
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 
-func initialize(map_def: RefCounted, initial_roster: int = 0, initial_relics: Array[String] = [], initial_items: Array[String] = [], seed_val: int = 1337) -> void:
+func initialize(map_def: RefCounted, initial_roster: int = 0, initial_relics: Array[String] = [], initial_items: Array[String] = [], seed_val: int = 1337, custom_lineup: Array = [], custom_deck: Array = []) -> void:
 	map = map_def
 	rng.seed = seed_val
 	roster_id = initial_roster
-	_setup_roster(initial_roster)
+	if not custom_lineup.is_empty():
+		_setup_custom_lineup(custom_lineup)
+		deck.clear()
+		for k in custom_deck:
+			deck.append(String(k))
+	else:
+		_setup_roster(initial_roster)
 	relics.assign(initial_relics.duplicate())
 	items.assign(initial_items.duplicate())
 	
@@ -70,23 +81,65 @@ func initialize(map_def: RefCounted, initial_roster: int = 0, initial_relics: Ar
 		patrol_node = patrol_route[0]
 		
 	reveal()
-	log_event("小队进入焦黑森林，归途石门已在身后闭锁。")
+	log_event("小队进入焦黑森林第 %d 层，归途石门已在身后闭锁。" % floor_level)
+
+func set_lineup_and_deck(new_lineup: Array, new_deck: Array) -> void:
+	var roster := DemoBattleRules.create_roster()
+	var old_hp_map := {}
+	for idx in lineup.size():
+		if idx < party_hp.size():
+			old_hp_map[lineup[idx]] = party_hp[idx]
+	lineup.clear()
+	for id in new_lineup:
+		lineup.append(int(id))
+	deck.clear()
+	for k in new_deck:
+		deck.append(String(k))
+	party_names.clear()
+	party_hp.clear()
+	party_max_hp.clear()
+	for id in lineup:
+		var hero: Dictionary = roster[id]
+		party_names.append(hero.name)
+		party_max_hp.append(int(hero.max_hp))
+		var curr_hp: int = old_hp_map.get(id, int(hero.hp))
+		party_hp.append(curr_hp)
+	log_event("队伍整备完成：当前阵容为【%s】，携带 %d 张牌。" % ["、".join(party_names), deck.size()])
+	version += 1
+
+func _setup_custom_lineup(members: Array) -> void:
+	var roster := DemoBattleRules.create_roster()
+	lineup.clear()
+	party_names.clear()
+	party_hp.clear()
+	party_max_hp.clear()
+	for id in members:
+		var hero_id := int(id)
+		lineup.append(hero_id)
+		var hero: Dictionary = roster[hero_id]
+		party_names.append(hero.name)
+		party_hp.append(int(hero.hp))
+		party_max_hp.append(int(hero.max_hp))
 
 func _setup_roster(roster: int) -> void:
 	match roster:
 		1: # Touhou: Marisa, Sakuya, Reimu
+			lineup = [DemoBattleRules.MARISA_ID, DemoBattleRules.SAKUYA_ID, DemoBattleRules.REIMU_ID]
 			party_names = ["雾雨魔理沙", "十六夜咲夜", "博丽灵梦"]
 			party_hp = [45, 42, 50]
 			party_max_hp = [45, 42, 50]
 		2: # ZiXi
+			lineup = [DemoBattleRules.ASH_ID, DemoBattleRules.ZIXI_ID, DemoBattleRules.WEAVER_ID]
 			party_names = ["灰烬", "ZiXi", "织火"]
 			party_hp = [48, 44, 46]
 			party_max_hp = [48, 44, 46]
 		3: # ZiXingYC
+			lineup = [DemoBattleRules.ASH_ID, DemoBattleRules.ZIXINGYC_ID, DemoBattleRules.WEAVER_ID]
 			party_names = ["灰烬", "ZiXingYC", "织火"]
 			party_hp = [48, 44, 46]
 			party_max_hp = [48, 44, 46]
 		_: # Default: Ash, Blade, Weaver
+			lineup = [DemoBattleRules.ASH_ID, DemoBattleRules.BLADE_ID, DemoBattleRules.WEAVER_ID]
 			party_names = ["灰烬", "长锋", "织火"]
 			party_hp = [48, 42, 46]
 			party_max_hp = [48, 42, 46]
@@ -227,12 +280,17 @@ func enter_node() -> void:
 			event_variant = rng.randi_range(0, 2)
 			message = "林间异象：发现一处未知的古代遗迹。"
 		ForestMapGraph.NodeKind.EXIT:
-			if ember_core:
+			if cleared.has(position) or ember_core:
+				cleared[position] = true
 				finished = true
-				message = "烬核与归途石门产生共鸣，石门轰然洞开！小队成功撤离！"
-				log_event("小队持有烬核凯旋脱出！探索大获全胜！")
+				floor_cleared = true
+				message = "第 %d 层关底守卫已被击溃，归途石门已激活！可随时深入下一层！" % floor_level
+				log_event("小队抵达归途石门，石阶通往下一层！")
 			else:
-				message = "石门被远古熔火封印！必须击败林地核心的守卫者夺取【烬核】方可逃离！"
+				current_encounter = 5
+				in_battle = true
+				message = "抵达第 %d 层关底！守卫者【烬心巨像】现身拦截！" % floor_level
+				log_event("遭遇第 %d 层关底首领拦截！进入首领决战！" % floor_level)
 		_:
 			cleared[position] = true
 
@@ -503,18 +561,20 @@ func apply_battle_result(victory: bool, remaining_hp: Array, remaining_cost: int
 	if victory:
 		cleared[position] = true
 		var node = map.get_node(position)
-		var is_boss: bool = (node != null and node.kind == ForestMapGraph.NodeKind.CENTER) or current_encounter == 5
+		var is_boss: bool = (node != null and (node.kind == ForestMapGraph.NodeKind.CENTER or node.kind == ForestMapGraph.NodeKind.EXIT)) or current_encounter == 5
 		var is_elite: bool = (node != null and node.kind == ForestMapGraph.NodeKind.ELITE) or current_encounter in [1, 4]
 		
 		var reward_cost := 15 if is_boss else (10 if is_elite else 6)
 		carried_cost += reward_cost
 		log_event("战斗胜利！缴获 %d cost。" % reward_cost)
 		
-		# Boss drops Ember Core
-		if is_boss and not ember_core:
-			ember_core = true
-			log_event("【关键战利品】夺得【烬核】！归途石门已被激活，前往出口即可脱出！")
-			message = "击碎烬心巨像！获得【烬核】！速速前往石门脱离！"
+		# Boss drops Ember Core and sets floor_cleared
+		if is_boss:
+			floor_cleared = true
+			if not ember_core:
+				ember_core = true
+				log_event("【关键战利品】夺得【烬核】！第 %d 层归途石门已激活！" % floor_level)
+				message = "击溃第 %d 层关底守卫！归途石门已完全激活，可随时深入下一层！" % floor_level
 			
 		# Elite and Boss reward relics
 		if is_elite or is_boss:
@@ -534,6 +594,44 @@ func apply_battle_result(victory: bool, remaining_hp: Array, remaining_cost: int
 		message = "全军覆没……小队未能走出焦黑森林。"
 		log_event("小队在战斗中败北，本次探索以失败告终。")
 		
+	version += 1
+
+func advance_to_next_floor(new_map: RefCounted, seed_val: int = -1) -> void:
+	floor_level += 1
+	floor_cleared = false
+	finished = false
+	in_battle = false
+	pending = ""
+	map = new_map
+	if seed_val >= 0:
+		rng.seed = seed_val
+		
+	# Reset floor-specific exploration state
+	position = map.start_id
+	visited = {position: true}
+	cleared = {position: true}
+	known = {position: true}
+	visible = {position: true}
+	known_edges = {}
+	signals = []
+	turn = 1
+	fatigue = 0
+	alert = 0
+	action_budget = 2
+	actions_left = 2
+	hidden_turns = 0
+	observation_expires = 0
+	
+	# Patrol setup for new map
+	patrol_route = map.patrol_route.duplicate()
+	patrol_waypoint = 0
+	patrol_node = patrol_route[0] if not patrol_route.is_empty() else ""
+	patrol_encounter = false
+	patrol_return_turn = 0
+	
+	reveal()
+	log_event("小队深入焦黑森林第 %d 层！更强烈的魔力在迷雾深处翻涌……" % floor_level)
+	message = "已进入焦黑森林第 %d 层。沿亮起的小径前行，寻访战前行商与关底石门。" % floor_level
 	version += 1
 
 func log_event(text: String) -> void:
