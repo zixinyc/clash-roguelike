@@ -9,6 +9,7 @@ var map: RefCounted
 var party_hp: Array[int] = [48, 42, 46]
 var party_max_hp: Array[int] = [48, 42, 46]
 var party_names: Array[String] = ["灰烬", "长锋", "织火"]
+var reserve_stats: Dictionary = {}
 var lineup: Array[int] = [0, 1, 2]
 var deck: Array[String] = []
 var roster_id: int = 0
@@ -55,6 +56,7 @@ var observation_expires: int = 0
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 
 func initialize(map_def: RefCounted, initial_roster: int = 0, initial_relics: Array[String] = [], initial_items: Array[String] = [], seed_val: int = 1337, custom_lineup: Array = [], custom_deck: Array = []) -> void:
+	reserve_stats.clear()
 	map = map_def
 	rng.seed = seed_val
 	roster_id = initial_roster
@@ -83,12 +85,19 @@ func initialize(map_def: RefCounted, initial_roster: int = 0, initial_relics: Ar
 	reveal()
 	log_event("小队进入焦黑森林第 %d 层，归途石门已在身后闭锁。" % floor_level)
 
+func has_living_member(members: Array) -> bool:
+	for id in members:
+		var index := lineup.find(id)
+		var hp: int = party_hp[index] if index >= 0 else reserve_stats.get(id, {}).get("hp", 1)
+		if hp > 0:
+			return true
+	return false
+
 func set_lineup_and_deck(new_lineup: Array, new_deck: Array) -> void:
 	var roster := DemoBattleRules.create_roster()
-	var old_hp_map := {}
 	for idx in lineup.size():
 		if idx < party_hp.size():
-			old_hp_map[lineup[idx]] = party_hp[idx]
+			reserve_stats[lineup[idx]] = {"hp": party_hp[idx], "max_hp": party_max_hp[idx]}
 	lineup.clear()
 	for id in new_lineup:
 		lineup.append(int(id))
@@ -101,9 +110,9 @@ func set_lineup_and_deck(new_lineup: Array, new_deck: Array) -> void:
 	for id in lineup:
 		var hero: Dictionary = roster[id]
 		party_names.append(hero.name)
-		party_max_hp.append(int(hero.max_hp))
-		var curr_hp: int = old_hp_map.get(id, int(hero.hp))
-		party_hp.append(curr_hp)
+		var stats: Dictionary = reserve_stats.get(id, hero)
+		party_max_hp.append(int(stats.max_hp))
+		party_hp.append(int(stats.hp))
 	log_event("队伍整备完成：当前阵容为【%s】，携带 %d 张牌。" % ["、".join(party_names), deck.size()])
 	version += 1
 
@@ -219,7 +228,7 @@ func enter_node() -> void:
 	if node == null:
 		return
 	message = "抵达 %s。" % node.name
-	if cleared.has(position):
+	if cleared.has(position) and node.kind != ForestMapGraph.NodeKind.SHOP:
 		message += " 该地点已处理，无法重复获取收益。"
 		return
 		
@@ -311,6 +320,8 @@ func apply_choice(choice: int) -> bool:
 				log_event("营地搜集：搜集余烬残火，获得 6 cost。")
 				ok = true
 		"shop":
+			if cleared.has(position):
+				return false
 			if choice == 0: # Buy Healing
 				if carried_cost >= 6:
 					carried_cost -= 6
@@ -334,7 +345,7 @@ func apply_choice(choice: int) -> bool:
 					var picked_item: String = item_keys[rng.randi() % item_keys.size()]
 					items.append(picked_item)
 					var i_info: Dictionary = RelicSystem.get_consumable(picked_item)
-					log_event("购买道具【%s】：%s" % [i_info.get("name", picked_item), i_info.get("desc", "")])
+					log_event("购买道具【%s】：%s" % [i_info.get("name", picked_item), i_info.get("description", "")])
 					ok = true
 		"shrine":
 			if choice == 0: # Purify
@@ -422,8 +433,11 @@ func apply_choice(choice: int) -> bool:
 					
 	if ok:
 		cleared[position] = true
-		pending = ""
-		message = "地点抉择完成，可继续向前探索。"
+		if pending == "shop":
+			message = "交易完成。可继续整备或离开商店。"
+		else:
+			pending = ""
+			message = "地点抉择完成，可继续向前探索。"
 		version += 1
 	return ok
 
@@ -542,15 +556,18 @@ func heal_party(amount: int) -> void:
 		if party_hp[i] > 0:
 			party_hp[i] = mini(party_max_hp[i], party_hp[i] + amount)
 
-func heal_lowest_hero(amount: int) -> void:
+func heal_lowest_hero(amount: int) -> int:
 	var lowest_idx := -1
 	var lowest_hp := 9999
 	for i in party_hp.size():
-		if party_hp[i] > 0 and party_hp[i] < lowest_hp:
+		if party_hp[i] > 0 and party_hp[i] < party_max_hp[i] and party_hp[i] < lowest_hp:
 			lowest_hp = party_hp[i]
 			lowest_idx = i
-	if lowest_idx >= 0:
-		party_hp[lowest_idx] = mini(party_max_hp[lowest_idx], party_hp[lowest_idx] + amount)
+	if lowest_idx < 0:
+		return 0
+	var restored := mini(amount, party_max_hp[lowest_idx] - lowest_hp)
+	party_hp[lowest_idx] += restored
+	return restored
 
 func apply_battle_result(victory: bool, remaining_hp: Array, remaining_cost: int) -> void:
 	in_battle = false

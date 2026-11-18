@@ -43,6 +43,11 @@ var last_second := -1
 var ally_status: Label
 var enemy_status: Label
 var guide: Label
+var item_button: Button
+var item_popup: PanelContainer
+var item_close_button: Button
+var item_rows: VBoxContainer
+var item_feedback: Label
 
 func _ready() -> void:
 	var font := SystemFont.new()
@@ -94,6 +99,7 @@ func _ready() -> void:
 	var fast := button("演出 ×1", func() -> void: speed = 1.0 if speed >= 4.0 else speed * 2.0)
 	fast.pressed.connect(func() -> void: fast.text = "演出 ×%d" % int(speed))
 	top.add_child(fast)
+	_build_item_popup(top)
 	var statuses := HBoxContainer.new()
 	statuses.add_theme_constant_override("separation", 12)
 	column.add_child(statuses)
@@ -225,9 +231,104 @@ func _switch_zixingyc() -> void:
 	zixi_team = false
 	new_battle()
 
+func _build_item_popup(top: HBoxContainer) -> void:
+	item_button = button("道具 0", _open_items)
+	item_button.tooltip_text = "在行动规划期间查看和使用消耗道具"
+	top.add_child(item_button)
+	item_popup = PanelContainer.new()
+	item_popup.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	item_popup.offset_left = -394
+	item_popup.offset_right = -18
+	item_popup.offset_top = 66
+	item_popup.offset_bottom = 66
+	item_popup.hide()
+	var panel := StyleBoxFlat.new()
+	panel.bg_color = Color("13232d")
+	panel.border_color = Color("9bc5c9")
+	panel.set_border_width_all(1)
+	panel.set_corner_radius_all(8)
+	item_popup.add_theme_stylebox_override("panel", panel)
+	add_child(item_popup)
+	var margin := MarginContainer.new()
+	for side in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 14)
+	item_popup.add_child(margin)
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 8)
+	margin.add_child(body)
+	var heading := HBoxContainer.new()
+	body.add_child(heading)
+	var title := label("消耗道具", 19)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_color_override("font_color", Color("a7e1e2"))
+	heading.add_child(title)
+	item_close_button = button("关闭", _close_items)
+	heading.add_child(item_close_button)
+	item_rows = VBoxContainer.new()
+	item_rows.add_theme_constant_override("separation", 8)
+	body.add_child(item_rows)
+	item_feedback = label("", 15)
+	item_feedback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_child(item_feedback)
+
+func _open_items() -> void:
+	if item_popup.visible:
+		_close_items()
+		return
+	if busy or battle.phase != "response":
+		return
+	item_feedback.text = "选用道具后立即生效，准备交锋前可以继续安排行动。"
+	_refresh_items()
+	item_popup.show()
+	item_close_button.grab_focus()
+
+func _close_items() -> void:
+	item_popup.hide()
+	item_button.grab_focus()
+
+func _refresh_items() -> void:
+	for child in item_rows.get_children():
+		item_rows.remove_child(child)
+		child.queue_free()
+	if battle.active_items.is_empty():
+		item_rows.add_child(label("当前没有消耗道具。可在废林商店购买。", 15))
+		return
+	var quantities := {}
+	for key in battle.active_items:
+		quantities[key] = int(quantities.get(key, 0)) + 1
+	for key in quantities:
+		var info := RelicSystem.get_consumable(key)
+		var row := HBoxContainer.new()
+		item_rows.add_child(row)
+		var detail := VBoxContainer.new()
+		detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(detail)
+		detail.add_child(label("%s ×%d" % [info.get("name", key), quantities[key]], 16))
+		var description := label(info.get("description", ""), 16)
+		description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		detail.add_child(description)
+		var error := battle.item_error(key)
+		var use_button := button("使用", _use_battle_item.bind(key))
+		use_button.disabled = not error.is_empty()
+		use_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(use_button)
+		if not error.is_empty():
+			detail.add_child(label(error, 13))
+
+func _use_battle_item(key: String) -> void:
+	if busy:
+		return
+	var result := battle.use_item(key)
+	item_feedback.text = result.message
+	log_label.text = result.message
+	_refresh(battle.snapshot())
+	_refresh_items()
+	item_close_button.grab_focus()
+
 func new_battle() -> void:
 	if busy:
 		return
+	item_popup.hide()
 	if exploration_run == null:
 		battle.start(73129, encounter, touhou_team, zixi_team, lineup, deck, zixingyc_team)
 	else:
@@ -258,6 +359,8 @@ func new_battle() -> void:
 	last_second = -1
 	_refresh(battle.snapshot())
 	log_label.text = "每组三格可安排两次行动；少人时下一回合补格。"
+	if not battle.active_items.is_empty():
+		log_label.text += " 消耗品请点右上角「道具」。"
 	ready_button.grab_focus()
 
 func _process(delta: float) -> void:
@@ -335,6 +438,9 @@ func _refresh(state: Dictionary) -> void:
 	team_button.disabled = busy
 	zixi_button.disabled = busy
 	zixingyc_button.disabled = busy
+	item_button.text = "道具 %d" % battle.active_items.size()
+	item_button.disabled = busy or state.phase != "response"
+	item_button.add_theme_color_override("font_color", Color("a7e1e2") if not battle.active_items.is_empty() else Color("d3e0e4"))
 	if setup_button != null:
 		setup_button.disabled = busy
 	ready_button.text = "交锋进行中" if busy else "准备交锋  ·  Enter"
@@ -547,6 +653,7 @@ func _resolve() -> void:
 	if busy or battle.phase != "response":
 		return
 	busy = true
+	item_popup.hide()
 	stage.dragging = -1
 	clock_label.text = "双方已准备"
 	var events := battle.lock_and_resolve()
@@ -593,6 +700,14 @@ func _resolve() -> void:
 		sound.play_sound(battle.outcome)
 
 func _input(event: InputEvent) -> void:
+	if item_popup.visible:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			_close_items()
+			get_viewport().set_input_as_handled()
+		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			if not item_popup.get_global_rect().has_point(event.position) and not item_button.get_global_rect().has_point(event.position):
+				item_popup.hide()
+		return
 	if busy or not event is InputEventKey or not event.pressed or event.echo:
 		return
 	if event.keycode >= KEY_1 and event.keycode <= KEY_9:

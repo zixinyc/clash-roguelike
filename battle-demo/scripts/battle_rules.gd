@@ -88,11 +88,30 @@ var guaranteed_heads := false
 func has_relic(key: String) -> bool:
 	return active_relics.has(key)
 
+func item_error(item_key: String) -> String:
+	if phase != "response" or not outcome.is_empty():
+		return "规划阶段才可使用道具"
+	if not active_items.has(item_key) or RelicSystem.get_consumable(item_key).is_empty():
+		return "未持有该道具"
+	if item_key == "weighted_coin" and guaranteed_heads:
+		return "已有一枚特制铅币等待生效"
+	if item_key == "field_poultice" and _healing_target() < 0:
+		return "存活队员的生命已满"
+	return ""
+
+func _healing_target() -> int:
+	var target := -1
+	for i in heroes.size():
+		var hp: int = heroes[i].hp
+		if hp > 0 and hp < heroes[i].max_hp and (target < 0 or hp < heroes[target].hp):
+			target = i
+	return target
+
 func use_item(item_key: String) -> Dictionary:
-	var idx := active_items.find(item_key)
-	if idx < 0:
-		return {"ok": false, "message": "未持有该道具"}
-	active_items.remove_at(idx)
+	var error := item_error(item_key)
+	if not error.is_empty():
+		return {"ok": false, "message": error}
+	active_items.erase(item_key)
 	match item_key:
 		"ember_catalyst":
 			cost += 5
@@ -104,17 +123,12 @@ func use_item(item_key: String) -> Dictionary:
 			return {"ok": true, "message": "使用了浓缩烟幕弹：全体存活队员获得 8 护盾！"}
 		"weighted_coin":
 			guaranteed_heads = true
-			return {"ok": true, "message": "使用了灌铅硬币：下次掷币必定全出正面！"}
+			return {"ok": true, "message": "使用了特制铅币：下一次我方掷币全部为正面。"}
 		"field_poultice":
-			var lowest := -1
-			var low_hp := 9999
-			for i in heroes.size():
-				if heroes[i].hp > 0 and heroes[i].hp < low_hp:
-					low_hp = heroes[i].hp
-					lowest = i
-			if lowest >= 0:
-				heroes[lowest].hp = mini(int(heroes[lowest].max_hp), int(heroes[lowest].hp) + 12)
-				return {"ok": true, "message": "使用了战地敷药：%s 恢复了 12 生命！" % heroes[lowest].name}
+			var hero := heroes[_healing_target()]
+			var healed := mini(12, int(hero.max_hp) - int(hero.hp))
+			hero.hp += healed
+			return {"ok": true, "message": "使用了野战膏药：%s 恢复 %d 生命。" % [hero.name, healed]}
 	return {"ok": true, "message": "道具使用成功"}
 
 enum { ASH_ID, BLADE_ID, WEAVER_ID, SAKUYA_ID, REIMU_ID, ZIXI_ID, ZIXINGYC_ID, MARISA_ID }

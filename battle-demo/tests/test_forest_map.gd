@@ -118,12 +118,17 @@ func _test_forest_run_nodes_and_patrol() -> void:
 	check(run.pending.is_empty(), "Pending cleared after choice")
 	
 	# Test shop buy relic
-	run.pending = "shop"
+	for node in map.nodes.values():
+		if node.kind == ForestMapGraph.NodeKind.SHOP:
+			run.position = node.id
+			break
+	run.enter_node()
 	run.carried_cost = 25
 	var buy_relic_ok := run.apply_choice(1) # Buy relic (-12 cost)
 	check(buy_relic_ok, "Shop buy relic applied")
 	check(run.carried_cost == 13, "Carried cost deducted by 12 (now 13)")
 	check(run.relics.size() == 1, "Relics acquired (size 1)")
+	check(run.pending == "shop" and not run.apply_choice(2), "Shop stays open for lineup changes after one transaction")
 	
 	# Test shrine blessing
 	run.pending = "shrine"
@@ -192,7 +197,7 @@ func _test_battle_relic_effects() -> void:
 
 func _test_battle_consumables() -> void:
 	var rules := DemoBattleRules.new()
-	rules.start(1234, 0, false, false, [], null, false, [], ["ember_catalyst", "dense_smoke", "field_poultice"])
+	rules.start(1234, 0, false, false, [], null, false, [], ["ember_catalyst", "dense_smoke", "field_poultice", "weighted_coin", "weighted_coin"])
 	
 	# Test ember_catalyst
 	var initial_cost: int = rules.cost
@@ -206,10 +211,16 @@ func _test_battle_consumables() -> void:
 	check(rules.heroes[0].shield == 8, "Hero shield increased to 8")
 	
 	# Test field_poultice
+	check(not rules.use_item("field_poultice").ok and rules.active_items.has("field_poultice"), "full health prevents wasting the poultice")
 	rules.heroes[0].hp = 20
 	var poultice_res := rules.use_item("field_poultice")
 	check(poultice_res.ok, "field_poultice used successfully")
 	check(rules.heroes[0].hp == 32, "Hero healed by 12 HP (was 20, now 32)")
+	check(rules.use_item("weighted_coin").ok and rules.guaranteed_heads, "weighted coin primes the next allied roll")
+	check(not rules.use_item("weighted_coin").ok and rules.active_items.has("weighted_coin"), "a pending weighted coin prevents spending another")
+	rules.phase = "resolve"
+	rules.guaranteed_heads = false
+	check(not rules.use_item("weighted_coin").ok and rules.active_items.has("weighted_coin"), "items cannot be used outside planning")
 
 func _test_floor_progression_and_exit_boss() -> void:
 	var map1 = ForestRandomGenerator.generate(500)

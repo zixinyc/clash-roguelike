@@ -94,28 +94,28 @@ const ITEMS := {
 	"ember_catalyst": {
 		"name": "余烬催化剂",
 		"icon": "🧪",
-		"description": "战斗规划阶段使用：本回合立即获得 +3 临时可用 Cost。",
+		"description": "立即获得 5 cost。",
 		"price": 5,
 		"combat_only": true
 	},
 	"dense_smoke": {
 		"name": "浓缩烟雾弹",
 		"icon": "💨",
-		"description": "战斗规划阶段使用：使指定队友本回合获得截击特权且受到首击伤害减半。",
+		"description": "全体存活队员本回合获得 8 护盾。",
 		"price": 6,
 		"combat_only": true
 	},
 	"weighted_coin": {
 		"name": "特制铅币",
 		"icon": "🪙",
-		"description": "战斗规划阶段使用：选定一张手牌，本次拼点首枚硬币 100% 必定掷出正面。",
+		"description": "下一次我方掷币全部为正面。",
 		"price": 6,
 		"combat_only": true
 	},
 	"field_poultice": {
 		"name": "野战膏药",
 		"icon": "🩹",
-		"description": "地图或战斗中均可使用：立即为选定角色恢复 12 点生命值。",
+		"description": "为受伤的存活队员中生命最低的一位恢复最多 12 生命。可在地图或战斗中使用。",
 		"price": 6,
 		"combat_only": false
 	}

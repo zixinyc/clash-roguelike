@@ -62,7 +62,7 @@ var items_container: HBoxContainer
 var log_label: Label
 var end_turn_button: Button
 var restart_button: Button
-var lineup_button: Button
+var opening_lineup_button: Button
 
 # Modal Interaction Panel
 var modal_panel: PanelContainer
@@ -105,7 +105,6 @@ var floor_badge: Label
 # Hovered / selected state
 var hovered_node_id: String = ""
 var pulse_time: float = 0.0
-var selected_lineup: int = 0
 
 func _ready() -> void:
 	_setup_theme()
@@ -307,15 +306,10 @@ func _build_bottom_bar() -> PanelContainer:
 	log_label.text = "沿亮起的林间小径探索，夺取烬核后返回归途石门。"
 	hbox.add_child(log_label)
 	
-	var config_btn := Button.new()
-	config_btn.text = "👥 调整配队与卡牌"
-	config_btn.pressed.connect(_open_lineup_modal)
-	hbox.add_child(config_btn)
-	
-	lineup_button = Button.new()
-	lineup_button.text = "预设: 灰烬小队"
-	lineup_button.pressed.connect(_toggle_lineup)
-	hbox.add_child(lineup_button)
+	opening_lineup_button = Button.new()
+	opening_lineup_button.text = "开局配队与卡牌"
+	opening_lineup_button.pressed.connect(_open_lineup_modal)
+	hbox.add_child(opening_lineup_button)
 	
 	restart_button = Button.new()
 	restart_button.text = "重新生成地图"
@@ -368,7 +362,8 @@ func _build_modal_panel() -> void:
 	btn_box.add_child(modal_btn_3)
 	
 	modal_shop_lineup_btn = Button.new()
-	modal_shop_lineup_btn.text = "👥 【整备】调整配队与卡牌"
+	modal_shop_lineup_btn.text = "整备队伍 · 调整配队与卡牌"
+	modal_shop_lineup_btn.add_theme_color_override("font_color", GOLD)
 	modal_shop_lineup_btn.pressed.connect(_open_lineup_modal)
 	modal_shop_lineup_btn.visible = false
 	btn_box.add_child(modal_shop_lineup_btn)
@@ -591,7 +586,7 @@ func _build_lineup_modal() -> void:
 	lineup_close_btn = Button.new()
 	lineup_close_btn.text = "取消"
 	lineup_close_btn.custom_minimum_size = Vector2(80, 36)
-	lineup_close_btn.pressed.connect(func() -> void: lineup_modal_panel.visible = false)
+	lineup_close_btn.pressed.connect(_close_lineup_modal)
 	footer.add_child(lineup_close_btn)
 	
 	lineup_modal_panel.visible = false
@@ -604,14 +599,14 @@ func _show_item_detail(item_id: String, item_idx: int) -> void:
 	
 	if item_id == "field_poultice":
 		item_detail_use_btn.visible = true
-		item_detail_use_btn.text = "【立即在探索中使用】(恢复重伤队员 12 生命)"
+		item_detail_use_btn.text = "使用野战膏药"
 		var callables = item_detail_use_btn.pressed.get_connections()
 		for c in callables:
 			item_detail_use_btn.pressed.disconnect(c.callable)
 		item_detail_use_btn.pressed.connect(_use_item_in_exploration.bind(item_id, item_idx))
 	else:
 		item_detail_use_btn.visible = false
-		item_detail_desc.text += "\n\n💡 提示：该道具为战斗消耗品，进入战斗后在行动规划界面手牌区点击使用。"
+		item_detail_desc.text += "\n\n进入战斗后，在右上角点「道具」，再点对应道具的「使用」。"
 	item_detail_panel.visible = true
 
 func _show_relic_detail(relic_id: String) -> void:
@@ -623,16 +618,18 @@ func _show_relic_detail(relic_id: String) -> void:
 	item_detail_panel.visible = true
 
 func _use_item_in_exploration(item_id: String, item_idx: int) -> void:
-	if run == null:
+	if run == null or item_idx < 0 or item_idx >= run.items.size() or run.items[item_idx] != item_id:
 		return
 	if item_id == "field_poultice":
-		run.heal_lowest_hero(12)
-		if item_idx >= 0 and item_idx < run.items.size():
-			run.items.remove_at(item_idx)
+		var restored := run.heal_lowest_hero(12)
+		if restored == 0:
+			item_detail_desc.text = "存活队员的生命已满。"
+			return
+		run.items.remove_at(item_idx)
 		for i in run.party_hp.size():
 			if i < carried_hp.size():
 				carried_hp[i] = run.party_hp[i]
-		run.log_event("在探索中使用了【战地敷药】，队伍重伤队员恢复 12 点生命！")
+		run.log_event("使用野战膏药，恢复 %d 生命。" % restored)
 		item_detail_panel.visible = false
 		_refresh_ui()
 
@@ -658,8 +655,14 @@ func _on_advance_next_floor_pressed() -> void:
 	_rebuild_team_hud()
 	_refresh_ui()
 
+func _at_run_start() -> bool:
+	return run != null and run.floor_level == 1 and run.turn == 1 and run.position == run.map.start_id and run.travelled.is_empty() and run.pending.is_empty() and not run.finished
+
+func _can_edit_lineup() -> bool:
+	return run != null and not is_instance_valid(battle) and not run.in_battle and (_at_run_start() or run.pending == "shop")
+
 func _open_lineup_modal() -> void:
-	if run == null or is_instance_valid(battle):
+	if not _can_edit_lineup():
 		return
 	edit_members = run.lineup.duplicate()
 	edit_omitted.clear()
@@ -669,7 +672,16 @@ func _open_lineup_modal() -> void:
 			if not run.deck.has(c):
 				edit_omitted[c] = true
 	_refresh_lineup_modal()
+	modal_panel.hide()
+	item_detail_panel.hide()
 	lineup_modal_panel.visible = true
+	end_turn_button.disabled = true
+
+func _close_lineup_modal() -> void:
+	lineup_modal_panel.hide()
+	if run != null and run.pending == "shop":
+		_open_modal("shop")
+	_refresh_ui()
 
 func _on_lineup_member_toggled(enabled: bool, id: int) -> void:
 	if enabled and edit_members.size() < 3:
@@ -688,6 +700,7 @@ func _refresh_lineup_modal() -> void:
 		lineup_role_buttons[id].disabled = not selected and edit_members.size() >= 3
 		
 	for child in lineup_card_container.get_children():
+		lineup_card_container.remove_child(child)
 		child.queue_free()
 		
 	var available := DemoBattleRules.available_cards(edit_members)
@@ -718,29 +731,35 @@ func _refresh_lineup_modal() -> void:
 func _update_lineup_modal_summary() -> void:
 	var selected_cards := DemoBattleRules.available_cards(edit_members).filter(func(k: String) -> bool: return not edit_omitted.has(k))
 	var count := selected_cards.size()
-	lineup_save_btn.disabled = edit_members.is_empty() or count == 0
-	if lineup_save_btn.disabled:
-		lineup_summary_label.text = "请选择出战角色 (1~3人)" if edit_members.is_empty() else "请至少勾选一张卡牌"
+	var has_living_member := run.has_living_member(edit_members)
+	lineup_save_btn.disabled = not has_living_member or count == 0
+	if not has_living_member:
+		lineup_summary_label.text = "请至少选择一名存活的出战队员"
+	elif count == 0:
+		lineup_summary_label.text = "请至少勾选一张卡牌"
 	else:
 		lineup_summary_label.text = "出战 %d 人  ·  携带 %d 张牌" % [edit_members.size(), count]
 
 func _on_lineup_save_pressed() -> void:
-	if edit_members.is_empty():
+	if not _can_edit_lineup() or not run.has_living_member(edit_members):
 		return
 	var selected_cards := DemoBattleRules.available_cards(edit_members).filter(func(k: String) -> bool: return not edit_omitted.has(k))
+	if selected_cards.is_empty():
+		return
 	run.set_lineup_and_deck(edit_members, selected_cards)
 	carried_hp.clear()
 	for hp in run.party_hp:
 		carried_hp.append(hp)
-	lineup_modal_panel.visible = false
 	_rebuild_team_hud()
-	_refresh_ui()
+	_close_lineup_modal()
 
 func _start_new_run() -> void:
 	if is_instance_valid(battle):
 		battle.queue_free()
 		battle = null
 	return_button.visible = false
+	lineup_modal_panel.hide()
+	modal_panel.hide()
 	
 	var seed_val := int(Time.get_unix_time_from_system() * 1000) ^ randi()
 	var map: ForestMapGraph = ForestRandomGenerator.generate(seed_val)
@@ -748,7 +767,7 @@ func _start_new_run() -> void:
 	if not initial_lineup.is_empty():
 		run.initialize(map, 0, ["mercury_die"], ["field_poultice", "dense_smoke"], seed_val, initial_lineup, initial_deck)
 	else:
-		run.initialize(map, selected_lineup, ["mercury_die"], ["field_poultice", "dense_smoke"], seed_val)
+		run.initialize(map, 0, ["mercury_die"], ["field_poultice", "dense_smoke"], seed_val)
 	
 	carried_hp.clear()
 	for hp in run.party_hp:
@@ -757,12 +776,6 @@ func _start_new_run() -> void:
 	
 	_rebuild_team_hud()
 	_refresh_ui()
-
-func _toggle_lineup() -> void:
-	selected_lineup = (selected_lineup + 1) % 4
-	var titles := ["灰烬小队", "东方组 (魔理沙/咲夜/灵梦)", "ZiXi 超形上组", "ZiXingYC 记忆组"]
-	lineup_button.text = "阵容: %s" % titles[selected_lineup]
-	_start_new_run()
 
 func _rebuild_team_hud() -> void:
 	for child in hud_team_container.get_children():
@@ -924,6 +937,8 @@ func _on_map_canvas_input(event: InputEvent) -> void:
 			if not hovered_node_id.is_empty() and run.known.has(hovered_node_id):
 				var h_node = run.map.get_node(hovered_node_id)
 				var err := run.move_error(hovered_node_id)
+				if hovered_node_id == run.position and h_node.kind == ForestMapGraph.NodeKind.SHOP and not run.finished:
+					err = "点击打开商店，可调整配队与卡牌。"
 				map_canvas.tooltip_text = "%s (%s)\n%s" % [h_node.name, ForestMapGraph.kind_title(h_node.kind), "可前往" if err.is_empty() else err]
 			else:
 				map_canvas.tooltip_text = ""
@@ -943,6 +958,11 @@ func _handle_node_clicked(node_id: String) -> void:
 		return
 	if node_id == run.position:
 		var n = run.map.get_node(node_id)
+		if n and n.kind == ForestMapGraph.NodeKind.SHOP and not run.finished:
+			run.enter_node()
+			_refresh_ui()
+			_open_modal("shop")
+			return
 		if n and n.kind == ForestMapGraph.NodeKind.EXIT and run.floor_cleared:
 			_show_next_floor_modal()
 			return
@@ -980,26 +1000,24 @@ func _open_modal(kind: String) -> void:
 			var curr_node = run.map.get_node(run.position) if (run and run.map) else null
 			var is_pre_boss_camp: bool = (curr_node != null and curr_node.name.begins_with("战前"))
 			modal_title.text = "▲ 战前营地" if is_pre_boss_camp else "▲ 余火营地"
-			modal_desc.text = "在石门前的静谧树阴下生起营火。你可以休整包扎伤口，或调整队伍阵容与符卡配置。" if is_pre_boss_camp else "在寂静的焦木树下升起营火。你可以休整包扎伤口，或在周边搜集可用余烬。"
+			modal_desc.text = "在营地休整包扎伤口，或在周边搜集余烬。"
 			modal_btn_1.text = "生火休整：存活队员恢复 10 生命，疲劳 −3"
 			modal_btn_2.text = "搜集余烬：获得 6 cost，疲劳 −1"
-			modal_shop_lineup_btn.visible = true
-			modal_shop_lineup_btn.text = "👥 【整备】调整配队与卡牌"
 			modal_leave_btn.text = "不作休整直接离开"
 		"shop":
 			var curr_node = run.map.get_node(run.position) if (run and run.map) else null
 			var is_pre_boss: bool = (curr_node != null and curr_node.name.begins_with("战前"))
 			modal_title.text = "◈ 战前行商" if is_pre_boss else "◈ 废林流浪黑商"
-			modal_desc.text = "驼背行商在石门前的枯树旁摊开油布，陈列着各地的奇物。首领决战在即，请务必整备妥当！" if is_pre_boss else "驼背行商在枯树旁摊开破旧油布，陈列着来自各地的稀有奇物。"
+			var traded: bool = run.cleared.has(run.position)
+			modal_desc.text = "此处已完成交易，仍可调整配队与卡牌。" if traded else "购买的战斗道具可在交锋界面右上角使用。也可在这里调整配队与卡牌。"
 			modal_btn_1.text = "购买特效伤药（6 cost）：存活队员恢复 8 生命"
-			modal_btn_1.disabled = run.carried_cost < 6
+			modal_btn_1.disabled = traded or run.carried_cost < 6
 			modal_btn_2.text = "购买神秘通用遗物（12 cost）：获取 1 件被动遗物"
-			modal_btn_2.disabled = run.carried_cost < 12
+			modal_btn_2.disabled = traded or run.carried_cost < 12 or RelicSystem.get_unowned_relics(run.relics).is_empty()
 			modal_btn_3.visible = true
 			modal_btn_3.text = "购买战术消耗品（4 cost）：获取 1 件战斗道具"
-			modal_btn_3.disabled = run.carried_cost < 4
+			modal_btn_3.disabled = traded or run.carried_cost < 4
 			modal_shop_lineup_btn.visible = true
-			modal_shop_lineup_btn.text = "👥 【整备】调整配队与卡牌"
 			modal_leave_btn.text = "离开摊位（稍后仍可返回）"
 		"shrine":
 			modal_title.text = "⛩ 御灵神龛"
@@ -1044,7 +1062,10 @@ func _on_modal_choice(choice_idx: int) -> void:
 		return
 	var ok := run.apply_choice(choice_idx)
 	if ok:
-		modal_panel.visible = false
+		if run.pending == "shop":
+			_open_modal("shop")
+		else:
+			modal_panel.hide()
 		_refresh_ui()
 
 func _on_modal_leave() -> void:
@@ -1059,7 +1080,7 @@ func _on_modal_leave() -> void:
 	_refresh_ui()
 
 func _on_end_turn_pressed() -> void:
-	if run == null or is_instance_valid(battle) or modal_panel.visible:
+	if run == null or is_instance_valid(battle) or modal_panel.visible or lineup_modal_panel.visible:
 		return
 	run.end_turn()
 	_refresh_ui()
@@ -1087,6 +1108,7 @@ func _refresh_ui() -> void:
 	core_badge.visible = run.ember_core
 	
 	log_label.text = run.message
+	opening_lineup_button.visible = _at_run_start()
 	end_turn_button.disabled = run.finished or run.in_battle or not run.pending.is_empty()
 	
 	for i in run.party_hp.size():

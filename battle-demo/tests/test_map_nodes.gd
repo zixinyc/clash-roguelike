@@ -50,6 +50,8 @@ func _run() -> void:
 	m._return_from_battle()
 	check(m.carried_cost == 38 and m.finished and not m.cleared.has(Vector2i(2,1)), "defeat grants no reward")
 	m._restart()
+	await _test_shop_lineup(m)
+	m._restart()
 	m.run.carried_cost = 14
 	m.run.party_hp.assign([22, 0, 45])
 	m.run.party_max_hp[0] = 52
@@ -59,7 +61,15 @@ func _run() -> void:
 	await process_frame
 	check(m.battle.battle.cost == 14 and m.battle.battle.heroes[0].max_hp == 52, "graph battle uses current run cost and max HP")
 	check(not m.battle.restart_button.visible, "map battle hides standalone restart")
-	check(m.battle.battle.use_item("dense_smoke").ok, "graph battle uses run items")
+	check(m.battle.item_button.text == "道具 2", "combat toolbar shows run inventory count")
+	m.battle.item_button.pressed.emit()
+	check(m.battle.item_popup.visible and m.battle.item_rows.get_child_count() == 2, "combat toolbar opens the inventory")
+	var smoke: Button = m.battle.item_rows.get_child(1).get_child(1)
+	check(not smoke.disabled, "smoke is usable in planning")
+	smoke.pressed.emit()
+	check(m.battle.item_button.text == "道具 1" and "8 护盾" in m.battle.item_feedback.text, "item usage refreshes count and shows feedback")
+	check(m.battle.battle.heroes[0].shield >= 8 and m.battle.battle.heroes[1].shield == 0, "smoke protects living heroes only")
+	m.battle.item_popup.hide()
 	m.battle.battle.cost = 10
 	m.battle.battle.outcome = "victory"
 	m._return_from_battle()
@@ -73,3 +83,55 @@ func _run() -> void:
 	await process_frame
 	print("NODE_TEST failures=", failures)
 	quit(1 if failures else 0)
+
+func _test_shop_lineup(m) -> void:
+	check(m.opening_lineup_button.visible, "opening lineup button appears at the start")
+	m.opening_lineup_button.pressed.emit()
+	check(m.lineup_modal_panel.visible and m.end_turn_button.disabled, "opening lineup editor holds map actions")
+	m.lineup_close_btn.pressed.emit()
+	m.run.turn = 2
+	m._refresh_ui()
+	m._open_lineup_modal()
+	check(not m.opening_lineup_button.visible and not m.lineup_modal_panel.visible, "lineup is locked away from the opening or a shop")
+	for node in m.run.map.nodes.values():
+		if node.kind == ForestMapGraph.NodeKind.SHOP:
+			m.run.position = node.id
+			m.run.known[node.id] = true
+			break
+	m.run.party_hp[1] = 17
+	m.run.party_max_hp[1] = 49
+	await process_frame
+	var shop = m.run.map.get_node(m.run.position)
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	click.position = shop.pos * m.map_canvas.size
+	m._on_map_canvas_input(click)
+	check(m.modal_panel.visible and m.modal_shop_lineup_btn.visible, "clicking the current shop opens its lineup entry")
+	var cost: int = m.run.carried_cost
+	var count: int = m.run.items.size()
+	m.modal_btn_3.pressed.emit()
+	check(m.modal_panel.visible and m.run.carried_cost == cost - 4 and m.run.items.size() == count + 1, "buying a consumable keeps the shop open")
+	m.modal_shop_lineup_btn.pressed.emit()
+	check(m.lineup_modal_panel.visible and not m.modal_panel.visible, "shop lineup button opens the editor")
+	m.lineup_role_buttons[DemoBattleRules.BLADE_ID].toggled.emit(false)
+	m.lineup_role_buttons[DemoBattleRules.ZIXI_ID].toggled.emit(true)
+	var card: CheckBox = m.lineup_card_container.get_child(1)
+	card.toggled.emit(false)
+	m.lineup_save_btn.pressed.emit()
+	check(m.run.lineup.has(DemoBattleRules.ZIXI_ID) and not m.run.deck.has(DemoBattleRules.BASE_CARDS[0]), "saving applies the chosen lineup and deck")
+	check(m.modal_panel.visible and not m.lineup_modal_panel.visible, "saving restores the shop panel")
+	m.modal_leave_btn.pressed.emit()
+	m._on_map_canvas_input(click)
+	check(m.modal_panel.visible and m.modal_btn_3.disabled, "spent shop can be reopened for lineup editing")
+	m.modal_shop_lineup_btn.pressed.emit()
+	m.lineup_role_buttons[DemoBattleRules.ZIXI_ID].toggled.emit(false)
+	m.lineup_role_buttons[DemoBattleRules.BLADE_ID].toggled.emit(true)
+	m.lineup_save_btn.pressed.emit()
+	var slot: int = m.run.lineup.find(DemoBattleRules.BLADE_ID)
+	check(slot >= 0 and m.run.party_hp[slot] == 17 and m.run.party_max_hp[slot] == 49, "a returning hero retains HP and max HP")
+	m.run.party_hp[slot] = 0
+	m.modal_shop_lineup_btn.pressed.emit()
+	m.lineup_role_buttons[DemoBattleRules.ASH_ID].toggled.emit(false)
+	m.lineup_role_buttons[DemoBattleRules.WEAVER_ID].toggled.emit(false)
+	check(m.lineup_save_btn.disabled, "an all-knocked-out lineup cannot be saved")
