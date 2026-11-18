@@ -84,6 +84,9 @@ var extra_income := 0
 var active_relics: Array[String] = []
 var active_items: Array[String] = []
 var guaranteed_heads := false
+var stagger_enabled := false
+var overwhelm_enabled := false
+var evolution_config := {}
 
 func has_relic(key: String) -> bool:
 	return active_relics.has(key)
@@ -138,6 +141,17 @@ const ZIXI_LINEUP := [ASH_ID, ZIXI_ID, WEAVER_ID]
 const ZIXINGYC_LINEUP := [ASH_ID, ZIXINGYC_ID, WEAVER_ID]
 const BASE_CARDS := ["cleave", "ember", "needle", "steady", "guard", "nova", "observe", "all_in", "cover", "probe", "exploit", "follow", "steady_edge", "shatter", "light_guard", "support_strike"]
 
+static func _init_unit_stagger_state(unit: Dictionary) -> Dictionary:
+	if not unit.has("is_staggered"):
+		unit["is_staggered"] = false
+	if not unit.has("stagger_immune_turns"):
+		unit["stagger_immune_turns"] = 0
+	if not unit.has("stagger_threshold_triggered"):
+		unit["stagger_threshold_triggered"] = false
+	if not unit.has("consecutive_clash_loss"):
+		unit["consecutive_clash_loss"] = 0
+	return unit
+
 static func create_roster() -> Array[Dictionary]:
 	var roster: Array[Dictionary] = [
 		{"name": "灰烬", "role": "蓄势者", "preparation": 0, "hp": 48, "max_hp": 48, "shield": 0, "acted": false, "speed_min": 3, "speed_max": 6},
@@ -148,6 +162,7 @@ static func create_roster() -> Array[Dictionary]:
 	]
 	for id in roster.size():
 		roster[id].character_id = id
+		_init_unit_stagger_state(roster[id])
 	return roster
 
 static func card_owner(key: String) -> int:
@@ -168,8 +183,11 @@ static func available_cards(members: Array) -> Array:
 	return cards.filter(func(key: String) -> bool: return card_owner(key) < 0 or members.has(card_owner(key)))
 
 
-func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = false, use_zixi_team: bool = false, lineup: Array = [], deck: Variant = null, use_zixingyc_team: bool = false, relics: Array = [], items: Array = []) -> void:
+func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = false, use_zixi_team: bool = false, lineup: Array = [], deck: Variant = null, use_zixingyc_team: bool = false, relics: Array = [], items: Array = [], p_evolution_config: Dictionary = {}) -> void:
 	rng.seed = seed_value
+	evolution_config = p_evolution_config.duplicate(true)
+	stagger_enabled = bool(evolution_config.get("enabled", false)) or bool(evolution_config.get("stagger", false))
+	overwhelm_enabled = bool(evolution_config.get("enabled", false)) or bool(evolution_config.get("overwhelm", false))
 	var members: Array = lineup if not lineup.is_empty() else (ZIXINGYC_LINEUP if use_zixingyc_team else (ZIXI_LINEUP if use_zixi_team else (TOUHOU_LINEUP if use_touhou_team else DEFAULT_LINEUP)))
 	var roster := create_roster()
 	heroes.clear()
@@ -212,11 +230,19 @@ func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = 
 		enemies.assign([
 			{"name": "烬心巨像 · 赫斯提斯", "kind": "colossus", "hp": 210, "max_hp": 210, "shield": 0, "spent": false, "speed_min": 3, "speed_max": 6}
 		])
+	for e in enemies:
+		_init_unit_stagger_state(e)
 	cost = START_COST
 	extra_income = 0
 	turn = 1
 	outcome = ""
 	_prepare_round()
+
+func enable_evolution(stagger: bool = true, overwhelm: bool = true) -> void:
+	stagger_enabled = stagger
+	overwhelm_enabled = overwhelm
+	evolution_config["stagger"] = stagger
+	evolution_config["overwhelm"] = overwhelm
 
 func _prepare_round() -> void:
 	phase = "response"
@@ -312,7 +338,7 @@ func snapshot() -> Dictionary:
 		for slot in public_enemies:
 			slot.erase("key")
 			slot.erase("card")
-	return {"heroes": heroes.duplicate(true), "enemies": enemies.duplicate(true), "hand": hand.duplicate(), "hero_slots": hero_slots.duplicate(true), "enemy_slots": public_enemies, "cost": cost, "reserved": reserved_cost() if phase == "response" else 0, "turn": turn, "plays": plays, "outcome": outcome, "phase": phase, "touhou_team": touhou_team, "extra_income": extra_income}
+	return {"heroes": heroes.duplicate(true), "enemies": enemies.duplicate(true), "hand": hand.duplicate(), "hero_slots": hero_slots.duplicate(true), "enemy_slots": public_enemies, "cost": cost, "reserved": reserved_cost() if phase == "response" else 0, "turn": turn, "plays": plays, "outcome": outcome, "phase": phase, "touhou_team": touhou_team, "extra_income": extra_income, "stagger_enabled": stagger_enabled, "overwhelm_enabled": overwhelm_enabled}
 
 func category_for(key: String) -> int:
 	return 2 if SKILLS[key].kind == "guard" else (1 if SKILLS[key].kind == "ultimate" else 0)
@@ -480,8 +506,8 @@ func lock_and_resolve() -> Array[Dictionary]:
 			break
 		var h: Dictionary = hero_slots[entry.hero] if entry.hero >= 0 else {}
 		var e: Dictionary = enemy_slots[entry.enemy] if entry.enemy >= 0 else {}
-		var h_alive: bool = not h.is_empty() and heroes[h.unit].hp > 0
-		var e_alive: bool = not e.is_empty() and enemies[e.unit].hp > 0
+		var h_alive: bool = not h.is_empty() and h.get("active", false) and not h.get("cancelled", false) and heroes[h.unit].hp > 0
+		var e_alive: bool = not e.is_empty() and e.get("active", false) and not e.get("cancelled", false) and enemies[e.unit].hp > 0
 		if h_alive and e_alive:
 			_clash(events, h, e)
 		else:
@@ -519,6 +545,8 @@ func next_round() -> void:
 			break
 	if extra_income > 0:
 		cost += extra_income
+	if stagger_enabled:
+		_process_stagger_wake_up()
 	_prepare_round()
 
 func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
@@ -569,6 +597,11 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 		return
 	if not allied and skill.get("no_damage", false):
 		return
+	var victim_pre_hp: int = victims[target].hp
+	var marisa_pre_hps := {}
+	if allied and marisa_slot >= 0 and slot.unit == marisa_slot:
+		for i in enemies.size():
+			marisa_pre_hps[i] = enemies[i].hp
 	_emit(events, {"type": "paid", "hero": slot.unit, "skill": skill.name, "paid": 0} if allied else {"type": "enemy_turn", "enemy": slot.unit, "hero": target})
 	if allied:
 		var hero := heroes[slot.unit]
@@ -590,6 +623,11 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 	if allied and slot.key == "observe":
 		heroes[slot.unit].preparation = 1
 		_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
+	if allied and marisa_slot >= 0 and slot.unit == marisa_slot:
+		for id in marisa_pre_hps.keys():
+			_check_stagger_after_action(events, enemies[id], false, marisa_pre_hps[id])
+	else:
+		_check_stagger_after_action(events, victims[target], not allied, victim_pre_hp)
 
 func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 	var left_skill: Dictionary = SKILLS[h.key].duplicate()
@@ -629,6 +667,8 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 	var rc := int(right_skill.coins)
 	var ties := 0
 	var margin := 0
+	var decisive_left_val := 0
+	var decisive_right_val := 0
 	if has_relic("adversity_blade") and int(e.get("speed", 0)) > int(h.get("speed", 0)):
 		left_skill.base += 2
 		_emit(events, {"type": "ability", "message": "逆境断刃：目标速度高于自身，拼点基础威力 +2"})
@@ -668,8 +708,38 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 		elif winner == 1:
 			lc -= 1
 		ties = ties + 1 if winner == -1 else 0
-		_emit(events, {"type": "clash", "hero": h.unit, "enemy": e.unit, "left": left.value, "right": right.value, "left_heads": left.heads, "right_heads": right.heads, "hero_coins": old_lc, "enemy_coins": old_rc, "hero_remaining": lc, "enemy_remaining": rc, "winner": winner, "decider": false})
+		var is_decisive := (lc == 0 or rc == 0) and winner != -1
+		if is_decisive:
+			decisive_left_val = int(left.value)
+			decisive_right_val = int(right.value)
+		_emit(events, {"type": "clash", "hero": h.unit, "enemy": e.unit, "left": left.value, "right": right.value, "left_heads": left.heads, "right_heads": right.heads, "hero_coins": old_lc, "enemy_coins": old_rc, "hero_remaining": lc, "enemy_remaining": rc, "winner": winner, "decider": is_decisive})
+
+	var hero_pre_hp: int = heroes[h.unit].hp
+	var enemy_pre_hp: int = enemies[e.unit].hp
+	var marisa_pre_hps := {}
+	if marisa_slot >= 0 and h.unit == marisa_slot:
+		for i in enemies.size():
+			marisa_pre_hps[i] = enemies[i].hp
+
+	var can_overwhelm := false
+	var overwhelm_margin := 0
+	var overwhelm_amount := 0
+	if overwhelm_enabled:
+		var winner_skill: Dictionary = left_skill if lc > 0 else right_skill
+		var winner_is_hero: bool = lc > 0
+		var is_training: bool = enemies[e.unit].get("kind", "") == "training_dummy"
+		var is_pure_guard: bool = winner_skill.get("kind", "") == "guard"
+		var is_no_damage: bool = winner_skill.get("no_damage", false)
+		if not is_training and not is_pure_guard and not is_no_damage:
+			var D: int = (decisive_left_val - decisive_right_val) if winner_is_hero else (decisive_right_val - decisive_left_val)
+			if D >= 6:
+				can_overwhelm = true
+				overwhelm_margin = D
+				overwhelm_amount = mini(3, D / 3)
+
 	if lc > 0:
+		heroes[h.unit].consecutive_clash_loss = 0
+		enemies[e.unit].consecutive_clash_loss = int(enemies[e.unit].get("consecutive_clash_loss", 0)) + 1
 		if not zxy_clash.is_empty():
 			var zxy_win := ZiXingYC.on_clash_win(hero, h.key)
 			_emit_zixingyc_memories(events, zxy_win)
@@ -723,7 +793,31 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 		if h.key == "follow" and enemies[e.unit].hp > 0:
 			_emit(events, {"type": "ability", "message": "灰烬 · 余势追击：追加 4 点攻击"})
 			_attack(events, true, h.unit, e.unit, 4, 0, 1, 0.65)
+		if can_overwhelm and enemies[e.unit].hp > 0 and overwhelm_amount > 0:
+			var target_dict: Dictionary = enemies[e.unit]
+			var blocked := mini(int(target_dict.shield), overwhelm_amount)
+			target_dict.shield -= blocked
+			var ov_damage := maxi(0, overwhelm_amount - blocked)
+			target_dict.hp = maxi(0, int(target_dict.hp) - ov_damage)
+			_emit(events, {
+				"type": "overwhelm",
+				"allied": true,
+				"source": h.unit,
+				"target": e.unit,
+				"margin": overwhelm_margin,
+				"amount": overwhelm_amount,
+				"damage": ov_damage,
+				"blocked": blocked
+			})
+		if marisa_slot >= 0 and h.unit == marisa_slot:
+			for id in marisa_pre_hps.keys():
+				_check_stagger_after_action(events, enemies[id], false, marisa_pre_hps[id])
+		else:
+			_check_stagger_after_action(events, enemies[e.unit], false, enemy_pre_hp)
+		_check_stagger_after_action(events, heroes[h.unit], true, hero_pre_hp)
 	else:
+		enemies[e.unit].consecutive_clash_loss = 0
+		heroes[h.unit].consecutive_clash_loss = int(heroes[h.unit].get("consecutive_clash_loss", 0)) + 1
 		if breaker:
 			hero.hp = maxi(0, int(hero.hp) - BREAKER_HP_LOSS)
 			_emit(events, {"type": "ability", "message": "长锋 · 破阵：拼点失败，损失 %d 生命" % BREAKER_HP_LOSS})
@@ -739,6 +833,24 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 				_emit(events, {"type": "ability", "message": "ZiXingYC · 被删除的昨天：本次拼败伤害降低 %d%%" % int(round((1.0 - scale) * 100.0))})
 		if not right_skill.get("no_damage", false):
 			_attack(events, false, e.unit, h.unit, right_skill.base, right_skill.power, rc, 0.5, "", scale)
+		if can_overwhelm and heroes[h.unit].hp > 0 and overwhelm_amount > 0:
+			var target_dict: Dictionary = heroes[h.unit]
+			var blocked := mini(int(target_dict.shield), overwhelm_amount)
+			target_dict.shield -= blocked
+			var ov_damage := maxi(0, overwhelm_amount - blocked)
+			target_dict.hp = maxi(0, int(target_dict.hp) - ov_damage)
+			_emit(events, {
+				"type": "overwhelm",
+				"allied": false,
+				"source": e.unit,
+				"target": h.unit,
+				"margin": overwhelm_margin,
+				"amount": overwhelm_amount,
+				"damage": ov_damage,
+				"blocked": blocked
+			})
+		_check_stagger_after_action(events, heroes[h.unit], true, hero_pre_hp)
+		_check_stagger_after_action(events, enemies[e.unit], false, enemy_pre_hp)
 		if not zixi_clash.is_empty() and hero.hp > 0:
 			_emit_metaphysics(events, ZiXi.gain_metaphysics(hero, 1))
 		if h.key in [ZiXingYC.ATTENTION, ZiXingYC.RESIDUAL]:
@@ -938,6 +1050,10 @@ func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int
 	var victim := (enemies if allied else heroes)[target]
 	if not allied and target == marisa_slot and victim.get("orrery_active", false):
 		hit = maxi(0, hit - 5)
+	var stagger_extra := 0
+	if stagger_enabled and victim.get("is_staggered", false):
+		stagger_extra = int(floor(hit * 0.2))
+		hit += stagger_extra
 	var blocked := mini(int(victim.shield), hit)
 	if blocked > 0 and victim.has("shield_until"):
 		ZiXi.absorb_carried_shield(victim, blocked)
@@ -959,8 +1075,88 @@ func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int
 	if not allied and damage > 0 and enemies[source].kind == "scout" and int(victim.get("preparation", 0)) > 0:
 		victim.preparation = 0
 		_emit(events, {"type": "ability", "message": "裂影斥候：命中移除了灰烬的准备"})
-	_emit(events, {"type": "strike", "allied": allied, "source": source, "target": target, "damage": damage, "blocked": blocked, "hit": index, "total": total})
+	var strike_evt: Dictionary = {"type": "strike", "allied": allied, "source": source, "target": target, "damage": damage, "blocked": blocked, "hit": index, "total": total}
+	if stagger_extra > 0:
+		strike_evt["stagger_bonus"] = stagger_extra
+	_emit(events, strike_evt)
 	return damage
+
+func _check_stagger_after_action(events: Array[Dictionary], unit: Dictionary, allied: bool, pre_hp: int) -> bool:
+	if not stagger_enabled:
+		return false
+	if unit.hp <= 0 or unit.get("is_staggered", false) or int(unit.get("stagger_immune_turns", 0)) > 0:
+		return false
+	var trigger_bloodline := false
+	if not unit.get("stagger_threshold_triggered", false):
+		if pre_hp * 2 >= int(unit.max_hp) and int(unit.hp) * 2 < int(unit.max_hp):
+			trigger_bloodline = true
+			unit.stagger_threshold_triggered = true
+	var trigger_clash := int(unit.get("consecutive_clash_loss", 0)) >= 2
+	if trigger_bloodline or trigger_clash:
+		unit.is_staggered = true
+		unit.consecutive_clash_loss = 0
+		var reason := "生命跌破 50%" if trigger_bloodline and not trigger_clash else ("连续两次拼败" if trigger_clash and not trigger_bloodline else "跌破血线且连续拼败")
+		var u_idx := heroes.find(unit) if allied else enemies.find(unit)
+		_emit(events, {
+			"type": "stagger",
+			"allied": allied,
+			"unit": u_idx,
+			"name": unit.get("name", ""),
+			"reason": reason
+		})
+		_extinguish_remaining_slots(events, unit, allied)
+		return true
+	return false
+
+func _extinguish_remaining_slots(events: Array[Dictionary], unit: Dictionary, allied: bool) -> void:
+	var unit_index := heroes.find(unit) if allied else enemies.find(unit)
+	if unit_index < 0:
+		return
+	var slots: Array[Dictionary] = hero_slots if allied else enemy_slots
+	for slot in slots:
+		if slot.unit == unit_index and slot.active and not slot.get("done", false) and not slot.get("cancelled", false):
+			slot.cancelled = true
+			slot.active = false
+			if allied:
+				var key: String = slot.key
+				var refund := int(SKILLS[key].cost) if SKILLS.has(key) else 0
+				cost += refund
+				if slot.get("enhanced", false):
+					ZiXi.unreserve_enhancement(heroes[slot.unit], slot.id)
+					slot.erase("enhanced")
+				_emit(events, {
+					"type": "cancelled",
+					"hero": slot.unit,
+					"slot": slot.id,
+					"key": key,
+					"reason": "失衡中断行动",
+					"refund": refund
+				})
+			else:
+				var key: String = slot.key
+				_emit(events, {
+					"type": "cancelled",
+					"enemy": slot.unit,
+					"slot": slot.id,
+					"key": key,
+					"reason": "失衡中断行动"
+				})
+
+func _process_stagger_wake_up() -> void:
+	for unit in heroes:
+		if unit.get("is_staggered", false):
+			unit.is_staggered = false
+			unit.stagger_immune_turns = 1
+		elif int(unit.get("stagger_immune_turns", 0)) > 0:
+			unit.stagger_immune_turns = maxi(0, int(unit.stagger_immune_turns) - 1)
+		unit.consecutive_clash_loss = 0
+	for unit in enemies:
+		if unit.get("is_staggered", false):
+			unit.is_staggered = false
+			unit.stagger_immune_turns = 1
+		elif int(unit.get("stagger_immune_turns", 0)) > 0:
+			unit.stagger_immune_turns = maxi(0, int(unit.stagger_immune_turns) - 1)
+		unit.consecutive_clash_loss = 0
 
 func _living_target(preferred: int) -> int:
 	if preferred >= 0 and preferred < heroes.size() and heroes[preferred].hp > 0:
@@ -971,6 +1167,8 @@ func _living_target(preferred: int) -> int:
 	return -1
 
 func _check_outcome(events: Array[Dictionary]) -> void:
+	if not outcome.is_empty():
+		return
 	var alive_enemies := enemies.any(func(unit: Dictionary) -> bool: return unit.hp > 0)
 	var alive_heroes := heroes.any(func(unit: Dictionary) -> bool: return unit.hp > 0)
 	if not alive_enemies:

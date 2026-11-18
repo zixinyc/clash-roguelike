@@ -414,6 +414,14 @@ func play_event(event: Dictionary, speed: float) -> void:
 			flashes[event.hero] = 0.5
 			floaters.append({"text": "+%d 护盾" % event.amount, "position": _actor_position(event.hero) + Vector2(0, -150), "age": 0.0, "color": BLUE, "size": 22})
 			await get_tree().create_timer(0.4 * duration).timeout
+		"stagger":
+			var unit_id: int = event.unit if event.allied else event.unit + 3
+			floaters.append({"text": "BREAK 失衡!", "position": _actor_position(unit_id) + Vector2(0, -170), "age": 0.0, "color": RED if event.allied else GOLD, "size": 24})
+			await get_tree().create_timer(0.20 * duration).timeout
+		"overwhelm":
+			var victim_id: int = event.target if not event.allied else event.target + 3
+			floaters.append({"text": "压制 −%d" % event.damage, "position": _actor_position(victim_id) + Vector2(0, -130), "age": 0.0, "color": RED if not event.allied else GOLD, "size": 26})
+			await get_tree().create_timer(0.18 * duration).timeout
 		"refund", "reward":
 			await get_tree().create_timer(0.2 * duration).timeout
 		"enemy_turn":

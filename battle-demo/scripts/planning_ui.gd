@@ -674,6 +674,11 @@ func _resolve() -> void:
 				await get_tree().create_timer(0.8 / speed).timeout
 			"cancelled":
 				log_label.text = event.reason
+			"stagger":
+				log_label.text = "【失衡】%s %s！" % [event.name, event.reason]
+				await get_tree().create_timer(0.4 / speed).timeout
+			"overwhelm":
+				log_label.text = "【压制】分差 %d，追加 %d 点压制伤害！" % [event.margin, event.amount]
 		await stage.play_event(event, speed)
 	busy = false
 	stage.reset_visuals()
