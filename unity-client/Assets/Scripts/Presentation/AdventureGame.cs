@@ -27,6 +27,7 @@ namespace ClashRoguelike
             if(effectInspectorOpen&&Input.GetKeyDown(KeyCode.Escape)){CloseEffectInspector();return;}
             if(Input.GetKeyDown(KeyCode.R)) { StopAllCoroutines();InitializeAdventure();return; }
             if(portRules==null){if(forestMode)ForestUpdate();return;}
+            if(loadoutSelecting)return;
             if(!portBusy&&!portPrepared&&portRules.State.Outcome==""&&portRules.Tick(Time.unscaledDeltaTime)) { portCard="";portPrepared=true;StartPortRound();return; }
             if(portBusy||portRules.State.Outcome!="")return;
             if(Input.GetKeyDown(KeyCode.Return)){if(portPrepared)StartPortRound();else PreparePortRound();return;}
@@ -40,6 +41,7 @@ namespace ClashRoguelike
             CloseEffectInspector();
             fromMap=map;portRules=map?(forestMode?forest.CreateBattle():exploration.CreateBattle()):new PortBattleRules(73129,encounter,touhou,zixi);portShown=portRules.Snapshot();portHero=-1;portSlot=-1;portCard="";portPrepared=false;portBusy=false;portPage=0;portEvent=null;portExplicitSlot=false;
             log.Clear();portNotice="敌方已规划。点击己方角色，选择技能与敌方行动。";
+            BeginSkillGroupSelection();
         }
         PortCard[] VisiblePortCards()
         { return portHero<0?new PortCard[0]:portRules.State.Hand.Select(PortContent.Card).Where(x=>portShared?x.Owner<0:x.Owner==portHero).ToArray(); }
@@ -136,6 +138,7 @@ namespace ClashRoguelike
         }
         void DrawPortBattle()
         {
+            if(loadoutSelecting){DrawSkillGroupSelection();return;}
             Label(30,20,600,42,"余烬交锋 / 行动规划",29,Gold);
             Label(30,68,650,26,portShown.WorldActive?"时停回合 · 咲夜三个不限类别技能槽 · 敌方无法行动":"角色专属牌 · 每人两个分类行动 · 目标与速度公开，敌方技能隐藏",13,Muted);
             Label(700,25,190,40,"回合 "+portShown.Turn,24,Pale);Label(900,24,190,42,"cost "+portShown.Cost,28,Gold);
@@ -143,7 +146,9 @@ namespace ClashRoguelike
             if(Btn(new Rect(1250,25,150,36),"演出 ×"+speed))speed=speed==1?2:speed==2?4:1;DrawRosterSwitch();DrawZixiEnhancement();
             DrawPortStatuses();
             Panel(new Rect(30,162,1380,355),Hex("12202A"),Hex("35474F"));Fill(new Rect(31,391,1378,125),Hex("0D1922"));Line(new Vector2(31,414),new Vector2(1408,414),Hex("3F4A47"),2);
-            for(int i=0;i<3;i++)DrawPortUnit(true,i);for(int i=0;i<2;i++)DrawPortUnit(false,i);
+            if(!portBusy)DrawPlannedClashes();
+            for(int active=0;active<2;active++){for(int i=0;i<3;i++)if(DuelParticipant(true,i)==(active==1))DrawPortUnit(true,i);for(int i=0;i<2;i++)if(DuelParticipant(false,i)==(active==1))DrawPortUnit(false,i);}
+            DrawDuelStage();
             if(portEvent!=null&&portEvent.Coin!=null)DrawCoinPanel(portEvent.Coin,portEvent.Type,portPhase,portEvent.Damage);
             Label(40,527,1000,32,PortGuide(),15,Gold,TextAnchor.MiddleCenter);
             DrawPortCenteredActions();
@@ -162,13 +167,16 @@ namespace ClashRoguelike
         }
         void DrawPortUnit(bool allied,int index)
         {
-            var units=allied?portShown.Heroes:portShown.Enemies;var u=units[index];float x=CombatX(allied,index),y=370;
+            var units=allied?portShown.Heroes:portShown.Enemies;var u=units[index];float x=PortActorX(allied,index),y=370;
             bool selected=allied&&portHero==index;Color tint=u.Hp<=0?Hex("35414A"):allied?(index==2?Cyan:Gold):Red;
             if(portEvent!=null&&(portEvent.Hero==index&&allied||portEvent.Enemy==index&&!allied)){
                 if(portEvent.Type=="strike"&&portEvent.AttackerAllied!=allied&&portPhase>=.25f&&portPhase<.38f)tint=Pale;
             }
             bool legal=!allied&&PortTargetLegal(DefaultTarget(index));if(selected||legal)Outline(new Rect(x-61,y-127,128,169),selected?Gold:Cyan,2);
-            DrawPortFigure(allied,index,x,y,tint);
+            var savedMatrix=GUI.matrix;var savedColor=GUI.color;
+            if(portBusy&&!DuelParticipant(allied,index))GUI.color=new Color(1,1,1,.4f);
+            if(DuelParticipant(allied,index))GUIUtility.RotateAroundPivot((allied?1:-1)*Mathf.Sin(portPhase*Mathf.PI)*7,new Vector2(x,y-5));
+            DrawPortFigure(allied,index,x,y,tint);GUI.matrix=savedMatrix;GUI.color=savedColor;
             Label(x-77,401,165,25,u.Name,17,selected?Gold:Pale,TextAnchor.MiddleCenter);Fill(new Rect(x-60,432,135,5),Hex("25353D"));Fill(new Rect(x-60,432,135*(float)u.Hp/u.MaxHp,5),allied?Cyan:Red);Label(x-70,439,155,19,u.Hp+" / "+u.MaxHp,11,Muted,TextAnchor.MiddleCenter);
             DrawUnitEffects(allied,index);
             GUI.enabled=!portBusy&&!portPrepared&&u.Hp>0&&(!allied||!portShown.HeroSlots[index*3].Frozen);
@@ -199,7 +207,7 @@ namespace ClashRoguelike
             int count=portBusy?portPlanCount:portShown.PlanCount;Panel(new Rect(1080,647,330,203),Hex("12202A"),Hex("35474F"));Label(1098,660,294,27,"本回合行动   "+count+" / "+(portShown.WorldActive?3:6),18,Gold);
             Label(1098,698,294,26,"预留 "+portShown.Reserved+" / 可用 "+(portShown.Cost-portShown.Reserved)+" cost",14,Cyan);
             string detail=portCard!=""?PortContent.Card(portCard).Name+"\n"+PortContent.Card(portCard).Description:GUI.tooltip;
-            if(portShown.TouhouTeam&&!string.IsNullOrEmpty(detail))Label(1098,737,294,102,detail,12,Pale);
+            if(!string.IsNullOrEmpty(detail))Label(1098,737,294,102,detail,12,Pale);
             else{Label(1098,737,294,48,portCard!=""?"点击敌方本体可自动选行动；点击行动格可精确指定。":"同速可以接招；最后有效指定获得拼点。",14,Pale);
             Label(1098,797,294,42,portPrepared?"已锁定，费用尚未支付。":portBusy?"正在依次结算并播放行动。":"安排只预留费用，可以撤销或改牌。",13,Muted);}
         }

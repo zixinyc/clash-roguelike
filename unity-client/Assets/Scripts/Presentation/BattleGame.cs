@@ -50,7 +50,7 @@ namespace ClashRoguelike
             for(int i=0;i<data.Length;i++) { float t=(float)i/rate; data[i]=Mathf.Sin(2*Mathf.PI*(frequency*t-180*t*t))*Mathf.Exp(-30*t)*0.45f; }
             var clip=AudioClip.Create(name,data.Length,1,rate,false); clip.SetData(data,0); return clip;
         }
-        void OnDestroy() { if(font!=null) Destroy(font); if(hitClip!=null) Destroy(hitClip); if(clashClip!=null) Destroy(clashClip); if(forestArt!=null)forestArt.Dispose();if(coinDisc!=null)Destroy(coinDisc); }
+        void OnDestroy() { DisposePortraits();if(font!=null) Destroy(font); if(hitClip!=null) Destroy(hitClip); if(clashClip!=null) Destroy(clashClip); if(forestArt!=null)forestArt.Dispose();if(coinDisc!=null)Destroy(coinDisc); }
         void Start()
         {
             string checkPath=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--character-checks="));
@@ -61,6 +61,8 @@ namespace ClashRoguelike
             {
                 selectedRoster=Environment.GetCommandLineArgs().Contains("--zixi")?2:Environment.GetCommandLineArgs().Contains("--original-team")?0:1;
                 InitializeAdventure();
+                string prototypeSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--prototype-smoke="));
+                if(prototypeSmoke!=null)StartCoroutine(PrototypeSmoke(prototypeSmoke.Substring("--prototype-smoke=".Length)));
                 string mainRosterSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--main-roster-smoke="));
                 if(mainRosterSmoke!=null)StartCoroutine(MainRosterSmoke(mainRosterSmoke.Substring("--main-roster-smoke=".Length)));
                 if(Environment.GetCommandLineArgs().Contains("--battle"))OpenPortBattle(false,0,selectedRoster==1,selectedRoster==2);
@@ -76,6 +78,8 @@ namespace ClashRoguelike
                 if(touhouSmoke!=null)StartCoroutine(TouhouSmoke(touhouSmoke.Substring("--touhou-smoke=".Length)));
                 string compactSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--compact-smoke="));
                 if(compactSmoke!=null)StartCoroutine(CompactCombatSmoke(compactSmoke.Substring("--compact-smoke=".Length)));
+                string portraitSmoke=Environment.GetCommandLineArgs().FirstOrDefault(x=>x.StartsWith("--portrait-smoke="));
+                if(portraitSmoke!=null)StartCoroutine(PortraitSmoke(portraitSmoke.Substring("--portrait-smoke=".Length)));
                 if(Environment.GetCommandLineArgs().Contains("--grid"))forestMode=false;
                 if(Environment.GetCommandLineArgs().Contains("--legacy")) adventureMode=false;
             }

@@ -12,6 +12,7 @@ public static class ProjectTools
     [MenuItem("Clash Roguelike/Run rule checks")]
     public static void Validate()
     {
+        int prototypeChecks=PrototypeChecks.Run();Debug.Log("UNITY_PROTOTYPE_CHECKS_PASSED checks="+prototypeChecks);
         int newChecks=NewCharacterChecks.Run();
         Debug.Log("UNITY_NEW_CHARACTER_CHECKS_PASSED checks="+newChecks);
         int count=BattleRuleChecks.Run();
@@ -28,6 +29,7 @@ public static class ProjectTools
         Debug.Log("UNITY_CLICK_CHECKS_PASSED checks="+clickChecks);
         Debug.Log("UNITY_RULE_CHECKS_PASSED checks="+count);
         Directory.CreateDirectory("TestResults");
+        File.WriteAllText("TestResults/prototype-checks.txt","UNITY_PROTOTYPE_CHECKS_PASSED checks="+prototypeChecks);
         File.WriteAllText("TestResults/rules.txt","UNITY_RULE_CHECKS_PASSED checks="+count+Environment.NewLine+"UNITY_CLICK_CHECKS_PASSED checks="+clickChecks+Environment.NewLine+"UNITY_PANEL_CHECKS_PASSED checks="+panelChecks+Environment.NewLine+"UNITY_PORT_CHECKS_PASSED checks="+portChecks+Environment.NewLine+"UNITY_FOREST_CHECKS_PASSED checks="+forestChecks+Environment.NewLine+"UNITY_COIN_CHECKS_PASSED checks="+coinChecks+Environment.NewLine+"UNITY_TOUHOU_CHECKS_PASSED checks="+roleChecks+Environment.NewLine);
     }
     [MenuItem("Clash Roguelike/Open battle scene")]

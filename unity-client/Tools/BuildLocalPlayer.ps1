@@ -13,6 +13,8 @@ $outputPath=Join-Path $resultPath 'Assembly-CSharp.dll'
 & $compilerPath /nologo /noconfig /nostdlib /target:library /optimize+ /codepage:65001 "/out:$outputPath" @references @sourcePaths
 if($LASTEXITCODE -ne 0) { throw 'Compilation failed; existing player was not modified.' }
 $compiled=[System.Reflection.Assembly]::LoadFrom($outputPath)
+$prototypeCount=$compiled.GetType('ClashRoguelike.PrototypeChecks',$true).GetMethod('Run').Invoke($null,@())
+if($prototypeCount -le 0){throw 'Prototype checks did not run.'}
 $ruleCount=$compiled.GetType('ClashRoguelike.BattleRuleChecks',$true).GetMethod('Run').Invoke($null,@())
 $clickCount=$compiled.GetType('ClashRoguelike.InteractionChecks',$true).GetMethod('Run').Invoke($null,@())
 $panelCount=$compiled.GetType('ClashRoguelike.PanelChecks',$true).GetMethod('Run').Invoke($null,@())
@@ -31,3 +33,5 @@ Copy-Item -LiteralPath $outputPath -Destination $playerAssembly -Force
 $report="SPEED_RULE_CHECKS_PASSED checks=$ruleCount`r`nDIRECT_CLICK_CHECKS_PASSED checks=$clickCount`r`nDYNAMIC_PANEL_CHECKS_PASSED checks=$panelCount`r`nGODOT_PORT_CHECKS_PASSED checks=$portCount`r`nFOREST_CHECKS_PASSED checks=$forestCount`r`nCOIN_CHECKS_PASSED checks=$coinCount`r`nTOUHOU_CHECKS_PASSED checks=$roleCount`r`nNEW_CHARACTER_CHECKS_PASSED checks=$newCount"
 Set-Content -LiteralPath (Join-Path $resultPath 'checks.txt') -Value $report -Encoding UTF8
 Write-Output $report
+Add-Content -LiteralPath (Join-Path $resultPath 'checks.txt') -Value ("PROTOTYPE_CHECKS_PASSED checks="+$prototypeCount) -Encoding UTF8
+Write-Output ("PROTOTYPE_CHECKS_PASSED checks="+$prototypeCount)

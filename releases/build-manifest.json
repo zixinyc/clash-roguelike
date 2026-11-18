@@ -1,17 +1,18 @@
 {
-  "date": "2026-11-17",
+  "date": "2026-11-18",
   "branch": "touhou",
   "unity": "2022.3.62f3c1",
   "platform": "Windows x64 Mono",
-  "build_method": "C# assembly updated in existing Unity player; no full Editor build",
-  "archive_bytes": 27548256,
-  "archive_sha256": "9A9887EE0676270D59BF2A151BEB205D8ABC9ED3BF6D26D1F62F60CBA3863DB2",
-  "assembly_sha256": "5AA4A79BB8FB871EE2D092BB2E040F24E8785514875CDF69827142C3D8685F4A",
-  "checks": 3474,
-  "rosters": [
-    "Marisa/Sakuya/Reimu",
-    "Ash/ZiXi/Weaver",
-    "Original"
-  ],
-  "runtime": "All three actual forest encounters: victory; HP/wallet/roster carried back; two resolutions"
+  "build_method": "C# assembly compiled in existing Unity player, no new full Editor build",
+  "archive_bytes": 28166787,
+  "archive_sha256": "7192C271C181D3AB96C19CA197F0DE5F3D822881C2176DEC64CBD146C2F2A45C",
+  "assembly_sha256": "9AE708120656EBD46BA6981C43A42428671D3593496A57EF38A32406A3221607",
+  "checks": 5091,
+  "prototype_checks": 1617,
+  "runtime": "Random map seed replay, A/B groups and locked rounds, actual pairing lines, original portraits fight with following coins, actual victory and resource return, two window sizes",
+  "portraits": {
+    "十六夜咲夜.png": "8E337FB04D8371CE1636B2F6181567091A35300A7113C95EEEF05562B108F35F",
+    "博丽灵梦.png": "6E8EA4DEE3663E205F72A4196ACAEFF70C640EFC062AE588436AAFF047714198",
+    "雾雨魔理沙.png": "4BF956912E15B9400C5B88F9F15E452531F172F44BE6C9BDB31E755714ECF3FC"
+  }
 }

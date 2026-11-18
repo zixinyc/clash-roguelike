@@ -14,19 +14,21 @@ namespace ClashRoguelike
             {
                 if(effectInspectorOpen){yield return null;continue;}
                 float next=p+Time.unscaledDeltaTime*speed/duration;
-                if(contact&&!played&&next>=.25f)
+                if(contact&&!played&&next>=.45f)
                 {
-                    played=true;
+                    played=true;p=.45f;setPhase(p);
                     if(!muted)audioSource.PlayOneShot(kind=="strike"?hitClip:clashClip);
+                    float hold=coin!=null&&coin.FinalWinner>=0?.18f:.11f;
+                    while(hold>0&&!skipped()){if(!effectInspectorOpen)hold-=Time.unscaledDeltaTime*speed;yield return null;}
                 }
-                p=next;setPhase(Mathf.Clamp01(p));yield return null;
+                else {p=next;setPhase(Mathf.Clamp01(p));yield return null;}
             }
             setPhase(1);if(skipped())yield return null;
         }
         static float ImpactTravel(float p)
         {return 0;}
         static float ImpactRecoil(float p)
-        {return 0;}
+        {return p<.45f?0:Mathf.Sin(Mathf.Clamp01((p-.45f)/.55f)*Mathf.PI)*18;}
         void DrawImpactBurst(string kind,float p)
         {
             if((kind!="clash"&&kind!="strike")||p<.45f||p>.72f)return;

@@ -1,11 +1,12 @@
-主Demo验收记录
+# 本轮验收 · 2026-11-18
 
-八组3,474项检查全部通过。
-UNITY_MAIN_ROSTER_SMOKE_PASSED
-Original HP, cost, enemies and seeded RNG; no combat fixture overrides. All teams entered normal forest encounters and returned real results.
-东方三人队: 雾雨魔理沙 / 十六夜咲夜 / 博丽灵梦; result=victory; map HP/cost return verified
-ZiXi队: 灰烬 / ZiXi / 织火; result=victory; map HP/cost return verified
-原小队: 灰烬 / 长锋 / 织火; result=victory; map HP/cost return verified
-1440x900 / 1000x650 real player captures. Automated UI handlers; physical mouse acceptance not claimed.
+九组5,091项检查：既有3,474项、新增1,617项（包含100个地图种子）。
 
-可见播放器截图已检查主选择页、魔理沙和ZiXi手牌，1440x900与1000x650。自动调用共用界面函数，未宣称全部物理鼠标验收。核心数值、地图逻辑、ProjectSettings与开始时哈希相同。未验证其他电脑、移动端或完整Editor构建。
+UNITY_BATTLE_UI_PROTOTYPE_PASSED
+Prototype checks: 1617
+Random map seed=260190186; replay identical; actual supply/move/normal battle.
+Per-character A/B groups, locked selected hand across rounds; planning pairs and duel contact; actual battle result=victory; real HP/cost returned; ZiXi B group; 1440x900 and 1000x650.
+No HP/damage fixtures; automated shared UI handlers, not full physical input acceptance.
+
+
+已查看真实游戏截图：随机地图、A/B选择、彩色连线、原立绘直接交锋与硬币跟随；1440×900与1000×650。三张现有透明PNG原样保留，既有边缘处理已并入；未声称全部真实鼠标验收、跨设备或Editor全量构建。

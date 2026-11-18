@@ -62,6 +62,7 @@ namespace ClashRoguelike
         void PrepareRound()
         {
             PrepareTouhouRound();State.Hand=State.TouhouTeam?PortContent.Hand.Where(k=>PortContent.Card(k).Owner<0).Concat(TouhouRoles.MarisaCards).Concat(TouhouRoles.SakuyaCards).Concat(TouhouRoles.ReimuCards).ToArray():State.ZixiTeam?PortContent.Hand.Where(k=>PortContent.Card(k).Owner!=1).Concat(ZixiRole.Keys).ToArray():(string[])PortContent.Hand.Clone();
+            if(equippedSkills!=null)State.Hand=State.Hand.Where(equippedSkills.Contains).ToArray();
             State.Phase="response";State.Remaining=180;State.Plays=0;State.Order=0;State.RewardPaid=false;State.HeroSlots.Clear();State.EnemySlots.Clear();
             foreach(var u in State.Heroes.Concat(State.Enemies)) { u.Shield=0;u.Acted=false;u.Spent=false; }
             PrepareZixiRound();

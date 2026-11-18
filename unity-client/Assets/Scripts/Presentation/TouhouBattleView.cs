@@ -21,6 +21,7 @@ namespace ClashRoguelike
         }
         void DrawPortFigure(bool allied,int index,float x,float y,Color tint)
         {
+            if(allied&&DrawCharacterPortrait(portShown.Heroes[index],x,y))return;
             bool special=allied&&portShown.TouhouTeam&&index>0;bool reimu=special&&index==2;
             Color cloth=special?(reimu?Hex("A94448"):Hex("587A9E")):Color.Lerp(tint,Hex("192630"),.65f),skin=special?Hex("DDC3A2"):tint;
             Fill(new Rect(x-15,y-119,31,32),skin);Fill(new Rect(x-25,y-81,51,66),cloth);

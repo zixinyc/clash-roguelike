@@ -91,7 +91,7 @@ namespace ClashRoguelike
         }
         void DrawUnitEffects(bool allied,int index)
         {
-            float x=CombatX(allied,index);var badges=UnitEffects(allied,index);int shownCount=Math.Min(4,badges.Count);
+            float x=ShownCombatX(allied,index);var badges=UnitEffects(allied,index);int shownCount=Math.Min(4,badges.Count);
             for(int i=0;i<shownCount;i++)
             {
                 bool more=i==3&&badges.Count>4;var badge=badges[i];int rowCount=Math.Min(2,shownCount-(i/2)*2);Rect r=new Rect(x-rowCount*70/2+(i%2)*70+2,462+(i/2)*25,67,22);
@@ -128,8 +128,8 @@ namespace ClashRoguelike
             {
                 if(hi<0||ei<0)return;
                 bool done=type=="clash_end";
-                DrawClashHead(CombatX(true,hi),c.Left,c.LeftFaces,c.LeftPower,c.LeftRemaining,c.Winner==0,c.Winner==1,done,animation);
-                DrawClashHead(CombatX(false,ei),c.Right,c.RightFaces,c.RightPower,c.RightRemaining,c.Winner==1,c.Winner==0,done,animation);
+                DrawClashHead(ShownCombatX(true,hi),c.Left,c.LeftFaces,c.LeftPower,c.LeftRemaining,c.Winner==0,c.Winner==1,done,animation);
+                DrawClashHead(ShownCombatX(false,ei),c.Right,c.RightFaces,c.RightPower,c.RightRemaining,c.Winner==1,c.Winner==0,done,animation);
             }
             else if(type=="strike")
             {
@@ -137,7 +137,7 @@ namespace ClashRoguelike
                 int actor=allied?(port?hi:current.Source):(port?ei:current.Source);
                 int victim=allied?(port?ei:current.Target):(port?hi:current.Target);
                 if(actor<0||victim<0)return;
-                float x=CombatX(allied,actor),target=CombatX(!allied,victim);
+                float x=ShownCombatX(allied,actor),target=ShownCombatX(!allied,victim);
                 Label(x-71,166,142,20,c.Left.Name,14,allied?Cyan:Red,TextAnchor.MiddleCenter);
                 CoinToken(new Vector2(x,198),c.Heads,21,animation*1.8f);
                 Label(x-65,210,130,28,animation<.22f?"…":c.RawDamage.ToString(),26,Gold,TextAnchor.MiddleCenter);

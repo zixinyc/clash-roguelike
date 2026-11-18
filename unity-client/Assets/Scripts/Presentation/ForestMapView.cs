@@ -13,12 +13,14 @@ namespace ClashRoguelike
         int forestLogCount;
         string forestSource="预设地图";
         readonly Rect forestRect=new Rect(22,116,1028,664);
-        void InitializeForest(int seed=73129,bool variation=false)
+        string forestSeedText="";
+        void InitializeForest(int seed=-1,bool variation=true)
         {
-            ForestMapDefinition definition=null;forestSource=variation?"种子变体":"预设地图";
+            if(seed<0)seed=Guid.NewGuid().GetHashCode()&int.MaxValue;
+            ForestMapDefinition definition=null;forestSource=variation?"随机关卡":"预设地图";forestSeedText=seed.ToString();
             string path=Path.Combine(Application.streamingAssetsPath,"forest-maze.forest");
             if(!variation&&File.Exists(path))try{definition=ForestMapDefinition.Parse(File.ReadAllText(path));}catch(Exception e){Debug.LogWarning("Forest preset invalid: "+e.Message);forestSource="内置安全预设";}
-            if(definition==null)definition=ForestMapDefinition.Generate(seed,variation);
+            if(definition==null)definition=variation?ForestRandomGenerator.Generate(seed):ForestMapDefinition.Generate(seed,false);
             forest=new ForestRun(definition);forest.Party.ConfigureRoster(selectedRoster);heroNames=CharacterRoster.Team(selectedRoster).Select(x=>x.Name).ToArray();forestMode=true;forestSettings=false;forestRosterMenu=false;forestLogCount=0;forestLogScroll=Vector2.zero;
             if(forestArt!=null)forestArt.Dispose();forestArt=new ForestMapArt(definition.Seed);
         }
@@ -89,7 +91,7 @@ namespace ClashRoguelike
         void DrawForest()
         {
             if(forest==null)InitializeForest();var intel=forest.Intel();forestArt.UpdateFog(forest,intel);
-            Label(28,20,590,42,"余烬交锋 / 废林追猎",30,Hex("D8C7A5"));Label(30,70,590,26,"单机探索  /  夺取烬核，穿过迷雾返回归途石门",13,Muted);
+            Label(28,20,590,42,"余烬交锋 / 废林追猎",30,Hex("D8C7A5"));Label(30,70,590,26,forestSource+" · 种子 "+forest.Map.Seed+" / 夺取烬核后撤离",13,Muted);
             Label(650,27,190,36,"回合 "+forest.Turn.ToString("00"),23,Gold);Label(845,30,385,30,"小队行动 · "+forest.Phase,16,Pale);
             Label(650,70,445,24,"相邻 1 点 / 捷径 2 点 + 1 情报 / 道具 1 点",12,Muted);
             GUI.enabled=forest.Pending==""&&!forest.Finished;
@@ -175,9 +177,12 @@ namespace ClashRoguelike
             Fill(new Rect(0,0,1440,900),new Color(0,0,0,.8f));Panel(new Rect(455,200,530,530),Hex("12202A"),Gold);Label(485,225,470,44,"废林设定",27,Gold);
             Label(485,287,470,70,forestSource+" · 种子 "+forest.Map.Seed+"\n单机小队探索；兽群是环境敌人。",16,Pale);
             if(Btn(new Rect(485,375,470,40),forestAmbient?"环境余火：开":"环境余火：关"))forestAmbient=!forestAmbient;
-            if(Btn(new Rect(485,428,470,40),"新探索 · 预设地图"))InitializeForest();
-            if(Btn(new Rect(485,481,470,40),"新探索 · 种子变体"))InitializeForest((forest.Map.Seed+7919)&int.MaxValue,true);
-            if(Btn(new Rect(485,534,470,40),"旧方格地图 · 对照入口")){forestMode=false;forestSettings=false;exploration=new ExplorationRun();exploration.Resources.ConfigureRoster(selectedRoster);}
+            if(Btn(new Rect(485,428,470,40),"新探索 · 重新随机生成"))InitializeForest();
+            forestSeedText=GUI.TextField(new Rect(485,481,220,40),forestSeedText,10);
+            int replaySeed;GUI.enabled=int.TryParse(forestSeedText,out replaySeed)&&replaySeed>=0;
+            if(Btn(new Rect(715,481,240,40),"按此种子新建"))InitializeForest(replaySeed,true);GUI.enabled=true;
+            if(Btn(new Rect(485,534,225,40),"参考预设地图"))InitializeForest(73129,false);
+            if(Btn(new Rect(720,534,235,40),"旧方格对照")){forestMode=false;forestSettings=false;exploration=new ExplorationRun();exploration.Resources.ConfigureRoster(selectedRoster);}
             if(Btn(new Rect(485,585,470,36),"选择探索队伍 · "+MainRosterName(selectedRoster)))OpenMainRosterPicker();
             Label(485,627,470,21,"切换队伍将开始新探索",12,Muted);
             if(Btn(new Rect(485,651,470,40),"返回森林",true))forestSettings=false;
