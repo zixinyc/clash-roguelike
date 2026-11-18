@@ -46,7 +46,7 @@ namespace ClashRoguelike
             {
                 var watch=portShown.Heroes[1].RoleState;
                 if(watch.WatchActive)list.Add(new EffectBadge("watch",allied?"秒表":"速度 −3",allied?"秒表生效：全队每比拼点对手快 2 点，拼点初始 +1，最多 +3。持续至第 "+watch.WatchUntil+" 回合。":"咲夜的秒表生效，速度 −3，已计入本回合行动格速度。持续至第 "+watch.WatchUntil+" 回合。"));
-                if(portShown.WorldActive)list.Add(new EffectBadge("world",allied&&index==1?"世界":"时停",allied&&index==1?"当前为时停回合，咲夜可使用三个不限类别的技能槽。":"时间停止，本回合该角色不能行动。"));
+                if(portShown.WorldActive)list.Add(new EffectBadge("world",allied&&index==1?"世界":"时停",allied&&index==1?"当前为时停回合，咲夜可使用两次不限类别行动，可重复同一技能。":"时间停止，本回合该角色不能行动。"));
                 if(allied&&index==0)
                 {
                     var m=u.RoleState;
@@ -141,6 +141,7 @@ namespace ClashRoguelike
                 Label(x-71,166,142,20,c.Left.Name,14,allied?Cyan:Red,TextAnchor.MiddleCenter);
                 CoinToken(new Vector2(x,198),c.Heads,21,animation*1.8f);
                 Label(x-65,210,130,28,animation<.22f?"…":c.RawDamage.ToString(),26,Gold,TextAnchor.MiddleCenter);
+                Label(x-85,241,170,20,"第 "+c.AttackIndex+" 击 · 硬币累计 "+Signed(c.AttackAccumulated),12,Muted,TextAnchor.MiddleCenter);
                 string message=port?portEvent.Message:current.Result??"";
                 string hit=message.Contains("辅助效果")?"辅助":message.Contains("目标已退场")?"已退场":"−"+damage;
                 if(animation>=.22f)Label(target-73,210-animation*6,146,32,hit,28,damage>0?Red:Cyan,TextAnchor.MiddleCenter);

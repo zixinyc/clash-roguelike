@@ -13,7 +13,7 @@ namespace ClashRoguelike
             if(portShown.Outcome!="")return portShown.Outcome=="victory"?"我方 · 胜利":"我方 · 败北";
             if(portBusy)return "我方 · 交锋中    行动已锁定";
             if(portPrepared)return "我方 · 已准备    已锁定 "+portShown.PlanCount+" 项行动";
-            return "我方 · 规划中    已安排 "+portShown.PlanCount+" / "+(portShown.WorldActive?3:6)+" 项行动";
+            return "我方 · 规划中    已安排 "+portShown.PlanCount+" / "+(portShown.WorldActive?2:6)+" 项行动";
         }
         string PortEnemyStatus()
         {

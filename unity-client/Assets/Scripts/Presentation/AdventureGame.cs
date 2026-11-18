@@ -140,7 +140,7 @@ namespace ClashRoguelike
         {
             if(loadoutSelecting){DrawSkillGroupSelection();return;}
             Label(30,20,600,42,"余烬交锋 / 行动规划",29,Gold);
-            Label(30,68,650,26,portShown.WorldActive?"时停回合 · 咲夜三个不限类别技能槽 · 敌方无法行动":"角色专属牌 · 每人两个分类行动 · 目标与速度公开，敌方技能隐藏",13,Muted);
+            Label(30,68,650,26,portShown.WorldActive?"时停回合 · 咲夜两次不限类别行动，可重复同一技能 · 敌方无法行动":"角色专属牌 · 每人两个分类行动 · 目标与速度公开，敌方技能隐藏",13,Muted);
             Label(700,25,190,40,"回合 "+portShown.Turn,24,Pale);Label(900,24,190,42,"cost "+portShown.Cost,28,Gold);
             Label(1100,25,120,36,portBusy?"演出中":portPrepared?"已准备":Math.Ceiling(portRules.State.Remaining)+" 秒",18,Cyan);
             if(Btn(new Rect(1250,25,150,36),"演出 ×"+speed))speed=speed==1?2:speed==2?4:1;DrawRosterSwitch();DrawZixiEnhancement();
@@ -183,7 +183,7 @@ namespace ClashRoguelike
             if(GUI.Button(new Rect(x-67,y-130,144,174),GUIContent.none,GUIStyle.none)){if(allied)SelectPortHero(index);else CommitPortTarget(DefaultTarget(index));}GUI.enabled=true;
             var slots=allied?portShown.HeroSlots:portShown.EnemySlots;
             if(portBusy)return;
-            foreach(var s in slots.Where(a=>a.Unit==index))
+            foreach(var s in slots.Where(a=>a.Unit==index&&!(allied&&portShown.WorldActive&&index==1&&a.Category==2&&!a.Active)))
             {
                 Rect r=new Rect(x-71,168+s.Category*25,150,23);bool target=!allied&&PortTargetLegal(s.Id);string label=(s.Frozen?"停时":s.Flexible?"技能"+(s.Category+1):categoryNames[s.Category])+" "+s.Speed;
                 if(s.Active)label+=" · "+(allied?PortContent.Card(s.Key).Name:portShown.Phase=="response"?s.Category==2?"防御":"→ "+PortHeroName(s.Target):PortContent.Card(s.Key).Name);
@@ -204,7 +204,7 @@ namespace ClashRoguelike
         }
         void DrawPortOperationPanel()
         {
-            int count=portBusy?portPlanCount:portShown.PlanCount;Panel(new Rect(1080,647,330,203),Hex("12202A"),Hex("35474F"));Label(1098,660,294,27,"本回合行动   "+count+" / "+(portShown.WorldActive?3:6),18,Gold);
+            int count=portBusy?portPlanCount:portShown.PlanCount;Panel(new Rect(1080,647,330,203),Hex("12202A"),Hex("35474F"));Label(1098,660,294,27,"本回合行动   "+count+" / "+(portShown.WorldActive?2:6),18,Gold);
             Label(1098,698,294,26,"预留 "+portShown.Reserved+" / 可用 "+(portShown.Cost-portShown.Reserved)+" cost",14,Cyan);
             string detail=portCard!=""?PortContent.Card(portCard).Name+"\n"+PortContent.Card(portCard).Description:GUI.tooltip;
             if(!string.IsNullOrEmpty(detail))Label(1098,737,294,102,detail,12,Pale);

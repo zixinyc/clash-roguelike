@@ -39,13 +39,13 @@ namespace ClashRoguelike
         }
         void FillTouhouPlans()
         {
-            string[][] options=portRules.State.ZixiTeam?new string[][]{new[]{"probe","nova","guard"},new[]{"zixi_central_limit","zixi_almost_sure","zixi_martingale","zixi_convergence"},new[]{"support_strike","light_guard","cover"}}:new string[][]{new[]{"marisa_stars","marisa_spark","marisa_orrery","marisa_laser","guard"},portRules.State.WorldActive?new[]{"murder_doll","needle","steady","guard"}:new[]{"murder_doll",portRules.State.Heroes[1].RoleState.WorldUsed?"private_square":"the_world","stopwatch","private_square","guard"},new[]{"yin_yang_orb","demon_seal","fantasy_seal","guard"}};
+            string[][] options=portRules.State.ZixiTeam?new string[][]{new[]{"probe","nova","guard"},new[]{"zixi_central_limit","zixi_almost_sure","zixi_martingale","zixi_convergence"},new[]{"support_strike","light_guard","cover"}}:new string[][]{new[]{"marisa_stars","marisa_spark","marisa_orrery","marisa_laser","guard"},portRules.State.WorldActive?new[]{"murder_doll","murder_doll","guard"}:new[]{"murder_doll",portRules.State.Heroes[1].RoleState.WorldUsed?"private_square":"the_world","stopwatch","private_square","guard"},new[]{"yin_yang_orb","demon_seal","fantasy_seal","guard"}};
             for(int hero=0;hero<3;hero++)
             {
                 if(portRules.State.Heroes[hero].Hp<=0||portRules.State.HeroSlots[hero*3].Frozen)continue;
                 foreach(string key in options[hero])
                 {
-                    if(portRules.State.HeroSlots.Any(s=>s.Active&&s.Key==key))continue;var card=PortContent.Card(key);int slot=portRules.SlotFor(hero,key);
+                    if(!portRules.State.WorldActive&&portRules.State.HeroSlots.Any(s=>s.Active&&s.Key==key))continue;var card=PortContent.Card(key);int slot=portRules.SlotFor(hero,key);
                     if(portRules.State.HeroSlots[slot].Active)continue;
                     if(!card.TargetsEnemy){portRules.Assign(key,hero,-1);continue;}
                     var targets=portRules.State.EnemySlots.OrderBy(s=>portRules.State.HeroSlots.Any(h=>h.Active&&h.Unit==hero&&h.Target==s.Id)?1:0).ThenBy(s=>portRules.PairFor(s.Id)>=0?1:0);

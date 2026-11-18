@@ -6,6 +6,7 @@ namespace ClashRoguelike
     {
         static int checks;static void Check(bool ok,string message){checks++;if(!ok)throw new Exception("Touhou integration: "+message);}
         sealed class Heads:PortBattleRules{public Heads():base(73129,0,true){}protected override bool FlipCoin(double c){return c>.5;}}
+        sealed class Faces:PortBattleRules{readonly bool[] faces;int index;public Faces(bool[] f):base(73129,0,true){faces=f;}protected override bool FlipCoin(double c){return c>.5&&faces[index++];}}
         sealed class Tails:PortBattleRules{public Tails():base(73129,0,true){}protected override bool FlipCoin(double c){return c<=.5;}}
         static void Quiet(PortBattleRules b,int active=-1,int target=0)
         {b.State.Cost=100;foreach(var u in b.State.Enemies){u.Hp=1000;u.MaxHp=1000;}foreach(var e in b.State.EnemySlots){e.Active=e.Id==active;if(e.Active){e.Key="needle";e.Target=target;}}}
@@ -30,9 +31,39 @@ namespace ClashRoguelike
             b=new Heads();Quiet(b);b.Assign("the_world",1,0);b.Resolve();Check(b.State.Heroes[1].RoleState.WorldUsed&&b.State.Heroes[1].RoleState.WorldRound==2,"world arms once for next round");b.NextRound();
             Check(b.State.WorldActive&&b.State.EnemySlots.All(s=>!s.Active)&&b.State.HeroSlots.Where(s=>s.Unit!=1).All(s=>s.Frozen),"world stops enemy attacks/defenses and other allies");
             Check(!b.Assign("cleave",0,0)&&!b.Assign("yin_yang_orb",2,0)&&!b.Assign("the_world",1,0),"frozen units cannot plan; world cannot repeat");
-            Check(b.Assign("murder_doll",1,0,3)&&b.Assign("needle",1,0,4)&&b.Assign("steady",1,3,5),"three independent unrestricted-category skill slots");
-            events=b.Resolve();Check(b.State.Plays==3&&!events.Any(e=>e.Type=="clash")&&events.Count(e=>e.Type=="strike")==5,"time stop executes three skills using exactly their one plus two plus two coins");
-            Check(events.Where(e=>e.Type=="attack_end").Select(e=>e.Coin.AttackBudget).OrderBy(x=>x).SequenceEqual(new[]{1,2,2}),"world never clones a coin or adds an attack to a skill");b.NextRound();Check(!b.State.WorldActive&&b.State.HeroSlots.All(s=>!s.Flexible&&!s.Frozen),"normal slot rules restored after world");
+            int wallet=b.State.Cost=3;
+            Check(b.Assign("murder_doll",1,0)&&!b.Assign("murder_doll",1,3)&&b.State.PlanCount==1&&b.State.Cost==3&&b.State.Reserved==2,"insufficient cost cannot add a second world action or alter the first");
+            b.State.Cost=wallet=4;
+            Check(b.Assign("murder_doll",1,3)&&b.State.PlanCount==2,"world repeat selection fills separate actions without replacing the first");
+            Check(b.State.Reserved==4&&!b.Assign("needle",1,0,5),"two independently charged actions and third action rejected");
+            Check(b.Assign("murder_doll",1,3,3)&&b.State.PlanCount==2,"explicit slot can retarget without adding an action");
+            Check(b.Cancel(4)&&b.State.Reserved==2&&b.Assign("murder_doll",1,0)&&b.State.Reserved==4,"cancel releases exactly one duplicate skill reservation");
+            events=b.Resolve();Check(b.State.Plays==2&&b.State.Cost==wallet-4&&!events.Any(e=>e.Type=="clash")&&events.Count(e=>e.Type=="strike")==2,"world resolves two paid independent attacks");
+            Check(events.Where(e=>e.Type=="attack_end").All(e=>e.Coin.AttackBudget==1)&&events.Where(e=>e.Type=="strike").All(e=>e.Coin.AttackCarry==0&&e.Damage==13),"repeated world skills reset coin accumulation and apply silver knife separately");
+            b.NextRound();Check(!b.State.WorldActive&&b.State.HeroSlots.All(s=>!s.Flexible&&!s.Frozen),"normal slot rules restored after world");
+            Quiet(b);Check(b.Assign("murder_doll",1,0)&&b.Assign("murder_doll",1,3)&&b.State.PlanCount==1&&b.CanAssign("murder_doll",4,3)!="","ordinary rounds retarget existing action and retain category restrictions");
+            for(int mask=0;mask<32;mask++)
+            {
+                var faces=Enumerable.Range(0,5).Select(i=>(mask&(1<<i))!=0).ToArray();var mixed=new Faces(faces);Quiet(mixed);mixed.State.Enemies[0].Exorcism=3;mixed.Assign("fantasy_seal",2,0);
+                var hits=mixed.Resolve().Where(e=>e.Type=="strike").ToArray();int raw=1;
+                for(int hit=0;hit<5;hit++){if(faces[hit])raw+=2;Check(hits[hit].Coin.RawDamage==raw&&hits[hit].Damage==raw&&hits[hit].Snapshot.Enemies[0].Hp==1000-hits.Take(hit+1).Sum(e=>e.Damage),"Fantasy Seal mixed faces: displayed raw, damage and HP snapshot carry prior heads through mark detonation");}
+            }
+            foreach(string key in new[]{"yin_yang_orb","marisa_stars","marisa_laser","murder_doll"})
+            {
+                var card=PortContent.Card(key);
+                for(int mask=0;mask<(1<<card.Coins);mask++)
+                {
+                    var faces=Enumerable.Range(0,card.Coins).Select(i=>(mask&(1<<i))!=0).ToArray();var mixed=new Faces(faces);Quiet(mixed);mixed.Assign(key,card.Owner,0);
+                    var hits=mixed.Resolve().Where(e=>e.Type=="strike"&&e.Enemy==0).ToArray();int accumulated=0;
+                    for(int hit=0;hit<hits.Length;hit++)
+                    {
+                        if(faces[hit])accumulated+=card.AttackCoinPower;
+                        int expected=card.Base+accumulated+(key=="murder_doll"?5:0)+(key.StartsWith("marisa_")&&hit==0?5:0)-(key=="marisa_laser"?4:0);
+                        Check(hits[hit].Coin.AttackAccumulated==accumulated&&hits[hit].Coin.RawDamage==expected&&hits[hit].Damage==expected&&hits[hit].Snapshot.Enemies[0].Hp==1000-hits.Take(hit+1).Sum(e=>e.Damage),"other Touhou attacks accumulate heads and update HP: "+key+" mask="+mask+" hit="+hit+" expected="+expected+" actual="+hits[hit].Coin.RawDamage);
+                    }
+                }
+            }
+
             b=new Heads();Quiet(b);b.Assign("yin_yang_orb",2,3);events=b.Resolve();Check(events.Where(e=>e.Type=="strike").Select(e=>e.Damage).SequenceEqual(new[]{5,7})&&b.State.Enemies[1].Exorcism==1,"orb heads accumulate to five/seven; one mark limit");b.NextRound();
             for(int i=0;i<2;i++){Quiet(b);b.Assign("fantasy_seal",2,0);events=b.Resolve();Check(events.Where(e=>e.Type=="strike").Select(e=>e.Damage).SequenceEqual(new[]{3,5,7,9,11}),"Fantasy Seal five heads accumulate without changing the five-coin budget");Check(b.State.Enemies[0].Exorcism==(i==0?2:0),"seal mark cap two and reset on four");b.NextRound();}
             Check(b.State.Enemies[0].ExorcismActive&&b.State.Enemies[1].Exorcism==1,"detonation next round; marks separate by enemy");Quiet(b,0,2);events=b.Resolve();

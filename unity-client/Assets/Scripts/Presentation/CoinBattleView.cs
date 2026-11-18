@@ -11,7 +11,7 @@ namespace ClashRoguelike
             if(type=="clash_end")return "最终拼点胜者："+(c.FinalWinner==0?c.Left.Name:c.Right.Name)+"。只有胜方以余币攻击。";
             if(type=="attack_end")return c.Left.Name+"："+c.AttackIndex+" 次攻击结束，累计原始伤害 "+c.TotalRawDamage+"，硬币已用尽。";
             if(c.Type=="clash")return "第 "+c.Round+" 轮："+c.LeftPower+" 对 "+c.RightPower+"；"+(c.Winner<0?"平局，不损币，全部重投。":c.Winner==0?"敌方失去 1 枚硬币。":"我方失去 1 枚硬币。");
-            return c.Left.Name+" 第 "+c.AttackIndex+" / "+c.AttackBudget+" 击 · "+(c.Heads?"正面":"反面")+" · 本次原始 "+c.RawDamage+" · 余币 "+c.RemainingAttackCoins;
+            return c.Left.Name+" 第 "+c.AttackIndex+" / "+c.AttackBudget+" 击 · "+(c.Heads?"正面":"反面")+" · 硬币累计 +"+c.AttackAccumulated+" · 本次原始 "+c.RawDamage+" · 余币 "+c.RemainingAttackCoins;
         }
         void CoinToken(Vector2 p,bool heads,float size,float animation,bool lost=false)
         {

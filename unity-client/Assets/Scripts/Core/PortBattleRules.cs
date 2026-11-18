@@ -90,7 +90,7 @@ namespace ClashRoguelike
         }
         public int SlotFor(int hero,string key,int preferred=-1)
         {
-            if(State.WorldActive&&hero==1){if(preferred>=3&&preferred<6)return preferred;var previous=State.HeroSlots.FirstOrDefault(x=>x.Unit==hero&&x.Active&&x.Key==key);if(previous!=null)return previous.Id;var free=State.HeroSlots.FirstOrDefault(x=>x.Unit==hero&&!x.Active);return free==null?3:free.Id;}
+            if(State.WorldActive&&hero==1){if(preferred>=3&&preferred<6)return preferred;var free=State.HeroSlots.FirstOrDefault(x=>x.Unit==hero&&!x.Active);return free==null?3:free.Id;}
             return hero*3+PortContent.Card(key).Category;
         }
         public string CanAssign(string key,int slotId,int target)
@@ -104,8 +104,8 @@ namespace ClashRoguelike
             if(key=="fantasy_nature"&&State.Heroes[2].RoleState.DreamDue>0)return "梦想天生已经开始蓄能";
             if(skill.Owner>=0&&skill.Owner!=slot.Unit) return "这是其他角色的专属技能";
             if(!slot.Flexible&&skill.Category!=slot.Category) return "技能与行动格类别不符";
-            if(State.HeroSlots.Any(x=>x.Id!=slotId&&x.Active&&x.Key==key)) return "技能已被其他行动预留";
-            if(State.HeroSlots.Count(x=>x.Id!=slotId&&x.Active&&x.Unit==slot.Unit)>=(slot.Flexible?3:2)) return "本回合该成员行动槽已满";
+            if(!slot.Flexible&&State.HeroSlots.Any(x=>x.Id!=slotId&&x.Active&&x.Key==key)) return "技能已被其他行动预留";
+            if(State.HeroSlots.Count(x=>x.Id!=slotId&&x.Active&&x.Unit==slot.Unit)>=2) return "本回合该成员行动槽已满";
             if(!CanFundMarisa(skill,slotId)) return "可用 cost 不足";
             if(skill.TargetsEnemy&&(target<0||target>=State.EnemySlots.Count||State.Enemies[State.EnemySlots[target].Unit].Hp<=0)) return "请选择存活敌人的行动格";
             if(skill.RequiresClash&&!CanClashSkill(slot,State.EnemySlots[target],skill))return "这张牌需要合法的敌方拼点行动";

@@ -1,11 +1,11 @@
 # 本轮验收 · 2026-11-18
 
-九组5,091项检查：既有3,474项、新增1,617项（包含100个地图种子）。
+九组5,282项检查：既有3,665项、新增1,617项（包含100个地图种子）。
 
 UNITY_BATTLE_UI_PROTOTYPE_PASSED
 Prototype checks: 1617
-Random map seed=260190186; replay identical; actual supply/move/normal battle.
-Per-character A/B groups, locked selected hand across rounds; planning pairs and duel contact; actual battle result=victory; real HP/cost returned; ZiXi B group; 1440x900 and 1000x650.
+Random map seed=2054182341; replay identical; actual supply/move/normal battle.
+Per-character A/B groups, locked selected hand across rounds; planning pairs and duel contact; actual battle result=defeat; real HP/cost returned; ZiXi B group; 1440x900 and 1000x650.
 No HP/damage fixtures; automated shared UI handlers, not full physical input acceptance.
 
 
