@@ -6,13 +6,24 @@ $compilerPath=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.ex
 if(!(Test-Path -LiteralPath (Join-Path $managedPath 'UnityEngine.CoreModule.dll'))) { throw 'Requires the existing Unity Mono player.' }
 $resultPath=Join-Path $projectPath ('TestResults\player-patch-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $resultPath -Force | Out-Null
+
+# 出货程序集：照旧对着 Unity 的 BCL 编，播放器里跑的就是这个。
 $sourcePaths=Get-ChildItem -LiteralPath (Join-Path $projectPath 'Assets\Scripts') -Recurse -File -Filter '*.cs' | ForEach-Object FullName
 $references=@('mscorlib.dll','System.dll','System.Core.dll','netstandard.dll') | ForEach-Object { '/reference:'+(Join-Path $managedPath $_) }
 $references+=Get-ChildItem -LiteralPath $managedPath -Filter 'UnityEngine*.dll' | ForEach-Object { '/reference:'+$_.FullName }
 $outputPath=Join-Path $resultPath 'Assembly-CSharp.dll'
 & $compilerPath /nologo /noconfig /nostdlib /target:library /optimize+ /codepage:65001 "/out:$outputPath" @references @sourcePaths
 if($LASTEXITCODE -ne 0) { throw 'Compilation failed; existing player was not modified.' }
-$compiled=[System.Reflection.Assembly]::LoadFrom($outputPath)
+
+# 离线预检：Core 是纯 .NET，单独对着本机 .NET 4.0 的 BCL 编一遍。
+# 用 Unity 的 BCL 编出来的东西在本机运行时解析不到 Split(char,StringSplitOptions) 这类新重载，
+# 所以预检必须走本机 BCL；出货程序集仍然是 Unity BCL，两边分开。
+$corePaths=Get-ChildItem -LiteralPath (Join-Path $projectPath 'Assets\Scripts\Core') -Recurse -File -Filter '*.cs' | ForEach-Object FullName
+$preflightPath=Join-Path $resultPath 'Preflight-Core.dll'
+& $compilerPath /nologo /target:library /optimize+ /codepage:65001 "/out:$preflightPath" @corePaths
+if($LASTEXITCODE -ne 0) { throw 'Preflight compilation failed; existing player was not modified.' }
+
+$compiled=[System.Reflection.Assembly]::LoadFrom($preflightPath)
 $prototypeCount=$compiled.GetType('ClashRoguelike.PrototypeChecks',$true).GetMethod('Run').Invoke($null,@())
 if($prototypeCount -le 0){throw 'Prototype checks did not run.'}
 $ruleCount=$compiled.GetType('ClashRoguelike.BattleRuleChecks',$true).GetMethod('Run').Invoke($null,@())
@@ -23,14 +34,16 @@ $forestCount=$compiled.GetType('ClashRoguelike.ForestChecks',$true).GetMethod('R
 $coinCount=$compiled.GetType('ClashRoguelike.CoinChecks',$true).GetMethod('Run').Invoke($null,@())
 $newCount=$compiled.GetType('ClashRoguelike.NewCharacterChecks',$true).GetMethod('Run').Invoke($null,@())
 $roleCount=$compiled.GetType('ClashRoguelike.TouhouChecks',$true).GetMethod('Run').Invoke($null,@())
+$uiCount=$compiled.GetType('ClashRoguelike.UiChecks',$true).GetMethod('Run').Invoke($null,@())
 if($newCount -le 0){throw "New character checks did not run."}
 if($roleCount -le 0) { throw 'Role checks did not run; existing player was not modified.' }
 if($coinCount -le 0) { throw 'Coin checks did not run; existing player was not modified.' }
+if($uiCount -le 0) { throw 'UI checks did not run; existing player was not modified.' }
 if($ruleCount -le 0 -or $clickCount -le 0 -or $panelCount -le 0 -or $portCount -le 0 -or $forestCount -le 0) { throw 'Checks did not run; existing player was not modified.' }
 $playerAssembly=Join-Path $managedPath 'Assembly-CSharp.dll'
 Copy-Item -LiteralPath $playerAssembly -Destination (Join-Path $resultPath 'Assembly-CSharp.before.dll')
 Copy-Item -LiteralPath $outputPath -Destination $playerAssembly -Force
-$report="SPEED_RULE_CHECKS_PASSED checks=$ruleCount`r`nDIRECT_CLICK_CHECKS_PASSED checks=$clickCount`r`nDYNAMIC_PANEL_CHECKS_PASSED checks=$panelCount`r`nGODOT_PORT_CHECKS_PASSED checks=$portCount`r`nFOREST_CHECKS_PASSED checks=$forestCount`r`nCOIN_CHECKS_PASSED checks=$coinCount`r`nTOUHOU_CHECKS_PASSED checks=$roleCount`r`nNEW_CHARACTER_CHECKS_PASSED checks=$newCount"
+$report="SPEED_RULE_CHECKS_PASSED checks=$ruleCount`r`nDIRECT_CLICK_CHECKS_PASSED checks=$clickCount`r`nDYNAMIC_PANEL_CHECKS_PASSED checks=$panelCount`r`nGODOT_PORT_CHECKS_PASSED checks=$portCount`r`nFOREST_CHECKS_PASSED checks=$forestCount`r`nCOIN_CHECKS_PASSED checks=$coinCount`r`nTOUHOU_CHECKS_PASSED checks=$roleCount`r`nNEW_CHARACTER_CHECKS_PASSED checks=$newCount`r`nUI_FEEDBACK_CHECKS_PASSED checks=$uiCount"
 Set-Content -LiteralPath (Join-Path $resultPath 'checks.txt') -Value $report -Encoding UTF8
 Write-Output $report
 Add-Content -LiteralPath (Join-Path $resultPath 'checks.txt') -Value ("PROTOTYPE_CHECKS_PASSED checks="+$prototypeCount) -Encoding UTF8

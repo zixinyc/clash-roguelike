@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.IO;
 using System.Linq;
@@ -13,8 +13,10 @@ namespace ClashRoguelike
             if(portShown.Outcome!="")return portShown.Outcome=="victory"?"我方 · 胜利":"我方 · 败北";
             if(portBusy)return "我方 · 交锋中    行动已锁定";
             if(portPrepared)return "我方 · 已准备    已锁定 "+portShown.PlanCount+" 项行动";
-            return "我方 · 规划中    已安排 "+portShown.PlanCount+" / "+(portShown.WorldActive?2:6)+" 项行动";
+            return "我方 · 规划中    已安排 "+portShown.PlanCount+" / "+PortActionLimit()+" 项行动";
         }
+        int PortActionLimit()
+        {return portShown.WorldActive?TouhouRoles.WorldActionSlots:portShown.Heroes.Count(PatchouliSkills.LivingFighter);}
         string PortEnemyStatus()
         {
             if(portShown.Outcome!="")return portShown.Outcome=="victory"?"敌方 · 已击败":"敌方 · 获胜";
@@ -22,10 +24,10 @@ namespace ClashRoguelike
         }
         string PortGuide()
         {
-            if(portShown.Outcome!="")return "战斗结束 · 点击「返回地图」继续，或按 R 重新探索。";
+            if(portShown.Outcome!="")return "战斗结束 · 点击右上角「退出」返回地图。";
             if(portBusy)return "双方已锁定，按速度依次交锋；可点击「跳过演出」。";
             if(portPrepared)return "安排已锁定，点击「演示一回合」开始；需要修改请点击「调整安排」。";
-            if(portCard!="")return "② 已选「"+PortContent.Card(portCard).Name+"」→ 点击敌方角色或行动格完成目标指定；Esc 取消选牌。";
+            if(portCard!="")return "已选「"+PortContent.Card(portCard).Name+"」 · 拖线到敌人或行动格，也可点击目标完成目标指定。";
             if(portShown.PlanCount>0)return "已安排 "+portShown.PlanCount+" 项行动 · 可继续选角色与技能，或点击「准备交锋」；未安排的行动待机。";
             return portHero<0?"① 点击己方角色 → ② 选择技能与目标 → ③ 准备交锋，再演示一回合。":"② 为「"+PortHeroName(portHero)+"」选择技能并指定目标；守夜对自身，定向防御需选择敌方行动。";
         }
@@ -44,7 +46,7 @@ namespace ClashRoguelike
         }
         void DrawPortStatus(Rect r,Color accent,string value)
         {
-            Fill(r,Color.Lerp(Hex("12202A"),accent,0.12f));Fill(new Rect(r.x,r.y,4,r.height),accent);
+            Fill(r,Color.Lerp(Hex("34161F"),accent,0.12f));Fill(new Rect(r.x,r.y,4,r.height),accent);
             Label(r.x+17,r.y+8,r.width-30,34,value,20,accent,TextAnchor.MiddleLeft);
         }
         void ArrangePortAutomatically()
@@ -56,19 +58,24 @@ namespace ClashRoguelike
         void DrawPortCenteredActions()
         {
             bool planning=!portBusy&&!portPrepared&&portShown.Outcome=="";
-            GUI.enabled=planning;
-            if(Btn(new Rect(430,566,160,38),"自动安排"))ArrangePortAutomatically();
-            GUI.enabled=portShown.Outcome==""&&(CanPreparePort||portPrepared&&!portBusy);
-            if(Btn(new Rect(605,566,230,38),portBusy?"交锋进行中":portPrepared?"演示一回合 · Enter":"准备交锋 · Enter",true))
-            {if(portPrepared)StartPortRound();else PreparePortRound();}
-            GUI.enabled=true;
-            if(portBusy){if(Btn(new Rect(850,566,160,38),"跳过演出"))SkipPort();}
-            else if(portPrepared){if(Btn(new Rect(850,566,160,38),"调整安排"))portPrepared=false;}
+            UiSetShortcut("port.primary","Enter");
+            UiSetShortcut("port.third","Delete");
+            if(UiButton("port.auto",new Rect(430,566,160,38),"自动安排",false,planning))ArrangePortAutomatically();
+            bool canPrepare=portShown.Outcome==""&&(CanPreparePort||portPrepared&&!portBusy);
+            string primaryLabel=portBusy?"交锋进行中":portPrepared?"演示一回合 · Enter":"准备交锋 · Enter";
+            if(UiButton("port.primary",new Rect(605,566,230,38),primaryLabel,true,canPrepare,portBusy))
+            {
+                if(portPrepared)StartPortRound();else PreparePortRound();
+                UiConfirm("port.primary");
+            }
+            if(portBusy){if(UiButton("port.third",new Rect(850,566,160,38),"跳过演出",false,true))SkipPort();}
+            else if(portPrepared){if(UiButton("port.third",new Rect(850,566,160,38),"调整安排",false,true))portPrepared=false;}
             else
             {
-                GUI.enabled=planning&&portSlot>=0&&portShown.HeroSlots[portSlot].Active;
-                if(Btn(new Rect(850,566,160,38),"撤销当前行动"))CancelPortSlot();GUI.enabled=true;
+                bool canUndo=planning&&portSlot>=0&&portShown.HeroSlots[portSlot].Active;
+                if(UiButton("port.third",new Rect(850,566,160,38),"撤销当前行动",false,canUndo))CancelPortSlot();
             }
+            GUI.enabled=true;
         }
         IEnumerator GuidanceSmoke(string folder)
         {

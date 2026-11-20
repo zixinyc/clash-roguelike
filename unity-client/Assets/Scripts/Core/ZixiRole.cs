@@ -79,7 +79,13 @@ namespace ClashRoguelike
         void AttackZixi(List<PortEvent> events,PortSlot slot,int target,CoinAction action,PortCard card,ZixiContext ctx)
         {
             if(ctx!=null&&ctx.Blast>0)
-            {while(action.NextAttack(new CoinRandomSource(FlipCoin))!=null){}action.CompleteAttack();for(int i=0;i<State.Enemies.Count;i++)DealNewHit(events,slot.Unit,i,ctx.Blast,"status_damage");Emit(events,"ability","概率一事件：轰炸全体 "+ctx.Blast+"，因果清空；消耗原技能硬币",slot.Unit);return;}
+            {
+                while(action.NextAttack(new CoinRandomSource(FlipCoin))!=null){}
+                action.CompleteAttack();
+                DealGroupHit(events,slot.Unit,card.Name,Enumerable.Range(0,State.Enemies.Count),i=>ctx.Blast);
+                Emit(events,"ability","概率一事件：轰炸全体 "+ctx.Blast+"，因果清空；消耗原技能硬币",slot.Unit);
+                return;
+            }
             Attack(events,true,slot.Unit,target,action,card);
         }
         void AbsorbZixiShield(Unit victim,int blocked)

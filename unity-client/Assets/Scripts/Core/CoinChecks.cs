@@ -7,7 +7,7 @@ namespace ClashRoguelike
     {
         static int checks;static void Check(bool ok,string message){checks++;if(!ok)throw new Exception("Coin rules: "+message);}
         sealed class Script:ICoinRandom
-        {readonly Queue<bool> faces;public int Calls;public Script(params bool[] results){faces=new Queue<bool>(results);}public bool Flip(double chance){Calls++;if(faces.Count==0)throw new Exception("Unexpected extra coin roll");return faces.Dequeue();}}
+        {readonly List<bool> faces;int faceIndex;public int Calls;public Script(params bool[] results){faces=new List<bool>(results);}public bool Flip(double chance){Calls++;if(faceIndex>=faces.Count)throw new Exception("Unexpected extra coin roll");return faces[faceIndex++];}}
         sealed class Constant:ICoinRandom{public int Calls;public bool Flip(double chance){Calls++;return false;}}
         sealed class Recorded:ICoinRandom{readonly BattleRandom rng;public int Calls;public Recorded(uint seed){rng=new BattleRandom(seed);}public bool Flip(double c){Calls++;return rng.Flip(c);}}
         sealed class TailsPort:PortBattleRules{protected override bool FlipCoin(double chance){return false;}}

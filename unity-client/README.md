@@ -1,15 +1,19 @@
-# Unity 试玩项目
+# 东方异像谭 · Unity 项目
 
-## 试玩与编辑
+## Windows 试玩
 
-- Windows x64 玩家可直接解压 [试玩包](../releases/ClashRoguelike-Unity-Windows-touhou.zip)，运行 `ClashRoguelike.exe`。同目录下的 `ClashRoguelike_Data`、`MonoBleedingEdge` 和 `UnityPlayer.dll` 需要一起保留。
-- Unity Hub 添加本目录，使用 **Unity 2022.3.62f3c1**，打开 `Assets/Scenes/Battle.unity` 后点 Play。可以从 `Clash Roguelike` 菜单运行规则检查或构建 Windows 版。
-- 本次试玩成品使用现有 Windows Unity Mono 运行时与重新编译的游戏程序集。若使用 `Tools/BuildLocalPlayer.ps1` 更新程序集，先把试玩包解压至 `Builds/Windows/`，然后在 PowerShell 7 运行该脚本。
+解压 [Windows x64 试玩包](../releases/ClashRoguelike-Unity-Windows-touhou.zip)，运行 `ClashRoguelike.exe`。保留同目录下的 `ClashRoguelike_Data`、`MonoBleedingEdge` 和 `UnityPlayer.dll`。下载整个分支的 ZIP 后，也可在解压目录双击根目录的 `启动Unity单机版.cmd`。
 
-## 操作
+- 普通探索有五层，抵达第五层取得异动石即可通关。红魔馆有四场招募挑战，战胜后解锁相应角色。
+- 人机 PVP 有四层，从五个主题中随机选取四个。同格遭遇后，双方各自选技，准备后统一结算。持有异动石的一方需要找到出口撤离。
+- 战斗选中己方立绘和符卡后点击敌人指定目标。未在指定目标时，可点敌方立绘查看技能资料。顶栏可调动效与声音。
 
-点击高亮的相邻石板移动。进入功能格后可查看结算，位于上层入口或下层传送时可花一行动切层。地图按 Enter 结束回合。单机在第五层取石通关。设置可切换为本地双队，同机轮流操作，持石队须从第三层或第四层撤离。战败在原层永远亭休整一个地图回合。
+完整操作、角色与技能见[游戏说明书](游戏说明书.md)。
 
-战前每名角色有 A/B 两套方案，每套保留 1–4 张专属技能，通用牌另计。确认后按己方角色、技能、目标的顺序安排。配装记忆保留于当前游戏会话。设置保留旧预设地图，`--grid` 和 `--legacy` 分别进入旧网格和旧单场演示。
+## 编辑与构建
 
-[更新内容、已验收路径与剩余事项](VALIDATION.md)
+1. 在 Unity Hub 添加本目录。项目使用 **Unity 2022.3.62f3c1**。
+2. 打开 `Assets/Scenes/Battle.unity`，点击 Play。
+3. 从 `Clash Roguelike` 菜单打开规则检查或构建 Windows 版。也可在 PowerShell 7 使用 `Tools/BuildLocalPlayer.ps1`，前提是 Windows 试玩包已解压至 `Builds/Windows/`。
+
+当前提供的成品复用了 Windows Mono 播放器，并重新编译了游戏脚本。[更新与运行验收](VALIDATION.md) · [界面反馈设计](UI_FEEDBACK_DESIGN.md)

@@ -58,12 +58,13 @@ namespace ClashRoguelike
             if(fogVersion==run.Version)return;fogVersion=run.Version;int w=Fog.width,h=Fog.height;var pixels=new Color32[w*h];
               if(project==null)project=n=>new Vector2(n.X,n.Y);
               var known=run.Map.Nodes.Where(n=>intel.Known.Contains(n.Id)).Select(project).ToArray();var visible=run.Map.Nodes.Where(n=>intel.Visible.Contains(n.Id)).Select(project).ToArray();
+            float rememberedRadius=run.PvpFog?.014f:.035f,visibleRadius=run.PvpFog?.006f:.019f;
             for(int y=0;y<h;y++)for(int x=0;x<w;x++)
             {
                 float u=(float)x/(w-1),v=1-(float)y/(h-1),dk=100,dv=100;
                   foreach(var n in known){float dx=(u-n.x)*1.5f,dy=v-n.y;dk=Math.Min(dk,dx*dx+dy*dy);}
                   foreach(var n in visible){float dx=(u-n.x)*1.5f,dy=v-n.y;dv=Math.Min(dv,dx*dx+dy*dy);}
-                float k=1-Mathf.SmoothStep(0,1,Mathf.InverseLerp(.005f,.035f,dk)),s=1-Mathf.SmoothStep(0,1,Mathf.InverseLerp(.002f,.019f,dv));float alpha=Mathf.Lerp(.94f,.63f,k);alpha=Mathf.Lerp(alpha,.08f,s);
+                float k=1-Mathf.SmoothStep(0,1,Mathf.InverseLerp(.005f,rememberedRadius,dk)),s=1-Mathf.SmoothStep(0,1,Mathf.InverseLerp(.002f,visibleRadius,dv));float alpha=Mathf.Lerp(.94f,.63f,k);alpha=Mathf.Lerp(alpha,.08f,s);
                 float cloud=Mathf.Sin(u*32+Mathf.Sin(v*17))*Mathf.Sin(v*26+u*11);alpha=Mathf.Clamp01(alpha+cloud*.025f);byte gray=(byte)(20+Math.Max(0,cloud)*10);pixels[y*w+x]=new Color32(gray,(byte)(gray+2),(byte)(gray+4),(byte)(alpha*255));
             }
             Fog.SetPixels32(pixels);Fog.Apply();

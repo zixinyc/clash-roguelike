@@ -26,10 +26,11 @@ namespace ClashRoguelike
     {
         public string Name {get;private set;}public int BasePower {get;private set;}public int ClashCoinPower {get;private set;}public int AttackCoinPower {get;private set;}public int CoinCount {get;private set;}
         public ReadOnlyCollection<CoinEffect> Effects {get;private set;}
-        public CoinSkill(string name,int basePower,int clashCoinPower,int attackCoinPower,int coinCount,IEnumerable<CoinEffect> effects=null)
+        public bool SplitAttackPower {get;private set;}
+        public CoinSkill(string name,int basePower,int clashCoinPower,int attackCoinPower,int coinCount,IEnumerable<CoinEffect> effects=null,bool splitAttackPower=false)
         {
             if(string.IsNullOrEmpty(name)||coinCount<0||coinCount>64||Math.Abs((long)basePower)>100000||Math.Abs((long)clashCoinPower)>100000||Math.Abs((long)attackCoinPower)>100000)throw new ArgumentException("Invalid coin skill data.");
-            Name=name;BasePower=basePower;ClashCoinPower=clashCoinPower;AttackCoinPower=attackCoinPower;CoinCount=coinCount;
+            Name=name;BasePower=basePower;ClashCoinPower=clashCoinPower;AttackCoinPower=attackCoinPower;CoinCount=coinCount;SplitAttackPower=splitAttackPower;
             var copy=effects==null?new List<CoinEffect>():effects.ToList();if(copy.Any(x=>x==null))throw new ArgumentException("Null skill effect.");Effects=copy.AsReadOnly();
         }
     }
@@ -52,7 +53,7 @@ namespace ClashRoguelike
     {
         public string Type;public bool[] LeftFaces=new bool[0],RightFaces=new bool[0];
         public int Round,LeftBase,RightBase,LeftClashPower,RightClashPower,LeftPower,RightPower,LeftBefore,RightBefore,LeftRemaining,RightRemaining,Winner=-1,FinalWinner=-1;
-        public int AttackBase,AttackCoinPower,AttackCarry,AttackAccumulated,RawModifier,AttackIndex,AttackBudget,RemainingAttackCoins,RawDamage,TotalRawDamage;public bool Heads;
+        public int AttackBase,AttackCoinPower,AttackCarry,AttackAccumulated,RawModifier,AttackIndex,AttackBudget,RemainingAttackCoins,RawDamage,TotalRawDamage;public bool Heads,SplitAttackPower;
         public CoinActionSnapshot Left,Right;public string[] Effects=new string[0];
         public CoinStep Copy(){var c=(CoinStep)MemberwiseClone();c.LeftFaces=(bool[])LeftFaces.Clone();c.RightFaces=(bool[])RightFaces.Clone();c.Effects=(string[])Effects.Clone();c.Left=Left==null?null:CopyState(Left);c.Right=Right==null?null:CopyState(Right);return c;}
         static CoinActionSnapshot CopyState(CoinActionSnapshot s){return new CoinActionSnapshot{Name=s.Name,CoinCount=s.CoinCount,RemainingCoins=s.RemainingCoins,ClashRound=s.ClashRound,ClashWinner=s.ClashWinner,AttackCount=s.AttackCount,TotalRawDamage=s.TotalRawDamage,AttackCoinTotal=s.AttackCoinTotal,Phase=s.Phase};}
@@ -115,9 +116,11 @@ namespace ClashRoguelike
             int basis=Value(CoinStat.BasePower,false),power=Value(CoinStat.AttackCoinPower,false),modifier=checked(Value(CoinStat.RawDamage,false)+(AttackAdjustment==null?0:AttackAdjustment(attacks+1))),carry=attackCoinTotal;
             // Carry only prior attack-coin contributions, never prior base, raw modifiers or clash rolls.
             attackCoinTotal=checked(attackCoinTotal+(heads?power:0));
-            int raw=checked(basis+attackCoinTotal+modifier);
+            int appliedCoinPower=attackCoinTotal;
+            if(skill.SplitAttackPower){if(attacks>0)basis=0;carry=0;appliedCoinPower=heads?power:0;}
+            int raw=checked(basis+appliedCoinPower+modifier);
             remaining--;attacks++;totalRaw=checked(totalRaw+raw);
-            return new CoinStep{Type="attack",Heads=heads,AttackBase=basis,AttackCoinPower=power,AttackCarry=carry,AttackAccumulated=attackCoinTotal,RawModifier=modifier,AttackIndex=attacks,AttackBudget=attackBudget,RemainingAttackCoins=remaining,RawDamage=raw,TotalRawDamage=totalRaw,Left=Snapshot(),Effects=DrainEffects()};
+            return new CoinStep{Type="attack",Heads=heads,SplitAttackPower=skill.SplitAttackPower,AttackBase=basis,AttackCoinPower=power,AttackCarry=carry,AttackAccumulated=appliedCoinPower,RawModifier=modifier,AttackIndex=attacks,AttackBudget=attackBudget,RemainingAttackCoins=remaining,RawDamage=raw,TotalRawDamage=totalRaw,Left=Snapshot(),Effects=DrainEffects()};
         }
         // Called by the damage adapter only when a live target was actually hit.
         public void NotifyHit(bool heads){if(phase!="attack"||attacks==0||notifiedAttack==attacks)throw new InvalidOperationException("No unreported attack to notify.");notifiedAttack=attacks;Trigger(CoinTrigger.Hit,heads,true);}

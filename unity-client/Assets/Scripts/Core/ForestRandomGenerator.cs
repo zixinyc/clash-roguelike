@@ -6,6 +6,9 @@ namespace ClashRoguelike
 {
     public static class ForestRandomGenerator
     {
+        public const int PvpRoadColumns=13, PvpRoadRows=9;
+        public const int PvpOpeningStairDistance=10;
+
         public static ForestMapDefinition Generate(int seed) { return GenerateFloor(seed, 1, 5); }
 
         public static ForestMapDefinition[] GenerateFloors(int seed, bool pvp)
@@ -37,10 +40,16 @@ namespace ClashRoguelike
                 goals.Length==0||map.Edges.Count(e=>!e.Hidden)-map.Nodes.Count+1<3) return false;
             var starts=map.Nodes.Where(n=>n.Kind==ForestNodeKind.Spawn||n.Kind==ForestNodeKind.UpwardEntrance);
             if(starts.Any(start=>goals.Any(goal=>Path(map,start.Id,goal.Id,n=>!Risk(n.Kind)).Count==0)))return false;
+            if(total==4&&floor==1)
+            {
+                var spawns=starts.ToArray();
+                if(spawns.Length!=2||map.Distance(spawns[0].Id,spawns[1].Id)<=ForestCampaign.PvpOpeningTurns*6||
+                    spawns.Any(start=>goals.Any(goal=>map.Distance(start.Id,goal.Id)<PvpOpeningStairDistance)))return false;
+            }
             var recovery=map.Nodes.Where(n=>n.Kind==ForestNodeKind.Camp||n.Kind==ForestNodeKind.Supply).ToArray();
             if(map.Nodes.Where(n=>n.Kind==ForestNodeKind.Elite).Any(elite=>
                 !recovery.Any(stop=>map.Distance(elite.Id,stop.Id,false)<=2)))return false;
-            var shortcuts=map.Edges.Where(e=>e.Hidden&&e.IntelCost>0).ToArray();
+            var shortcuts=map.Edges.Where(e=>e.Hidden&&e.Kind==ForestRouteKind.Shortcut).ToArray();
             if(shortcuts.Any(e=>map.Distance(e.From,e.To,false)<=e.ActionCost))return false;
             return map.Nodes.Where(n=>n.Kind==ForestNodeKind.Danger).All(danger=>
                 shortcuts.Any(e=>Math.Min(map.Distance(danger.Id,e.From,false),map.Distance(danger.Id,e.To,false))<=3));
@@ -54,7 +63,9 @@ namespace ClashRoguelike
 
         sealed class FloorBuilder
         {
-            const int Width = ForestMapDefinition.RoadColumns;
+            int Width {get{return map.RoadColumns;}}
+            int Height {get{return map.RoadRows;}}
+            bool Larger {get{return total==4;}}
             readonly int floor, total;
             readonly Random random;
             readonly ForestMapDefinition map;
@@ -68,6 +79,7 @@ namespace ClashRoguelike
                 this.total = total;
                 this.random = random;
                 map = new ForestMapDefinition { Seed = seed, FormatVersion = 2, RoadGrid = true };
+                if(Larger){map.RoadColumns=PvpRoadColumns;map.RoadRows=PvpRoadRows;}
             }
 
             public ForestMapDefinition Build()
@@ -81,7 +93,7 @@ namespace ClashRoguelike
                 var hidden = map.Edge(danger.Id, cells[shortcut.B].Id);
                 hidden.Hidden = true;
                 hidden.ActionCost = 2;
-                hidden.IntelCost = 1;
+
 
                 if ((floor == 1 || floor == total-1) && AddSpur(ForestNodeKind.Elite, true) == null) return null;
                 bool patrol = floor == 1 || floor == total - 1;
@@ -91,15 +103,25 @@ namespace ClashRoguelike
 
                 var free = map.Nodes.Where(n => n.Kind == ForestNodeKind.Road).ToList();
                 free.RemoveAll(reservedRecovery.Contains);
-                var start = Draw(free, ForestNodeKind.Spawn);
-                Draw(free, ForestNodeKind.Spawn);
-                Draw(free, ForestNodeKind.Spawn);
+                ForestNode start;
+                if(Larger&&floor==1)
+                {
+                    start=PlaceOppositeSpawns(free);
+                    if(start==null)return null;
+                }
+                else
+                {
+                    start=Draw(free, ForestNodeKind.Spawn);
+                    Draw(free, ForestNodeKind.Spawn);
+                    Draw(free, ForestNodeKind.Spawn);
+                }
                 map.StartId = start.Id;
                 var goals = new List<ForestNode>();
                 int goalCount = floor == total ? 1 : random.Next(1,3);
                 for (int i = 0; i < goalCount; i++)
                 {
-                    var candidates = free.Where(n => n.Kind == ForestNodeKind.Road).ToArray();
+                    var candidates = free.Where(n => n.Kind == ForestNodeKind.Road&&
+                        (!(Larger&&floor==1)||OpeningStair(n))).ToArray();
                     if (candidates.Length == 0) return null;
                     var goal = candidates[random.Next(candidates.Length)];
                     Set(goal, floor == total ? ForestNodeKind.MutationStone : ForestNodeKind.DownwardTransition);
@@ -141,17 +163,41 @@ namespace ClashRoguelike
                 return map;
             }
 
+
+            ForestNode PlaceOppositeSpawns(List<ForestNode> free)
+            {
+                var pairs=new[]{new[]{0,Width*Height-1},new[]{Width-1,(Height-1)*Width}}
+                    .Where(pair=>pair.All(cell=>free.Contains(cells[cell]))).ToArray();
+                if(pairs.Length==0)return null;
+                var selected=pairs[random.Next(pairs.Length)];
+                var start=cells[selected[0]];
+                foreach(int cell in selected)
+                {
+                    var spawn=cells[cell];
+                    Set(spawn,ForestNodeKind.Spawn);
+                    free.Remove(spawn);
+                }
+                return start;
+            }
+
+            bool OpeningStair(ForestNode node)
+            {
+                return map.Nodes.Where(n=>n.Kind==ForestNodeKind.Spawn)
+                    .All(spawn=>Math.Abs(map.RoadColumn(spawn)-map.RoadColumn(node))+
+                        Math.Abs(map.RoadRow(spawn)-map.RoadRow(node))>=PvpOpeningStairDistance);
+            }
+
             void BuildRoads()
             {
                 var vertices = new List<int>();
-                for (int y = 0; y < ForestMapDefinition.RoadRows; y += 2)
+                for (int y = 0; y < Height; y += 2)
                     for (int x = 0; x < Width; x += 2)
                     {
                         int cell = y*Width+x;
                         vertices.Add(cell);
                         Tile(cell);
                         if (x+2 < Width) unused.Add(new Corridor { A=cell, B=cell+2 });
-                        if (y+2 < ForestMapDefinition.RoadRows) unused.Add(new Corridor { A=cell, B=cell+2*Width });
+                        if (y+2 < Height) unused.Add(new Corridor { A=cell, B=cell+2*Width });
                     }
                 var reached = new HashSet<int> { vertices[random.Next(vertices.Count)] };
                 while (reached.Count < vertices.Count)
@@ -163,7 +209,7 @@ namespace ClashRoguelike
                     reached.Add(edge.A);
                     reached.Add(edge.B);
                 }
-                int loopCount = random.Next(4,7);
+                int loopCount = Larger?random.Next(8,13):random.Next(4,7);
                 for (int i=0; i<loopCount; i++) AddCorridor(TakeCorridor(), ForestRouteKind.Loop);
             }
 
@@ -201,13 +247,15 @@ namespace ClashRoguelike
             {
                 // Two connected battle tiles outside the safe skeleton keep the patrol
                 // present without placing it on a compulsory route.
-                var pairs = from y in new[] { 1, 3, 5 }
-                            from x in new[] { 1, 3, 5, 7 }
+                var pairs = from row in Enumerable.Range(0,Height/2)
+                            from col in Enumerable.Range(0,Width/2)
+                            let y=2*row+1
+                            let x=2*col+1
                             let pocket = y*Width+x
                             from first in unused
-                            where ForestMapDefinition.RoadAdjacent(first.Mid,pocket)
+                            where map.RoadAdjacent(first.Mid,pocket)
                             from second in unused
-                            where first != second && ForestMapDefinition.RoadAdjacent(second.Mid,pocket)
+                            where first != second && map.RoadAdjacent(second.Mid,pocket)
                             select new { Pocket=pocket, First=first, Second=second };
                 var options = pairs.ToArray();
                 if (options.Length == 0) return false;
@@ -230,8 +278,8 @@ namespace ClashRoguelike
 
             ForestNode Tile(int cell)
             {
-                var node = new ForestNode("f"+floor+"c"+cell, ForestMapDefinition.RoadX(cell%Width),
-                    ForestMapDefinition.RoadY(cell/Width), ForestNodeKind.Road, Name(ForestNodeKind.Road))
+                var node = new ForestNode("f"+floor+"c"+cell, map.RoadX(cell%Width),
+                    map.RoadY(cell/Width), ForestNodeKind.Road, Name(ForestNodeKind.Road))
                     { FloorIndex = floor-1 };
                 cells.Add(cell,node);
                 map.Nodes.Add(node);
@@ -261,20 +309,21 @@ namespace ClashRoguelike
 
         public static List<ForestEdge> Path(ForestMapDefinition map,string from,string to,Func<ForestNode,bool> allowed)
         {
-            var queue = new Queue<string>();
+            var queue = new List<string>();
             var previous = new Dictionary<string,ForestEdge>();
-            queue.Enqueue(from);
+            queue.Add(from);
             previous[from] = null;
-            while (queue.Count > 0)
+            int head = 0;
+            while (head < queue.Count)
             {
-                string current = queue.Dequeue();
+                string current = queue[head++];
                 if (current == to) break;
                 foreach (var edge in map.Links(current).Where(e => !e.Hidden))
                 {
                     string next = edge.Other(current);
                     if (previous.ContainsKey(next) || !allowed(map.Node(next))) continue;
                     previous[next] = edge;
-                    queue.Enqueue(next);
+                    queue.Add(next);
                 }
             }
             var result = new List<ForestEdge>();

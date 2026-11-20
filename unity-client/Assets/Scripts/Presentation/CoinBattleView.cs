@@ -1,11 +1,46 @@
-﻿using System;
+using System;
 using System.Linq;
 using UnityEngine;
 namespace ClashRoguelike
 {
     public sealed partial class BattleGame
     {
-        Texture2D coinDisc;Vector2 coinLogScroll;int coinLogCount;string coinLogLast="";
+        Texture2D coinDisc;
+        bool battleJournalOpen,battleJournalScrollToEnd;
+        Vector2 battleJournalScroll;
+        Action battleExit;
+        string battleExitPrompt;
+        bool BattleOverlayOpen {get{return battleJournalOpen||battleExit!=null;}}
+
+        void CloseBattleOverlay(){battleJournalOpen=false;battleExit=null;CloseEnemySkillDetails();}
+
+        void OpenBattleJournal()
+        {
+            CancelTargetLine();
+            battleJournalScrollToEnd=true;
+            battleJournalOpen=true;
+        }
+
+        void RequestBattleExit(Action exit,string confirmation)
+        {
+            CancelTargetLine();
+            if(confirmation==null)exit();
+            else{battleExitPrompt=confirmation;battleExit=exit;}
+        }
+
+        void ConfirmBattleExit()
+        {
+            var confirm=battleExit;
+            CloseBattleOverlay();
+            if(confirm!=null)confirm();
+        }
+
+        void DrawBattleButtons(Action exit,string confirmation=null,bool allowSpeed=true)
+        {
+            if(allowSpeed&&Btn(new Rect(1124,25,103,33),"演出 ×"+speed))speed=speed==1?2:speed==2?4:1;
+            if(Btn(new Rect(1236,25,80,33),"记录"))OpenBattleJournal();
+            if(Btn(new Rect(1325,25,85,33),"退出"))RequestBattleExit(exit,confirmation);
+        }
         string CoinHint(CoinStep c,string type)
         {
             if(type=="clash_end")return "最终拼点胜者："+(c.FinalWinner==0?c.Left.Name:c.Right.Name)+"。只有胜方以余币攻击。";
@@ -21,8 +56,8 @@ namespace ClashRoguelike
                 coinDisc=new Texture2D(n,n,TextureFormat.RGBA32,false);coinDisc.SetPixels(pixels);coinDisc.Apply();
             }
             bool rolling=animation<.38f;float width=size*(rolling?Mathf.Max(.12f,Mathf.Abs(Mathf.Cos(animation*24))):1);
-            Color c=lost?Red:rolling?Gold:heads?Gold:Hex("62757E");Color previous=GUI.color;GUI.color=c;GUI.DrawTexture(new Rect(p.x-width/2,p.y-size/2,width,size),coinDisc);GUI.color=previous;
-            if(width>size*.65f)Label(p.x-size/2,p.y-size*.38f,size,size*.8f,rolling?"?":heads?"正":"反",(int)(size*.43f),Hex("101920"),TextAnchor.MiddleCenter);
+            Color c=lost?Red:rolling?Gold:heads?Gold:Hex("A66D78");Color previous=GUI.color;GUI.color=c;GUI.DrawTexture(new Rect(p.x-width/2,p.y-size/2,width,size),coinDisc);GUI.color=previous;
+            if(width>size*.65f)Label(p.x-size/2,p.y-size*.38f,size,size*.8f,rolling?"?":heads?"正":"反",(int)(size*.43f),Hex("271017"),TextAnchor.MiddleCenter);
             if(lost&&!rolling){Line(p+new Vector2(-size*.45f,-size*.45f),p+new Vector2(size*.45f,size*.45f),Red,2);Line(p+new Vector2(-size*.45f,size*.45f),p+new Vector2(size*.45f,-size*.45f),Red,2);}
         }
         void CoinFaces(bool[] faces,float x,float y,float width,float animation,bool lose)
@@ -33,14 +68,36 @@ namespace ClashRoguelike
         }
         void DrawCoinPanel(CoinStep c,string type,float animation,int damage)
         { DrawCompactCoins(c,type,animation,damage); }
-        void DrawBattleJournal()
+        bool DrawBattleOverlay(System.Collections.Generic.IEnumerable<string> history)
         {
-            bool port=adventureMode&&portRules!=null;float journalY=port?527:535,journalHeight=port?112:132;
-            Panel(new Rect(1080,journalY,330,journalHeight),Hex("111C24"),Hex("35474F"));Label(1094,journalY+6,302,23,"战斗记录 · 可滚动查看",13,Gold);
-            text.fontSize=11;text.wordWrap=true;var heights=log.Select(s=>Math.Max(22,text.CalcHeight(new GUIContent(s),283)+6)).ToArray();float total=heights.Sum();string last=log.LastOrDefault()??"";
-            if(coinLogCount!=log.Count||coinLogLast!=last){coinLogCount=log.Count;coinLogLast=last;coinLogScroll.y=total;}
-            coinLogScroll=GUI.BeginScrollView(new Rect(1090,journalY+34,310,journalHeight-43),coinLogScroll,new Rect(0,0,289,total));float top=0;
-            for(int i=0;i<log.Count;i++){Label(1,top,283,heights[i],log[i],11,i==log.Count-1?Pale:Muted);top+=heights[i];}GUI.EndScrollView();
+            if(!BattleOverlayOpen)return false;
+            if(battleExit!=null)
+            {
+                Panel(new Rect(435,286,570,250),Hex("4A202A"),Gold);
+                Label(464,310,512,39,"退出战斗？",23,Gold);
+                Label(464,369,512,66,battleExitPrompt,17,Pale);
+                if(Btn(new Rect(464,464,210,42),"取消"))CloseBattleOverlay();
+                if(Btn(new Rect(705,464,270,42),"确认退出",true))ConfirmBattleExit();
+                return true;
+            }
+            Panel(new Rect(200,89,1040,704),Hex("2B121A"),Hex("703541"));
+            Label(225,111,800,40,"战斗记录",24,Gold);
+            if(Btn(new Rect(1325,25,85,33),"关闭"))CloseBattleOverlay();
+            var rows=history.ToArray();
+            if(rows.Length==0)Label(225,171,900,36,"暂无战斗记录",15,Muted);
+            text.fontSize=15;
+            var heights=rows.Select(line=>Math.Max(30,text.CalcHeight(new GUIContent(line),960)+8)).ToArray();
+            float total=heights.Sum();
+            if(battleJournalScrollToEnd){battleJournalScroll=new Vector2(0,Math.Max(0,total-590));battleJournalScrollToEnd=false;}
+            battleJournalScroll=GUI.BeginScrollView(new Rect(225,171,982,590),battleJournalScroll,new Rect(0,0,961,Math.Max(590,total)));
+            float y=0;
+            for(int i=0;i<rows.Length;i++)
+            {
+                Label(0,y,960,heights[i],rows[i],15,i==rows.Length-1?Pale:Muted);
+                y+=heights[i];
+            }
+            GUI.EndScrollView();
+            return true;
         }
     }
 }

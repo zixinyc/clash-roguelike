@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -23,10 +23,15 @@ namespace ClashRoguelike
         public int Hp, MaxHp, Shield, Base, ClashCoinPower, AttackCoinPower, Coins, Target, Speed, MinSpeed, MaxSpeed;
         public List<CoinStatus> Statuses=new List<CoinStatus>();
         public string CharacterId="";public TouhouRoleState RoleState;public ZixiState Zixi;
-        public bool GensokyoNative,ExorcismActive,ExorcismPending,SealActive,SealPending;public int Exorcism;
-        public string StatusFingerprint(){return string.Join(";",Statuses.Select(x=>x.Id+":"+x.Stat+":"+x.Value+":"+x.RemainingTurns).ToArray())+"/"+CharacterId+":"+GensokyoNative+":"+Exorcism+":"+ExorcismActive+":"+ExorcismPending+":"+SealActive+":"+SealPending+":"+(RoleState==null?"":RoleState.Fingerprint())+"/"+(Zixi==null?"":Zixi.Fingerprint());}
+        public bool GensokyoNative,ExorcismActive,ExorcismPending,SealActive,SealPending,Puppet;public int Exorcism,BindingTurn,FlandreDamageDownTurn;
+        public FlandreState Flandre;
+        public RemiliaState Remilia;
+        public int RedMist,PendingRedMist;
+        public PatchouliState Patchouli;
+        public int PatchouliBurn,PendingPatchouliBurn,PatchouliWind,PendingPatchouliWind,PatchouliMoonFrom,PatchouliMoonUntil,SageReadyTurn;
+        public string StatusFingerprint(){return string.Join(";",Statuses.Select(x=>x.Id+":"+x.Stat+":"+x.Value+":"+x.RemainingTurns).ToArray())+"/"+CharacterId+":"+GensokyoNative+":"+Exorcism+":"+ExorcismActive+":"+ExorcismPending+":"+SealActive+":"+SealPending+":"+BindingTurn+":"+(RoleState==null?"":RoleState.Fingerprint())+"/"+(Zixi==null?"":Zixi.Fingerprint())+"/"+(Remilia==null?"":Remilia.Fingerprint())+"/"+RedMist+":"+PendingRedMist+"/"+(Patchouli==null?"":Patchouli.Main+":"+Patchouli.Off)+"/"+PatchouliBurn+":"+PendingPatchouliBurn+":"+PatchouliWind+":"+PendingPatchouliWind+":"+PatchouliMoonFrom+":"+PatchouliMoonUntil+":"+SageReadyTurn;}
         public bool Acted, Spent;
-        public Unit Copy() { var c=(Unit)MemberwiseClone();c.Statuses=Statuses.Select(x=>x.Copy()).ToList();c.RoleState=RoleState==null?null:RoleState.Copy();c.Zixi=Zixi==null?null:Zixi.Copy();return c; }
+        public Unit Copy() { var c=(Unit)MemberwiseClone();c.Statuses=Statuses.Select(x=>x.Copy()).ToList();c.RoleState=RoleState==null?null:RoleState.Copy();c.Zixi=Zixi==null?null:Zixi.Copy();c.Flandre=Flandre==null?null:Flandre.Copy();c.Remilia=Remilia==null?null:Remilia.Copy();c.Patchouli=Patchouli==null?null:Patchouli.Copy();return c; }
     }
     [Serializable] public sealed class PlannedAction
     {

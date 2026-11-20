@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 namespace ClashRoguelike
 {
@@ -12,16 +12,22 @@ namespace ClashRoguelike
         {foreach(var e in b.State.EnemySlots)e.Active=false;b.State.EnemySlots[0].Active=true;b.State.EnemySlots[0].Key="ember";b.State.EnemySlots[0].Target=0;b.State.Enemies[0].Hp=500;b.State.Enemies[0].MaxHp=500;}
         public static int Run()
         {
-            checks=0;Check(PortContent.Cards.Length==33&&PortContent.Hand.Length==16,"translated definitions and hand");
+            checks=0;Check(PortContent.Cards.Length==82&&PortContent.Hand.Length==16,"translated definitions and hand");
             var b=new PortBattleRules();Check(b.State.Cost==30&&b.State.HeroSlots.Count==9&&b.State.EnemySlots.Count==6,"source economy and slot layout");
             Check(b.State.Heroes[0].Hp==48&&b.State.Heroes[1].Hp==42&&b.State.Heroes[2].Hp==46,"source role HP");
             Check(b.Snapshot().EnemySlots.All(x=>x.Key==""&&x.Card==-1)&&b.State.EnemySlots.Any(x=>x.Key!=""),"enemy cards hidden in response snapshot");
             Check(!b.Assign("all_in",0,0)&&!b.Assign("cover",1,0)&&!b.Assign("probe",2,0),"role ownership");
             string before=b.State.Fingerprint();Check(!b.Assign("cleave",0,99)&&b.State.Fingerprint()==before,"invalid target is inert");
-            Check(b.Assign("cleave",0,0)&&b.Assign("guard",0,-1)&&!b.Assign("nova",0,1),"two actions per actor and category limits");
+            Check(b.Assign("cleave",0,0)&&!b.Assign("guard",0,-1)&&!b.Assign("nova",0,1)&&b.Assign("guard",1,-1),"each actor may only choose one skill across categories");
             Check(b.State.Cost==30&&b.State.Reserved==4,"only reserves before locking");
-            Check(!b.Assign("guard",1,-1),"same physical card not duplicated");
-            Check(b.Cancel(2)&&b.State.Reserved==3,"cancel releases slot reservation");
+            Check(!b.Assign("guard",2,-1),"same physical card not duplicated");
+            Check(b.Cancel(5)&&b.State.Reserved==3,"cancel releases slot reservation");
+            var rotation=new PortBattleRules();
+            for(int turn=0;turn<4;turn++)
+            {
+                Check(rotation.State.EnemySlots.Where(s=>s.Active).GroupBy(s=>s.Unit).All(g=>g.Count()==1),"AI opponents plan at most one skill in every rotation");
+                rotation.Resolve();rotation.NextRound();
+            }
             b.Assign("probe",0,0);Check(b.State.HeroSlots[0].Key=="probe"&&b.State.Reserved==1,"same category replaces slot");
             b.State.HeroSlots[0].Speed=b.State.EnemySlots[0].Speed;b.State.EnemySlots[0].Target=2;
             Check(b.PairFor(0)==0,"preserves Unity same-speed interception");

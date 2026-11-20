@@ -38,7 +38,8 @@ namespace ClashRoguelike
             var chosen=new HashSet<string>(keys??new string[0]);if(chosen.Any(k=>!State.Hand.Contains(k)))return false;
             for(int actor=0;actor<3;actor++)
             {
-                int count=chosen.Count(k=>PortContent.Card(k).Owner==actor);
+                if(State.Heroes[actor].MaxHp<=0||State.RecruitLockedSakuya&&actor==1)continue;
+                int count=chosen.Count(k=>State.Owns(actor,PortContent.Card(k)));
                 if(count<1||count>SkillGroups.MaxExclusiveCards)return false;
             }
             foreach(string shared in State.Hand.Where(k=>PortContent.Card(k).Owner<0))chosen.Add(shared);

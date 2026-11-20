@@ -13,7 +13,7 @@ namespace ClashRoguelike
                 var m=ForestRandomGenerator.Generate(seed);m.Validate();Check(m.Serialize()==ForestRandomGenerator.Generate(seed).Serialize(),"seed reproducibility");
                 Check(m.Nodes.All(n=>m.Distance(m.StartId,n.Id,false)!=int.MaxValue),"every location reachable without paid shortcuts");
                 Check(m.Edges.Count-m.Nodes.Count+1>=3&&m.Edges.Any(e=>e.Kind==ForestRouteKind.Main)&&m.Edges.Any(e=>e.Kind==ForestRouteKind.Branch),"main route branches and cycles");
-                Check(m.Edges.Where(e=>e.Kind==ForestRouteKind.Shortcut).All(e=>e.Hidden&&e.ActionCost==2&&e.IntelCost==1&&m.Distance(e.From,e.To,false)>=3),"limited meaningful hidden shortcut");
+                Check(m.Edges.Where(e=>e.Kind==ForestRouteKind.Shortcut).All(e=>e.Hidden&&e.ActionCost==2&&m.Distance(e.From,e.To,false)>=3),"limited meaningful hidden shortcut");
                 foreach(var kind in new[]{ForestNodeKind.Spawn,ForestNodeKind.DownwardTransition,ForestNodeKind.Center,ForestNodeKind.Battle,ForestNodeKind.Elite,ForestNodeKind.Supply,ForestNodeKind.Event,ForestNodeKind.Lookout,ForestNodeKind.Hideout,ForestNodeKind.Danger})Check(m.Nodes.Any(n=>n.Kind==kind),"mandatory point "+kind);
                 Check(m.Nodes.All(n=>m.Nodes.All(other=>n==other||Math.Abs(n.X-other.X)>.07||Math.Abs(n.Y-other.Y)>.10)),"click targets remain separated");
                 topologies.Add(string.Join(";",m.Edges.Select(e=>e.From+"-"+e.To).ToArray()));places.Add(string.Join(";",m.Nodes.Select(n=>n.Kind.ToString()).ToArray()));

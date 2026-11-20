@@ -6,20 +6,22 @@ namespace ClashRoguelike
     public sealed partial class BattleGame
     {
         // Presentation time only: impact pauses never alter the rule stream or RNG.
-        IEnumerator PlayBattleBeat(string kind,CoinStep coin,float duration,Action<float> setPhase,Func<bool> skipped)
+        IEnumerator PlayBattleBeat(string kind,CoinStep coin,float duration,Action<float> setPhase,Func<bool> skipped,bool finalClashImpact=false)
         {
             bool contact=kind=="clash"||kind=="strike",played=false;
             float p=0;
             while(p<1&&!skipped())
             {
-                if(effectInspectorOpen){yield return null;continue;}
+                if(effectInspectorOpen||BattleOverlayOpen){yield return null;continue;}
                 float next=p+Time.unscaledDeltaTime*speed/duration;
-                if(contact&&!played&&next>=.45f)
+                if(!played&&next>=.45f&&(contact||kind=="clash_end"))
                 {
                     played=true;p=.45f;setPhase(p);
-                    if(!muted)audioSource.PlayOneShot(kind=="strike"?hitClip:clashClip);
+                    if(contact&&!muted)audioSource.PlayOneShot(kind=="strike"?hitClip:clashClip);
+                    // 落点与音效同一帧：拼点重震，攻击轻震。
+                    TriggerImpactShake(finalClashImpact?"clash_end":kind);
                     float hold=coin!=null&&coin.FinalWinner>=0?.18f:.11f;
-                    while(hold>0&&!skipped()){if(!effectInspectorOpen)hold-=Time.unscaledDeltaTime*speed;yield return null;}
+                    while(hold>0&&!skipped()){if(!effectInspectorOpen&&!BattleOverlayOpen)hold-=Time.unscaledDeltaTime*speed;yield return null;}
                 }
                 else {p=next;setPhase(Mathf.Clamp01(p));yield return null;}
             }

@@ -8,7 +8,8 @@ namespace ClashRoguelike
     public sealed partial class BattleGame
     {
         readonly Dictionary<string,string> portraitFiles=new Dictionary<string,string>{
-            {"marisa","雾雨魔理沙.png"},{"sakuya","十六夜咲夜.png"},{"reimu","博丽灵梦.png"}
+            {"marisa","雾雨魔理沙.png"},{"sakuya","十六夜咲夜.png"},{"reimu","博丽灵梦.png"},
+            {"flandre","芙兰朵露.png"},{RemiliaSkills.Id,"remilia.png"},{PatchouliSkills.Id,"patchouli.png"}
         };
         readonly Dictionary<string,Texture2D> portraits=new Dictionary<string,Texture2D>();
         Texture2D FindPortrait(Unit unit)
@@ -32,20 +33,26 @@ namespace ClashRoguelike
             catch(Exception e){Debug.LogWarning("Portrait could not load: "+unit.Name+" / "+e.Message);}
             portraits[id]=loaded;return loaded;
         }
-        bool DrawCharacterPortrait(Unit unit,float x,float y)
+        bool DrawCharacterPortrait(Unit unit,Rect bounds,bool mirrored=false)
         {
-            var image=FindPortrait(unit);if(image==null)return false;
-            const float height=155;float width=height*image.width/image.height;
-            var before=GUI.color;GUI.color=unit.Hp<=0?new Color(.55f,.55f,.55f,.55f):Color.white;
-            GUI.DrawTexture(new Rect(x-width/2,y+28-height,width,height),image,ScaleMode.ScaleToFit,true);
-            GUI.color=before;return true;
+            var image=FindPortrait(unit);
+            if(image==null)return false;
+            float scale=Mathf.Min(bounds.width/image.width,bounds.height/image.height);
+            float width=image.width*scale,height=image.height*scale;
+            var fitted=new Rect(bounds.center.x-width/2,bounds.yMax-height,width,height);
+            var before=GUI.color;
+            GUI.color=unit.Hp<=0?new Color(.55f,.55f,.55f,.55f*before.a):before;
+            GUI.DrawTextureWithTexCoords(fitted,image,mirrored?new Rect(1,0,-1,1):new Rect(0,0,1,1),true);
+            GUI.color=before;
+            return true;
         }
         void DisposePortraits(){foreach(var image in portraits.Values)if(image!=null)Destroy(image);portraits.Clear();}
         // Import-time texture preparation only; source PNGs are kept byte-for-byte.
-        void PreparePortraitEdges(Texture2D image)
+        void PreparePortraitEdges(Texture2D image,bool clearWhiteCenter=false)
         {
             int width=image.width,height=image.height;var pixels=image.GetPixels32();var queue=new int[pixels.Length];int read=0,write=0,removed=0;
             for(int i=0;i<pixels.Length;i++)if(pixels[i].a==0)queue[write++]=i;
+            if(clearWhiteCenter)RemoveWhiteEdge(pixels,(height/2)*width+width/2,queue,ref write,ref removed);
             while(read<write)
             {
                 int i=queue[read++],x=i%width,y=i/width;
