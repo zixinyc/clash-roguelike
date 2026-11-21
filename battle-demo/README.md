@@ -6,9 +6,8 @@
 
 ## 运行
 
-- 本机已装便携 Godot 时，双击[启动游戏.cmd](../启动游戏.cmd)。选 `1` 进废林，选 `3` 先配队、再进单场。选 `2` 可直接打开战斗场景。
-- 用源码 ZIP 时，另行准备 [Godot 4.7.2 标准版](https://github.com/godotengine/godot-builds/releases/tag/4.7.2-stable)。导入本目录的 `project.godot` 后按 **F5** 进入阵容页。要进废林，从编辑器运行 `exploration_map.tscn`，或在 Windows 使用[启动余烬交锋.cmd](启动余烬交锋.cmd)。
-- 本目录的 Windows 启动脚本可用首个参数指定引擎路径，也可读取 `GODOT_BIN`、本机 `.tools/` 下的便携版或 PATH 中的 `godot.exe` / `godot4.exe`。
+- **可运行打包版本**：直接运行打包目录（`余烬交锋_Windows/`）下的 `余烬交锋.exe` 即可进入游戏，已内置游戏引擎与全部资源包。
+- **源码运行**：使用 [Godot 4.7.2 标准版](https://github.com/godotengine/godot-builds/releases/tag/4.7.2-stable) 导入本目录的 `project.godot` 后按 **F5** 进入阵容与探索主页。要直接进入废林探索，也可直接运行 `exploration_map.tscn`。
 
 ## 怎么玩
 
