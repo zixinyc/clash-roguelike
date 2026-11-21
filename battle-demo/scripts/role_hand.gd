@@ -21,6 +21,7 @@ var group_buttons: Array[Button] = []
 var cards: Array[DemoCardView] = []
 var displayed_hand: Array = []
 var card_row: HBoxContainer
+var tab_accents: Dictionary = {}
 
 func _ready() -> void:
 	var panel := StyleBoxFlat.new()
@@ -73,6 +74,10 @@ func _choose_group(shared: bool) -> void:
 	group_changed.emit()
 
 func _tab_state(tab: Button, active: bool, accent: Color) -> void:
+	var active_accent := accent if active else Color.TRANSPARENT
+	if tab_accents.get(tab) == active_accent:
+		return
+	tab_accents[tab] = active_accent
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color("21323c").lerp(accent, 0.12) if active else Color("16232c")
 	style.border_color = accent if active else Color("354751")
@@ -153,18 +158,29 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 			role_summary.text = Rules.ZiXingYC.summary(hero)
 		Rules.MARISA_ID:
 			role_summary.text = "火花 %d/10 · 敌方 cost 偷取与星辰轰炸" % int(hero.get("spark", 0))
+		Rules.ZIWU_ID:
+			role_summary.text = Rules.ZiWu.summary(hero, Rules.ZiWu.living_teammates(state.heroes, unit), state.turn)
 	var has_personal: bool = state.hand.any(func(key: String) -> bool: return Rules.card_owner(key) == hero.character_id)
 	var has_shared: bool = state.hand.any(func(key: String) -> bool: return Rules.card_owner(key) < 0)
 	if not has_personal or not has_shared:
 		show_shared = has_shared and not has_personal
 	var is_zixi := hero.has("metaphysics")
-	enhance_toggle.visible = is_zixi and not show_shared
+	var is_ziwu := hero.has("insulation")
+	var selection_key: String = state.hand[selection] if selection >= 0 else ""
+	enhance_toggle.visible = (is_zixi or (is_ziwu and selection_key == Rules.ZiWu.LONE_INTERCEPT)) and not show_shared
 	var enhancement_error := ""
 	if is_zixi:
+		enhance_toggle.text = "强化 · 3 层"
 		role_summary.text = "超形上学 %d/%d   ·   因果律 %d/%d" % [hero.metaphysics, Rules.ZiXi.METAPHYSICS_MAX, hero.causality, Rules.ZiXi.CAUSALITY_MAX]
 		enhancement_error = Rules.ZiXi.enhancement_error(hero, slot_id)
 		enhance_toggle.disabled = not planning or selection < 0 or hero.hp <= 0 or not enhancement_error.is_empty()
 		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else "消耗 3 层超形上学。本回合可强化一张，结算后因果律 +1，拼胜分差至少 5 时 +2。"
+		enhance_toggle.set_pressed_no_signal(enhance)
+	elif is_ziwu:
+		enhance_toggle.text = "强化 · 2 绝缘"
+		enhancement_error = Rules.ZiWu.enhancement_error(hero, slot_id, selection_key)
+		enhance_toggle.disabled = not planning or hero.hp <= 0 or not enhancement_error.is_empty()
+		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else Rules.ZiWu.LONE_INTERCEPT_CARD.enhance_description
 		enhance_toggle.set_pressed_no_signal(enhance)
 	role_summary.add_theme_color_override("font_color", ROLE_COLORS[unit])
 	detail.add_theme_color_override("font_color", Color("d7e0e1"))
@@ -187,7 +203,16 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 		card.assigned_to = assigned.get(i, "")
 		card.accent = ROLE_COLORS[unit]
 		card.bonus = Rules.clash_bonus(card.skill_key, hero.character_id, int(hero.get("preparation", 0)))
+		if is_ziwu:
+			card.bonus += Rules.ZiWu.clash_bonus(hero, Rules.ZiWu.living_teammates(state.heroes, unit))
 		card.ally_shield = Rules.ally_guard_amount(card.skill_key) if hero.character_id == Rules.WEAVER_ID and state.heroes.size() > 1 else 0
+		var card_ench: String = state.get("deck_enchants", {}).get(card.skill_key, "")
+		card.rune_id = card_ench
+		if card_ench == "rune_feather":
+			card.effective_cost = maxi(1, int(card.skill.cost) - 1) if int(card.skill.cost) > 0 else 0
+		else:
+			card.effective_cost = int(card.skill.cost)
+		card.update_tooltip()
 		card.enhanced = card.skill.has("enhance_name") and (enhanced_cards.has(i) or (card.selected and enhance))
 		card.can_enhance = false
 		if is_zixi and card.skill.has("enhance_name") and planning and hero.hp > 0:
@@ -196,6 +221,8 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 			else:
 				var occupied: Dictionary = state.hero_slots[hero.enhanced_slot]
 				card.can_enhance = Rules.SKILLS[occupied.key].kind == card.skill.kind
+		elif is_ziwu and card.skill_key == Rules.ZiWu.LONE_INTERCEPT and planning and hero.hp > 0:
+			card.can_enhance = Rules.ZiWu.enhancement_error(hero, slot_id, card.skill_key).is_empty()
 		card.queue_redraw()
 	group_buttons[0].text = "专属 %d" % personal_count
 	group_buttons[1].text = "通用 %d" % shared_count

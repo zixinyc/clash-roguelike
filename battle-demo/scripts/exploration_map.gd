@@ -47,7 +47,11 @@ var battle: Control
 var return_button: Button
 
 # UI Nodes
+var map_content: Control
 var map_canvas: Control
+var map_halos: Control
+var map_nodes: Control
+var reachable_nodes: Array[String] = []
 var hud_team_container: HBoxContainer
 var hero_hp_labels: Array[Label] = []
 var hero_hp_bars: Array[ProgressBar] = []
@@ -73,6 +77,17 @@ var modal_btn_2: Button
 var modal_btn_3: Button
 var modal_shop_lineup_btn: Button
 var modal_leave_btn: Button
+
+# Forge Modal
+var forge_modal_panel: PanelContainer
+var forge_card_picker: OptionButton
+var forge_rune_picker: OptionButton
+var forge_card_info: Label
+var forge_rune_info: Label
+var forge_summary_label: Label
+var forge_confirm_btn: Button
+var forge_cancel_btn: Button
+var forge_available_cards: Array[String] = []
 
 # Item Detail Modal
 var item_detail_panel: PanelContainer
@@ -124,10 +139,14 @@ func _setup_theme() -> void:
 	theme = skin
 
 func _setup_layout() -> void:
+	map_content = Control.new()
+	map_content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	map_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(map_content)
 	var bg := ColorRect.new()
 	bg.color = Color("091015")
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	map_content.add_child(bg)
 	
 	if ResourceLoader.exists("res://art/forest-terrain.png"):
 		var terrain := TextureRect.new()
@@ -137,7 +156,7 @@ func _setup_layout() -> void:
 		terrain.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		terrain.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		terrain.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(terrain)
+		map_content.add_child(terrain)
 		
 	var main_vbox := VBoxContainer.new()
 	main_vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -146,7 +165,7 @@ func _setup_layout() -> void:
 	main_vbox.offset_right = -16
 	main_vbox.offset_top = 10
 	main_vbox.offset_bottom = -10
-	add_child(main_vbox)
+	map_content.add_child(main_vbox)
 	
 	# Top HUD
 	var top_hud := _build_top_hud()
@@ -162,9 +181,12 @@ func _setup_layout() -> void:
 	map_canvas = Control.new()
 	map_canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	map_canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	map_canvas.draw.connect(_on_map_canvas_draw)
+	map_canvas.draw.connect(_draw_map_edges)
 	map_canvas.gui_input.connect(_on_map_canvas_input)
 	map_frame.add_child(map_canvas)
+	map_halos = _map_draw_layer(_draw_map_halos)
+	map_nodes = _map_draw_layer(_draw_map_nodes)
+	map_canvas.resized.connect(_queue_map_redraw)
 	
 	# Bottom Status & Log Bar
 	var bottom_bar := _build_bottom_bar()
@@ -175,6 +197,7 @@ func _setup_layout() -> void:
 	_build_item_detail_modal()
 	_build_next_floor_modal()
 	_build_lineup_modal()
+	_build_forge_modal()
 	
 	# Battle Return Button
 	return_button = Button.new()
@@ -189,6 +212,19 @@ func _setup_layout() -> void:
 	return_button.offset_top = 16
 	return_button.offset_bottom = 54
 	add_child(return_button)
+
+func _map_draw_layer(draw_layer: Callable) -> Control:
+	var layer := Control.new()
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.draw.connect(draw_layer)
+	map_canvas.add_child(layer)
+	return layer
+
+func _queue_map_redraw() -> void:
+	map_canvas.queue_redraw()
+	map_halos.queue_redraw()
+	map_nodes.queue_redraw()
 
 func _build_top_hud() -> PanelContainer:
 	var hud := PanelContainer.new()
@@ -633,6 +669,168 @@ func _use_item_in_exploration(item_id: String, item_idx: int) -> void:
 		item_detail_panel.visible = false
 		_refresh_ui()
 
+func _build_forge_modal() -> void:
+	forge_modal_panel = PanelContainer.new()
+	forge_modal_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	forge_modal_panel.offset_left = -320
+	forge_modal_panel.offset_right = 320
+	forge_modal_panel.offset_top = -200
+	forge_modal_panel.offset_bottom = 200
+	forge_modal_panel.add_theme_stylebox_override("panel", _box(Color("101b22"), GOLD, 2, 10, 16))
+	add_child(forge_modal_panel)
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	forge_modal_panel.add_child(vbox)
+	
+	var title := Label.new()
+	title.text = "⚒ 余烬锻台 · 符卡雕琢"
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", GOLD)
+	vbox.add_child(title)
+	
+	var desc := Label.new()
+	desc.text = "统一定价 4 cost。选择卡牌与符文进行雕琢，可覆写已有词条。"
+	desc.add_theme_font_size_override("font_size", 13)
+	desc.add_theme_color_override("font_color", Color("d8e2dc"))
+	vbox.add_child(desc)
+	
+	vbox.add_child(HSeparator.new())
+	
+	var grid := HBoxContainer.new()
+	grid.add_theme_constant_override("separation", 16)
+	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(grid)
+	
+	var left_col := VBoxContainer.new()
+	left_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_col.add_theme_constant_override("separation", 6)
+	grid.add_child(left_col)
+	
+	var card_lbl := Label.new()
+	card_lbl.text = "选择要雕琢的卡牌："
+	card_lbl.add_theme_color_override("font_color", GOLD)
+	left_col.add_child(card_lbl)
+	
+	forge_card_picker = OptionButton.new()
+	forge_card_picker.item_selected.connect(func(_idx: int) -> void: _update_forge_preview())
+	left_col.add_child(forge_card_picker)
+	
+	forge_card_info = Label.new()
+	forge_card_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	forge_card_info.add_theme_font_size_override("font_size", 12)
+	forge_card_info.add_theme_color_override("font_color", Color("cad2c5"))
+	left_col.add_child(forge_card_info)
+	
+	var right_col := VBoxContainer.new()
+	right_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_col.add_theme_constant_override("separation", 6)
+	grid.add_child(right_col)
+	
+	var rune_lbl := Label.new()
+	rune_lbl.text = "选择雕琢符文："
+	rune_lbl.add_theme_color_override("font_color", GOLD)
+	right_col.add_child(rune_lbl)
+	
+	forge_rune_picker = OptionButton.new()
+	for r_id in ForestRun.RUNES.keys():
+		var r_data: Dictionary = ForestRun.RUNES[r_id]
+		forge_rune_picker.add_item("%s（%s）" % [r_data.name, r_id])
+	forge_rune_picker.item_selected.connect(func(_idx: int) -> void: _update_forge_preview())
+	right_col.add_child(forge_rune_picker)
+	
+	forge_rune_info = Label.new()
+	forge_rune_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	forge_rune_info.add_theme_font_size_override("font_size", 12)
+	forge_rune_info.add_theme_color_override("font_color", Color("cad2c5"))
+	right_col.add_child(forge_rune_info)
+	
+	vbox.add_child(HSeparator.new())
+	
+	forge_summary_label = Label.new()
+	forge_summary_label.add_theme_font_size_override("font_size", 13)
+	forge_summary_label.add_theme_color_override("font_color", Color("81b29a"))
+	vbox.add_child(forge_summary_label)
+	
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 12)
+	vbox.add_child(btn_row)
+	
+	forge_confirm_btn = Button.new()
+	forge_confirm_btn.text = "确认雕琢（消耗 4 cost）"
+	forge_confirm_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	forge_confirm_btn.pressed.connect(_on_forge_confirm_pressed)
+	btn_row.add_child(forge_confirm_btn)
+	
+	forge_cancel_btn = Button.new()
+	forge_cancel_btn.text = "取消返回"
+	forge_cancel_btn.custom_minimum_size = Vector2(90, 32)
+	forge_cancel_btn.pressed.connect(func() -> void:
+		forge_modal_panel.visible = false
+		modal_panel.visible = true)
+	btn_row.add_child(forge_cancel_btn)
+	
+	forge_modal_panel.visible = false
+
+func _open_forge_enchant_modal() -> void:
+	if run == null:
+		return
+	modal_panel.visible = false
+	forge_modal_panel.visible = true
+	forge_available_cards.clear()
+	forge_card_picker.clear()
+	var available := DemoBattleRules.available_cards(run.lineup)
+	var pool := run.deck if not run.deck.is_empty() else available
+	for card_key in pool:
+		if available.has(card_key) and not forge_available_cards.has(card_key):
+			forge_available_cards.append(card_key)
+			var skill: Dictionary = DemoBattleRules.SKILLS.get(card_key, {})
+			var current_enchant: String = run.deck_enchants.get(card_key, "")
+			var tag := "【%s】" % ForestRun.RUNES.get(current_enchant, {}).get("name", "") if not current_enchant.is_empty() else ""
+			var card_title := "%s %s（%d 费）" % [skill.get("name", card_key), tag, int(skill.get("cost", 0))]
+			forge_card_picker.add_item(card_title)
+	if forge_card_picker.item_count > 0:
+		forge_card_picker.select(0)
+	_update_forge_preview()
+
+func _update_forge_preview() -> void:
+	if forge_available_cards.is_empty():
+		forge_card_info.text = "无可用的卡牌。"
+		forge_confirm_btn.disabled = true
+		return
+	var card_idx := forge_card_picker.selected
+	var card_key: String = forge_available_cards[card_idx]
+	var skill: Dictionary = DemoBattleRules.SKILLS.get(card_key, {})
+	var current_enchant: String = run.deck_enchants.get(card_key, "")
+	var current_name: String = String(ForestRun.RUNES.get(current_enchant, {}).get("name", "无")) if not current_enchant.is_empty() else "无"
+	forge_card_info.text = "牌型：%s\n原费：%d cost\n当前符文：%s\n效果：%s" % [skill.get("name", card_key), int(skill.get("cost", 0)), current_name, skill.get("description", "")]
+	
+	var rune_keys := ForestRun.RUNES.keys()
+	var rune_idx := forge_rune_picker.selected
+	var rune_id: String = rune_keys[rune_idx]
+	var rune_data: Dictionary = ForestRun.RUNES[rune_id]
+	forge_rune_info.text = "符文：%s\n说明：%s" % [rune_data.name, rune_data.desc]
+	
+	var can_enchant := run.can_enchant_card(card_key, rune_id)
+	forge_confirm_btn.disabled = not can_enchant.ok
+	if not can_enchant.ok:
+		forge_summary_label.text = "无法雕琢：%s" % can_enchant.reason
+		forge_summary_label.add_theme_color_override("font_color", Color("e07a5f"))
+	else:
+		forge_summary_label.text = "【%s】→ 雕琢【%s】 | 费用：4 cost（当前持有：%d cost）" % [skill.get("name", card_key), rune_data.name, run.carried_cost]
+		forge_summary_label.add_theme_color_override("font_color", Color("81b29a"))
+
+func _on_forge_confirm_pressed() -> void:
+	if forge_available_cards.is_empty():
+		return
+	var card_key: String = forge_available_cards[forge_card_picker.selected]
+	var rune_keys := ForestRun.RUNES.keys()
+	var rune_id: String = rune_keys[forge_rune_picker.selected]
+	var ok := run.enchant_card(card_key, rune_id)
+	if ok:
+		forge_modal_panel.visible = false
+		_refresh_ui()
+
 func _show_next_floor_modal() -> void:
 	if run == null:
 		return
@@ -758,6 +956,7 @@ func _start_new_run() -> void:
 		battle.queue_free()
 		battle = null
 	return_button.visible = false
+	map_content.show()
 	lineup_modal_panel.hide()
 	modal_panel.hide()
 	
@@ -807,22 +1006,19 @@ func _rebuild_team_hud() -> void:
 		hero_hp_bars.append(bar)
 
 func _process(delta: float) -> void:
-	pulse_time += delta
-	if is_instance_valid(map_canvas):
-		map_canvas.queue_redraw()
-	if is_instance_valid(battle) and not battle.busy and not battle.battle.outcome.is_empty():
-		return_button.visible = true
+	if is_instance_valid(battle):
+		if not battle.busy and not battle.battle.outcome.is_empty():
+			return_button.show()
+		return
+	if map_content.is_visible_in_tree():
+		pulse_time += delta
+		map_halos.queue_redraw()
 
-func _on_map_canvas_draw() -> void:
-	if run == null or run.map == null:
+func _draw_map_edges() -> void:
+	var extent := map_canvas.size
+	if run == null or run.map == null or extent.x <= 10 or extent.y <= 10:
 		return
-	var rect := map_canvas.get_rect()
-	var w := rect.size.x
-	var h := rect.size.y
-	if w <= 10 or h <= 10:
-		return
-		
-	# 1. Draw Edges
+
 	for e in run.map.edges.values():
 		var edge := e as ForestMapGraph.MapEdge
 		var u_node = run.map.get_node(edge.from_id)
@@ -834,8 +1030,8 @@ func _on_map_canvas_draw() -> void:
 		if not known_edge and not run.known.has(edge.from_id) and not run.known.has(edge.to_id):
 			continue
 			
-		var p0 := Vector2(u_node.pos.x * w, u_node.pos.y * h)
-		var p1 := Vector2(v_node.pos.x * w, v_node.pos.y * h)
+		var p0: Vector2 = u_node.pos * extent
+		var p1: Vector2 = v_node.pos * extent
 		var points := ForestMapGraph.bezier_points(p0, p1, edge.bend, 12)
 		
 		var edge_color: Color = ForestMapGraph.route_color(edge.kind)
@@ -851,29 +1047,45 @@ func _on_map_canvas_draw() -> void:
 		var line_w := 3.5 if is_travelled else (2.0 if edge.kind == ForestMapGraph.RouteKind.MAIN else 1.5)
 		for idx in points.size() - 1:
 			map_canvas.draw_line(points[idx], points[idx + 1], edge_color, line_w, true)
-			
-	# 2. Draw Nodes
+
+func _draw_map_halos() -> void:
+	var extent := map_canvas.size
+	if run == null or run.map == null or extent.x <= 10 or extent.y <= 10:
+		return
+	var current = run.map.get_node(run.position)
+	if current != null:
+		var radius := 24.0 + sin(pulse_time * 4.0) * 2.5
+		var pos: Vector2 = current.pos * extent
+		map_halos.draw_circle(pos, radius, Color(GOLD, 0.25))
+		map_halos.draw_arc(pos, radius, 0, TAU, 24, GOLD, 2.0, true)
+	var reach_radius := 22.0 + sin(pulse_time * 5.0) * 2.0
+	for id in reachable_nodes:
+		var node = run.map.get_node(id)
+		if node != null and id != run.position:
+			map_halos.draw_arc(node.pos * extent, reach_radius, 0, TAU, 24, Color(GOLD, 0.7), 2.0, true)
+	if run.is_patrol_visible():
+		var patrol = run.map.get_node(run.patrol_node)
+		if patrol != null:
+			var radius := 24.0 + sin(pulse_time * 6.0) * 3.0
+			map_halos.draw_arc(patrol.pos * extent, radius, 0, TAU, 24, Color("d62828"), 2.5, true)
+
+func _draw_map_nodes() -> void:
+	var extent := map_canvas.size
+	if run == null or run.map == null or extent.x <= 10 or extent.y <= 10:
+		return
+	var font := get_theme_default_font()
 	for node in run.map.nodes.values():
 		var n := node as ForestMapGraph.MapNode
-		var pos := Vector2(n.pos.x * w, n.pos.y * h)
+		var pos := n.pos * extent
 		var is_current: bool = n.id == run.position
 		var is_visible: bool = run.visible.has(n.id)
 		var is_known: bool = run.known.has(n.id)
-		var is_reachable: bool = run.can_move(n.id)
 		var is_cleared: bool = run.cleared.has(n.id)
 		var is_hovered: bool = n.id == hovered_node_id
 		
 		var kind_col: Color = ForestMapGraph.kind_color(n.kind)
 		var base_radius := 18.0
 		
-		if is_current:
-			var halo_r := base_radius + 6.0 + sin(pulse_time * 4.0) * 2.5
-			map_canvas.draw_circle(pos, halo_r, Color(GOLD, 0.25))
-			map_canvas.draw_arc(pos, halo_r, 0, TAU, 24, GOLD, 2.0, true)
-		elif is_reachable:
-			var reach_r := base_radius + 4.0 + sin(pulse_time * 5.0) * 2.0
-			map_canvas.draw_arc(pos, reach_r, 0, TAU, 24, Color(GOLD, 0.7), 2.0, true)
-			
 		# Shading & body
 		var body_col := Color("14222a")
 		if not is_known:
@@ -886,17 +1098,16 @@ func _on_map_canvas_draw() -> void:
 		if is_hovered and is_known:
 			body_col = body_col.lightened(0.2)
 			
-		map_canvas.draw_circle(pos, base_radius, body_col)
-		map_canvas.draw_arc(pos, base_radius, 0, TAU, 24, kind_col, 2.0, true)
+		map_nodes.draw_circle(pos, base_radius, body_col)
+		map_nodes.draw_arc(pos, base_radius, 0, TAU, 24, kind_col, 2.0, true)
 		
 		# Icon & Badge
 		var icon_str: String = n.icon if is_known else "？"
 		if is_current:
 			icon_str = "◆"
-		var font := get_theme_default_font()
 		var font_size := 14
 		var str_size := font.get_string_size(icon_str, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size)
-		map_canvas.draw_string(font, pos + Vector2(-str_size.x * 0.5, font_size * 0.35), icon_str, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, GOLD if is_current else (kind_col if is_known else Color("4f636b")))
+		map_nodes.draw_string(font, pos + Vector2(-str_size.x * 0.5, font_size * 0.35), icon_str, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, GOLD if is_current else (kind_col if is_known else Color("4f636b")))
 		
 		# Name Label
 		if is_known:
@@ -904,17 +1115,12 @@ func _on_map_canvas_draw() -> void:
 			if is_cleared:
 				title_str += " ✓"
 			var name_size := font.get_string_size(title_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 11)
-			map_canvas.draw_string(font, pos + Vector2(-name_size.x * 0.5, base_radius + 14), title_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 11, Color("cad2c5") if is_visible else Color("6c757d"))
-			
-	# 3. Draw Patrol Beast Marker
+			map_nodes.draw_string(font, pos + Vector2(-name_size.x * 0.5, base_radius + 14), title_str, HORIZONTAL_ALIGNMENT_CENTER, -1, 11, Color("cad2c5") if is_visible else Color("6c757d"))
+
 	if run.is_patrol_visible():
-		var p_node = run.map.get_node(run.patrol_node)
-		if p_node != null:
-			var p_pos := Vector2(p_node.pos.x * w, p_node.pos.y * h)
-			var beast_halo := 24.0 + sin(pulse_time * 6.0) * 3.0
-			map_canvas.draw_arc(p_pos, beast_halo, 0, TAU, 24, Color("d62828"), 2.5, true)
-			var font := get_theme_default_font()
-			map_canvas.draw_string(font, p_pos + Vector2(-8, -26), "🐺 巡游恶兽", HORIZONTAL_ALIGNMENT_CENTER, -1, 12, Color("ff6b6b"))
+		var patrol = run.map.get_node(run.patrol_node)
+		if patrol != null:
+			map_nodes.draw_string(font, patrol.pos * extent + Vector2(-8, -26), "🐺 巡游恶兽", HORIZONTAL_ALIGNMENT_CENTER, -1, 12, Color("ff6b6b"))
 
 func _on_map_canvas_input(event: InputEvent) -> void:
 	if run == null or run.map == null:
@@ -942,7 +1148,7 @@ func _on_map_canvas_input(event: InputEvent) -> void:
 				map_canvas.tooltip_text = "%s (%s)\n%s" % [h_node.name, ForestMapGraph.kind_title(h_node.kind), "可前往" if err.is_empty() else err]
 			else:
 				map_canvas.tooltip_text = ""
-			map_canvas.queue_redraw()
+			map_nodes.queue_redraw()
 			
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var click_pos: Vector2 = event.position
@@ -1027,10 +1233,13 @@ func _open_modal(kind: String) -> void:
 			modal_leave_btn.text = "默默致意并离开"
 		"forge":
 			modal_title.text = "⚒ 余烬锻台"
-			modal_desc.text = "废林深处竟然有一座依然保持热度的黑铁熔炉，炉锤在等待使用。"
+			modal_desc.text = "废林深处依然保持热度的黑铁熔炉。可淬炼战铠、熔铸催化剂，或雕琢符文。"
 			modal_btn_1.text = "淬炼战铠：全体队员最大生命上限 +2"
 			modal_btn_2.text = "熔铸催化剂（3 cost）：获得【余烬催化剂】"
 			modal_btn_2.disabled = run.carried_cost < 3
+			modal_btn_3.text = "雕琢符卡（4 cost）：赋予卡牌符文特性"
+			modal_btn_3.visible = true
+			modal_btn_3.disabled = run.carried_cost < 4
 			modal_leave_btn.text = "离开锻台"
 		"gamble":
 			modal_title.text = "🎲 迷雾博弈"
@@ -1059,6 +1268,9 @@ func _open_modal(kind: String) -> void:
 
 func _on_modal_choice(choice_idx: int) -> void:
 	if run == null:
+		return
+	if run.pending == "forge" and choice_idx == 2:
+		_open_forge_enchant_modal()
 		return
 	var ok := run.apply_choice(choice_idx)
 	if ok:
@@ -1142,7 +1354,11 @@ func _refresh_ui() -> void:
 		btn.pressed.connect(_show_item_detail.bind(i_id, idx))
 		items_container.add_child(btn)
 		
-	map_canvas.queue_redraw()
+	reachable_nodes.clear()
+	for id: String in run.map.nodes:
+		if run.can_move(id):
+			reachable_nodes.append(id)
+	_queue_map_redraw()
 
 func _start_battle(encounter: int) -> void:
 	battle = BattleScene.instantiate()
@@ -1151,6 +1367,7 @@ func _start_battle(encounter: int) -> void:
 	battle.deck = run.deck.duplicate() if not run.deck.is_empty() else null
 	if run.in_battle:
 		battle.exploration_run = run
+	map_content.hide()
 	add_child(battle)
 	if battle.exploration_run == null:
 		battle.battle.cost = carried_cost
@@ -1180,6 +1397,7 @@ func _return_from_battle() -> void:
 	battle.queue_free()
 	battle = null
 	return_button.visible = false
+	map_content.show()
 	if graph_battle:
 		run.apply_battle_result(victory, surviving_hp, final_cost)
 		carried_cost = run.carried_cost

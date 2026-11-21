@@ -5,6 +5,15 @@ const Rules = preload("res://scripts/battle_rules.gd")
 const SELECTION_LIFT := 10.0
 const GLINT_PATH := "res://art/card-selection-glint.png"
 static var selection_glint: Texture2D
+static var number_font: SystemFont
+static var empty_style: StyleBoxEmpty
+const RUNE_NAMES := {
+	"rune_feather": "轻灵",
+	"rune_leech": "汲血",
+	"rune_impact": "破势",
+	"rune_echo": "回响",
+	"rune_overcharge": "超频",
+}
 const USE_HINTS := {
 	"probe": "低费接招", "observe": "积累准备", "exploit": "消耗准备强化拼点",
 	"follow": "拼赢后追加攻击", "steady_edge": "同费下限更高", "all_in": "同费上限更高",
@@ -20,6 +29,10 @@ const USE_HINTS := {
 	"zixingyc_paradox": "削弱目标拼点 · 整理检索",
 	"zixingyc_yesterday": "拼点防御 · 拼败减伤",
 	"zixingyc_ending": "全体轰炸 · 每场两次",
+	"ziwu_cold_edge": "双正面加伤 · 可攻击队友",
+	"ziwu_backstab": "半血提高拼点 · 可斩杀队友",
+	"ziwu_lone_intercept": "拼胜加伤 · 消耗绝缘可强化",
+	"ziwu_meridian_slash": "消耗绝缘爆发 · 结算自损",
 }
 
 var skill: Dictionary = {}
@@ -49,7 +62,8 @@ var accent := Color("dfbc80")
 var bonus := 0
 var ally_shield := 0
 var chinese_font: Font
-var number_font: Font
+var rune_id := ""
+var effective_cost := -1
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(130, 133 + SELECTION_LIFT)
@@ -58,18 +72,47 @@ func _ready() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	chinese_font = get_theme_font("font")
-	number_font = SystemFont.new()
-	number_font.font_names = PackedStringArray(["Bahnschrift", "Consolas"])
+	if number_font == null:
+		number_font = SystemFont.new()
+		number_font.font_names = PackedStringArray(["Bahnschrift", "Consolas"])
+		empty_style = StyleBoxEmpty.new()
 	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
-		add_theme_stylebox_override(state, StyleBoxEmpty.new())
+		add_theme_stylebox_override(state, empty_style)
 	mouse_entered.connect(func() -> void: hovered = true; queue_redraw())
 	mouse_exited.connect(func() -> void: hovered = false; queue_redraw())
 	focus_entered.connect(queue_redraw)
 	focus_exited.connect(queue_redraw)
 	resized.connect(queue_redraw)
-	tooltip_text = "%s · %d cost\n%s" % [skill.name, skill.cost, skill.description]
+	update_tooltip()
+
+func update_tooltip() -> void:
+	if skill.is_empty():
+		tooltip_text = ""
+		return
+	var lines: Array[String] = []
+	var cost_val: int = effective_cost if effective_cost >= 0 else int(skill.get("cost", 0))
+	var cat_name: String = "防御" if skill.get("kind", "") == "guard" else ("终结技" if skill.get("kind", "") == "ultimate" else "攻击")
+	lines.append("【%s】  消耗: %d Cost  类别: %s" % [skill.get("name", ""), cost_val, cat_name])
+	if skill.has("power") and skill.has("coins"):
+		var base_p := int(skill.get("base", skill.get("power", 0))) + bonus
+		var max_p := base_p + int(skill.coins) * int(skill.power)
+		lines.append("点数推演: 基础 %d + (%d 枚硬币 × 威力 %d)  →  范围 [%d ~ %d]" % [
+			base_p, skill.coins, skill.power, base_p, max_p
+		])
+	lines.append("基础效果: %s" % skill.get("description", ""))
 	if skill.has("enhance_name"):
-		tooltip_text += "\n%s · %s" % [skill.enhance_name, skill.enhance_description]
+		lines.append("强化绝技【%s】: %s" % [skill.enhance_name, skill.enhance_description])
+	if not rune_id.is_empty() and RUNE_NAMES.has(rune_id):
+		var rune_desc_dict := {
+			"rune_feather": "【轻灵】费用 -1（最低保底 1 费）",
+			"rune_leech": "【汲血】造成的实伤 15% 转化为全队治疗（上限 5 HP）",
+			"rune_impact": "【破势】拼点基础点数 +1，显著提升拼点胜率",
+			"rune_echo": "【回响】单目标普攻 25% 几率追加 35% 伤害余波（全队每轮限 1 次）",
+			"rune_overcharge": "【超频】行动开始消耗 4/8 护盾分别提升 15%/30% 伤害"
+		}
+		var rune_desc: String = String(rune_desc_dict.get(rune_id, ""))
+		lines.append("符文雕琢: %s" % rune_desc)
+	tooltip_text = "\n".join(lines)
 
 func effect_text() -> String:
 	if not Rules.targets_enemy(skill_key):
@@ -113,7 +156,12 @@ func _draw() -> void:
 	style.set_corner_radius_all(6)
 	draw_style_box(style, rect)
 	var kind_label := "防御" if skill.kind == "guard" else ("大招" if skill.kind == "ultimate" else "进攻")
-	_text("%d cost" % skill.cost, Vector2(10, 23), 17, bright, number_font)
+	if not rune_id.is_empty():
+		var r_name: String = RUNE_NAMES.get(rune_id, rune_id)
+		kind_label = "【%s】" % r_name + kind_label
+	var display_cost := effective_cost if effective_cost >= 0 else int(skill.cost)
+	var cost_color := Color("73d13d") if (effective_cost >= 0 and effective_cost < int(skill.cost)) else bright
+	_text("%d cost" % display_cost, Vector2(10, 23), 17, cost_color, number_font)
 	_right(kind_label, Vector2(size.x - 10, 23), 13, muted)
 	_text(skill.name, Vector2(10, 48), 19, ink)
 	if skill.has("enhance_name"):

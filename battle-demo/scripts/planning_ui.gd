@@ -44,10 +44,19 @@ var ally_status: Label
 var enemy_status: Label
 var guide: Label
 var item_button: Button
+var friendly_button: Button
+var friendly_panel: PanelContainer
+var friendly_picker: OptionButton
+var friendly_detail: Label
+var friendly_confirm: Button
 var item_popup: PanelContainer
 var item_close_button: Button
 var item_rows: VBoxContainer
 var item_feedback: Label
+var forecast_panel: PanelContainer
+var forecast_title: Label
+var forecast_detail: Label
+var forecast_tip: Label
 
 func _ready() -> void:
 	var font := SystemFont.new()
@@ -123,10 +132,39 @@ func _ready() -> void:
 	enemy_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	enemy_picker.item_selected.connect(func(index: int) -> void: _slot_selected(false, index))
 	selectors.add_child(enemy_picker)
+	friendly_button = button("攻击队友…", _open_friendly_target)
+	friendly_button.add_theme_color_override("font_color", Color("ffafa4"))
+	selectors.add_child(friendly_button)
+	_build_friendly_panel()
 	assign_button = button("安排 →", _assign)
 	selectors.add_child(assign_button)
 	cancel_button = button("撤销此格", _cancel)
 	selectors.add_child(cancel_button)
+	forecast_panel = PanelContainer.new()
+	var f_style := StyleBoxFlat.new()
+	f_style.bg_color = Color(0.06, 0.09, 0.12, 0.94)
+	f_style.border_color = Color("415461")
+	f_style.set_border_width_all(1)
+	f_style.set_corner_radius_all(4)
+	f_style.set_content_margin_all(8)
+	forecast_panel.add_theme_stylebox_override("panel", f_style)
+	forecast_panel.custom_minimum_size = Vector2(0, 52)
+	var f_box := VBoxContainer.new()
+	f_box.add_theme_constant_override("separation", 2)
+	forecast_panel.add_child(f_box)
+	forecast_title = label("【战局态势预判】", 15)
+	forecast_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	f_box.add_child(forecast_title)
+	forecast_detail = label("", 14)
+	forecast_detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	forecast_detail.add_theme_color_override("font_color", Color("dbe6eb"))
+	f_box.add_child(forecast_detail)
+	forecast_tip = label("", 12)
+	forecast_tip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	forecast_tip.add_theme_color_override("font_color", Color("9eb0b7"))
+	f_box.add_child(forecast_tip)
+	column.add_child(forecast_panel)
+	forecast_panel.hide()
 	guide = label("", 15)
 	guide.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	guide.add_theme_color_override("font_color", Color("e6c888"))
@@ -329,10 +367,11 @@ func new_battle() -> void:
 	if busy:
 		return
 	item_popup.hide()
+	friendly_panel.hide()
 	if exploration_run == null:
-		battle.start(73129, encounter, touhou_team, zixi_team, lineup, deck, zixingyc_team)
+		battle.start(73129, encounter, touhou_team, zixi_team, lineup, deck, zixingyc_team, [], [], {"enabled": true})
 	else:
-		battle.start(randi(), encounter, false, false, lineup, deck, false, exploration_run.relics, exploration_run.items)
+		battle.start(randi(), encounter, false, false, lineup, deck, false, exploration_run.relics, exploration_run.items, exploration_run.get_evolution_config())
 		battle.cost = exploration_run.carried_cost
 		for i in battle.heroes.size():
 			battle.heroes[i].hp = exploration_run.party_hp[i]
@@ -345,6 +384,7 @@ func new_battle() -> void:
 	team_button.text = "原阵容" if touhou_team else "测试阵容"
 	zixi_button.text = "原阵容" if zixi_team else "ZiXi"
 	zixingyc_button.text = "原阵容" if zixingyc_team else "ZiXingYC"
+	stage.prepare_portraits(battle.heroes, battle.enemies)
 	stage.reset_visuals()
 	selected_card = -1
 	enhance_selected = false
@@ -373,6 +413,99 @@ func _process(delta: float) -> void:
 		clock_label.text = "%03d 秒" % seconds
 	if expired:
 		_resolve()
+
+func _build_friendly_panel() -> void:
+	friendly_panel = PanelContainer.new()
+	friendly_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	friendly_panel.offset_left = -498
+	friendly_panel.offset_right = -18
+	friendly_panel.offset_top = 92
+	friendly_panel.offset_bottom = 92
+	var skin := StyleBoxFlat.new()
+	skin.bg_color = Color("22232d")
+	skin.border_color = Color("b97070")
+	skin.set_border_width_all(1)
+	skin.set_corner_radius_all(8)
+	skin.set_content_margin_all(16)
+	friendly_panel.add_theme_stylebox_override("panel", skin)
+	add_child(friendly_panel)
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 10)
+	friendly_panel.add_child(body)
+	var title := label("攻击队友", 21)
+	title.add_theme_color_override("font_color", Color("ffafa4"))
+	body.add_child(title)
+	friendly_picker = OptionButton.new()
+	friendly_picker.item_selected.connect(func(_index: int) -> void: _refresh_friendly_target())
+	body.add_child(friendly_picker)
+	friendly_detail = label("", 16)
+	friendly_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_child(friendly_detail)
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 10)
+	body.add_child(actions)
+	actions.add_child(button("返回选敌", _close_friendly_target))
+	friendly_confirm = button("确认安排 · 队友可能退场", _confirm_friendly_target)
+	friendly_confirm.add_theme_color_override("font_color", Color("ffafa4"))
+	friendly_confirm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	actions.add_child(friendly_confirm)
+	friendly_panel.hide()
+
+func _open_friendly_target() -> void:
+	if busy or selected_card < 0 or battle.phase != "response":
+		return
+	var key: String = battle.hand[selected_card]
+	if not Rules.SKILLS[key].get("can_target_ally", false):
+		return
+	item_popup.hide()
+	var source: int = battle.hero_slots[selected_slot].unit
+	friendly_picker.clear()
+	friendly_picker.add_item("选择一名队友")
+	for i in battle.heroes.size():
+		var hero: Dictionary = battle.heroes[i]
+		if i != source and hero.hp > 0:
+			friendly_picker.add_item("%s  ·  %d/%d HP  ·  %d 护盾" % [hero.name, hero.hp, hero.max_hp, hero.shield], i)
+	friendly_picker.select(0)
+	_refresh_friendly_target()
+	friendly_panel.show()
+	friendly_picker.grab_focus()
+
+func _refresh_friendly_target() -> void:
+	friendly_confirm.disabled = true
+	if selected_card < 0 or friendly_picker.selected <= 0:
+		friendly_detail.text = "请选择目标。友军行动按速度结算，退场后会失去尚未执行的行动。"
+		return
+	var target := friendly_picker.get_selected_id()
+	var error := battle.can_assign(selected_card, selected_slot, target, false, true)
+	if not error.is_empty():
+		friendly_detail.text = error
+		return
+	var key: String = battle.hand[selected_card]
+	var execute := Rules.ZiWu.can_execute_ally(key, battle.heroes[target])
+	var warning := "当前生命 ≤15。结算时仍满足条件，则无视护盾使其退场。" if execute else "会伤害这名队友，可能使其退场。"
+	if key == Rules.ZiWu.BACKSTAB and not execute:
+		warning = "生命 ≤15 才会斩杀。结算时高于该阈值，则按普通伤害结算。"
+	friendly_detail.text = "%s · %s\n击倒后绝缘 +2、恢复最多 5 HP；每回合首次击倒返 3 cost。%s" % [
+		Rules.SKILLS[key].name, warning, " 背刺击倒另得 5 护盾。" if key == Rules.ZiWu.BACKSTAB else "",
+	]
+	friendly_confirm.disabled = false
+
+func _close_friendly_target() -> void:
+	friendly_panel.hide()
+	if friendly_button.visible and not friendly_button.disabled:
+		friendly_button.grab_focus()
+
+func _confirm_friendly_target() -> void:
+	if not friendly_panel.visible or friendly_confirm.disabled or friendly_picker.selected <= 0:
+		return
+	var target := friendly_picker.get_selected_id()
+	var error := battle.assign(selected_card, selected_slot, target, false, true)
+	if not error.is_empty():
+		_refresh_friendly_target()
+		return
+	_close_friendly_target()
+	_refresh(battle.snapshot())
+	log_label.text = "已安排攻击队友 %s。准备交锋前仍可撤销或改回敌方目标。" % battle.heroes[target].name
 
 func _target_guidance(target: int) -> Dictionary:
 	if selected_card < 0 or not Rules.targets_enemy(battle.hand[selected_card]):
@@ -409,30 +542,14 @@ func _refresh(state: Dictionary) -> void:
 	stage.selected_hero = state.hero_slots[selected_slot].unit
 	stage.selected_enemy = selected_target / 3
 	header.text = "余烬交锋   ROUND %02d   cost %d / 预留 %d" % [state.turn, state.cost, state.reserved]
-	hero_picker.clear()
-	enemy_picker.clear()
-	for slot in state.hero_slots:
-		var category: String = "技能" if slot.get("flexible", false) else Rules.CATEGORIES[slot.category]
-		if slot.has("row"):
-			category += " · 增援 %d" % slot.row
-		var action: String = " · " + Rules.SKILLS[slot.key].name if slot.active else " · 空"
-		if slot.get("enhanced", false):
-			action += "（强化）"
-		if slot.get("frozen", false):
-			action = " · 停时"
-		hero_picker.add_item("%s(%s) · %s · 速度 %d%s" % [state.heroes[slot.unit].name, state.heroes[slot.unit].role, category, slot.speed, action])
-	for slot in state.enemy_slots:
-		var detail := "待机"
-		if slot.active:
-			detail = "已启用" if state.phase == "response" else Rules.SKILLS[slot.key].name
-			if slot.category != 2:
-				detail += " → " + state.heroes[slot.target].name
-		enemy_picker.add_item("%s · %s · 速度 %d · %s" % [state.enemies[slot.unit].name, Rules.CATEGORIES[slot.category], slot.speed, detail])
-	hero_picker.select(selected_slot)
-	enemy_picker.select(selected_target)
+	_refresh_slot_pickers(state)
 	hand_view.refresh(state, stage.selected_hero, selected_card, not busy and state.phase == "response", selected_slot, enhance_selected)
 	for control in [ready_button, cancel_button, assign_button, auto_button, hero_picker, enemy_picker]:
 		control.disabled = busy or state.phase != "response"
+	var selected_key: String = battle.hand[selected_card] if selected_card >= 0 else ""
+	friendly_button.visible = not selected_key.is_empty() and Rules.SKILLS[selected_key].get("can_target_ally", false)
+	friendly_button.disabled = busy or state.phase != "response" or Rules.ZiWu.living_teammates(battle.heroes, stage.selected_hero) == 0
+	friendly_button.tooltip_text = "需要一名存活队友" if friendly_button.disabled else "手动选择友军目标 · 可能使队友退场"
 	restart_button.disabled = busy
 	encounter_button.disabled = busy
 	team_button.disabled = busy
@@ -466,10 +583,49 @@ func _refresh(state: Dictionary) -> void:
 		guide.text = "战斗结束 · 点击右上角「重新开始」再试一次。"
 	if state.phase == "response" and not busy:
 		_hint()
+		_update_forecast()
 	elif not state.outcome.is_empty():
+		if forecast_panel != null:
+			forecast_panel.hide()
 		hint.text = "战斗胜利！点击重新开始。" if state.outcome == "victory" else "小队失利。点击重新开始再试。"
 	else:
+		if forecast_panel != null:
+			forecast_panel.hide()
 		hint.text = "交锋中，行动按速度结算。"
+
+func _refresh_slot_pickers(state: Dictionary) -> void:
+	if hero_picker.item_count != state.hero_slots.size():
+		hero_picker.clear()
+	if enemy_picker.item_count != state.enemy_slots.size():
+		enemy_picker.clear()
+	for slot in state.hero_slots:
+		var hero: Dictionary = state.heroes[slot.unit]
+		var category: String = "技能" if slot.get("flexible", false) else Rules.CATEGORIES[slot.category]
+		if slot.has("row"):
+			category += " · 增援 %d" % slot.row
+		var action: String = " · " + Rules.SKILLS[slot.key].name if slot.active else " · 空"
+		if slot.get("enhanced", false):
+			action += "（强化）"
+		if slot.has("ally_target"):
+			action += " → 队友 %s" % state.heroes[slot.ally_target].name
+		if slot.get("frozen", false):
+			action = " · 停时"
+		_set_picker_item(hero_picker, slot.id, "%s(%s) · %s · 速度 %d%s" % [hero.name, hero.role, category, slot.speed, action])
+	for slot in state.enemy_slots:
+		var detail := "计划隐藏" if state.get("pvp", false) and state.phase == "response" else "待机"
+		if slot.active:
+			detail = "已启用" if state.phase == "response" else Rules.SKILLS[slot.key].name
+			if slot.category != 2:
+				detail += " → " + state.heroes[slot.target].name
+		_set_picker_item(enemy_picker, slot.id, "%s · %s · 速度 %d · %s" % [state.enemies[slot.unit].name, Rules.CATEGORIES[slot.category], slot.speed, detail])
+	hero_picker.select(selected_slot)
+	enemy_picker.select(selected_target)
+
+func _set_picker_item(picker: OptionButton, index: int, label: String) -> void:
+	if index == picker.item_count:
+		picker.add_item(label)
+	elif picker.get_item_text(index) != label:
+		picker.set_item_text(index, label)
 
 func _hint() -> void:
 	var h: Dictionary = battle.hero_slots[selected_slot]
@@ -489,13 +645,17 @@ func _hint() -> void:
 		hint.text = "%s · %s" % [card.skill.name, detail]
 		return
 	var target_info := _target_guidance(selected_target)
+	var friendly_hint := "｜可单独选择「攻击队友…」" if friendly_button.visible and not friendly_button.disabled else ""
 	if not target_info.valid:
-		hint.text = "%s · %s" % [card.skill.name, target_info.text]
+		hint.text = "%s · %s%s" % [card.skill.name, target_info.text, friendly_hint]
 		return
 	var effect := card.effect_text()
 	if enhance_selected:
 		effect = "%s · %s" % [card.skill.enhance_name, card.skill.enhance_description]
-	hint.text = "%s · %s｜%d 枚硬币，每个正面 +%d｜%s%s" % [card.skill.name, effect, card.skill.coins, card.skill.power, target_info.text, _archive_note()]
+	elif card.skill_key == Rules.ZiWu.LONE_INTERCEPT:
+		var error := Rules.ZiWu.enhancement_error(battle.heroes[h.unit], selected_slot, card.skill_key)
+		effect += "｜可选绝影突袭" if error.is_empty() else "｜%s" % error
+	hint.text = "%s · %s｜%d 枚硬币，每个正面 +%d｜%s%s%s" % [card.skill.name, effect, card.skill.coins, card.skill.power, target_info.text, _archive_note(), friendly_hint]
 
 # ZiXingYC 的符卡自带整理配方，选牌提示显示配方与当前材料是否充足。
 func _archive_note() -> String:
@@ -508,6 +668,121 @@ func _archive_note() -> String:
 	var skill: Dictionary = Rules.SKILLS[battle.hand[selected_card]]
 	var note := Rules.ZiXingYC.archive_hint(hero, skill.get("archive_corpus", ""))
 	return "｜%s" % note if not note.is_empty() else ""
+
+func _update_forecast() -> void:
+	if forecast_panel == null:
+		return
+	if busy or battle == null or battle.phase != "response":
+		forecast_panel.hide()
+		return
+	if selected_slot < 0 or selected_slot >= battle.hero_slots.size():
+		forecast_panel.hide()
+		return
+	var hero_slot: Dictionary = battle.hero_slots[selected_slot]
+	var hero: Dictionary = battle.heroes[hero_slot.unit]
+	if hero.hp <= 0:
+		forecast_panel.hide()
+		return
+	if selected_target < 0 or selected_target >= battle.enemy_slots.size():
+		forecast_panel.hide()
+		return
+	var enemy_slot: Dictionary = battle.enemy_slots[selected_target]
+	var enemy: Dictionary = battle.enemies[enemy_slot.unit]
+	
+	var card_key := ""
+	if selected_card >= 0 and selected_card < battle.hand.size():
+		card_key = battle.hand[selected_card]
+	elif hero_slot.active:
+		card_key = hero_slot.key
+		
+	if card_key.is_empty() or not Rules.targets_enemy(card_key):
+		forecast_panel.hide()
+		return
+		
+	forecast_panel.show()
+	var skill: Dictionary = Rules.SKILLS.get(card_key, {})
+	var hero_base: int = skill.get("base", skill.get("power", 0))
+	var hero_coins: int = skill.get("coins", 1)
+	var hero_coin_val: int = skill.get("power", 2)
+	if battle.deck_enchants.get(card_key, "") == "rune_impact":
+		hero_base += 1
+	var hero_min: int = hero_base
+	var hero_max: int = hero_base + hero_coins * hero_coin_val
+	var hero_avg: float = float(hero_base) + float(hero_coins * hero_coin_val) * 0.5
+	
+	var can_clash: bool = battle.can_clash(hero_slot, enemy_slot)
+	if can_clash:
+		var is_intercept: bool = int(enemy_slot.target) != int(hero_slot.unit)
+		var clash_title := "【战术截击】" if is_intercept else "【正面对决】"
+		
+		var enemy_key: String = enemy_slot.get("key", "")
+		var enemy_min: int = 3
+		var enemy_max: int = 7
+		var enemy_avg: float = 5.0
+		var enemy_skill_name: String = "敌方攻击"
+		if not enemy_key.is_empty() and Rules.SKILLS.has(enemy_key):
+			var eskill: Dictionary = Rules.SKILLS[enemy_key]
+			enemy_skill_name = eskill.name
+			var e_base: int = eskill.get("base", eskill.get("power", 0))
+			enemy_min = e_base
+			enemy_max = e_base + eskill.get("coins", 1) * eskill.get("power", 2)
+			enemy_avg = float(e_base) + float(eskill.get("coins", 1) * eskill.get("power", 2)) * 0.5
+		elif enemy_slot.category == 1:
+			enemy_min = 5; enemy_max = 10; enemy_avg = 7.5; enemy_skill_name = "强力技能"
+		elif enemy_slot.category == 0:
+			enemy_min = 3; enemy_max = 6; enemy_avg = 4.5; enemy_skill_name = "普通攻击"
+			
+		var diff: float = hero_avg - enemy_avg
+		var status_text := ""
+		var status_color := Color("8cd68c")
+		if hero_min >= enemy_max:
+			status_text = "必胜优势"
+			status_color = Color("55ff88")
+		elif diff >= 2.0:
+			status_text = "明显优势"
+			status_color = Color("8cd68c")
+		elif diff <= -2.0:
+			status_text = "极度劣势"
+			status_color = Color("ff6666")
+		elif hero_max <= enemy_min:
+			status_text = "必败绝境"
+			status_color = Color("ff3333")
+		else:
+			status_text = "势均力敌"
+			status_color = Color("eedd66")
+			
+		forecast_title.text = "%s · %s" % [clash_title, status_text]
+		forecast_title.add_theme_color_override("font_color", status_color)
+		forecast_detail.text = "我方「%s」速%d [%d~%d]  VS  %s「%s」速%d [%d~%d]" % [
+			skill.get("name", card_key), hero_slot.speed, hero_min, hero_max,
+			enemy.name, enemy_skill_name, enemy_slot.speed, enemy_min, enemy_max
+		]
+		if is_intercept:
+			forecast_tip.text = "我方速度 (%d) > 敌方 (%d)，成功截下原攻向队友的攻击！" % [hero_slot.speed, enemy_slot.speed]
+		else:
+			forecast_tip.text = "双方互相锁定进行正面拼点，正面硬币多者胜出并造成全额伤害！"
+	else:
+		if not enemy_slot.active:
+			forecast_title.text = "【单向攻击】必定全额命中"
+			forecast_title.add_theme_color_override("font_color", Color("77d0ff"))
+			forecast_detail.text = "我方「%s」速%d [%d~%d]  →  %s (行动格未启用)" % [
+				skill.get("name", card_key), hero_slot.speed, hero_min, hero_max, enemy.name
+			]
+			forecast_tip.text = "敌方此槽位未安排行动，我方攻击必定直接命中！"
+		elif enemy_slot.category == 2:
+			forecast_title.text = "【削减护盾】单向破盾打击"
+			forecast_title.add_theme_color_override("font_color", Color("88bbee"))
+			forecast_detail.text = "我方「%s」速%d [%d~%d]  →  %s (防御格)" % [
+				skill.get("name", card_key), hero_slot.speed, hero_min, hero_max, enemy.name
+			]
+			forecast_tip.text = "敌方采取防御姿态，攻击伤害将优先消耗其护盾。"
+		else:
+			forecast_title.text = "【错位攻击】无法截击"
+			forecast_title.add_theme_color_override("font_color", Color("ffaa55"))
+			forecast_detail.text = "我方「%s」速%d  VS  %s「敌方攻击」速%d" % [
+				skill.get("name", card_key), hero_slot.speed, enemy.name, enemy_slot.speed
+			]
+			forecast_tip.text = "我方速度 (%d) ≤ 敌方速度 (%d)，无法截击队友受到的攻击，双方将各自按速度单向结算！" % [hero_slot.speed, enemy_slot.speed]
 
 func _change_slot(index: int) -> void:
 	if battle.hero_slots[index].unit != battle.hero_slots[selected_slot].unit:
@@ -522,6 +797,7 @@ func _change_slot(index: int) -> void:
 func _slot_selected(allied: bool, index: int) -> void:
 	if busy or battle.phase != "response":
 		return
+	friendly_panel.hide()
 	var had_card := selected_card >= 0
 	if allied:
 		_change_slot(index)
@@ -534,6 +810,7 @@ func _slot_selected(allied: bool, index: int) -> void:
 func _select_card(index: int) -> void:
 	if busy or battle.phase != "response" or not hand_view.visible_indices.has(index):
 		return
+	friendly_panel.hide()
 	var slot_now: Dictionary = battle.hero_slots[selected_slot]
 	if battle.heroes[slot_now.unit].hp <= 0:
 		return
@@ -574,7 +851,7 @@ func _auto_plan() -> void:
 		return
 	var covered := {}
 	for slot in battle.hero_slots:
-		if slot.active and Rules.targets_enemy(slot.key) and battle.can_clash(slot, battle.enemy_slots[slot.target]):
+		if slot.active and slot.get("targeted", Rules.targets_enemy(slot.key)) and battle.can_clash(slot, battle.enemy_slots[slot.target]):
 			covered[slot.target] = true
 	var slots: Array[Dictionary] = battle.hero_slots.duplicate()
 	slots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _auto_slot_order(a) < _auto_slot_order(b))
@@ -593,6 +870,9 @@ func _auto_plan() -> void:
 				own_targets.append(enemy.id)
 			else:
 				intercepts.append(enemy.id)
+		if battle.heroes[slot.unit].character_id == Rules.ZIWU_ID:
+			own_targets.sort_custom(func(a: int, b: int) -> bool: return battle.enemy_slots[a].category > battle.enemy_slots[b].category)
+			intercepts.sort_custom(func(a: int, b: int) -> bool: return battle.enemy_slots[a].category > battle.enemy_slots[b].category)
 		var targets := own_targets + intercepts + remaining_targets
 		for card in _card_order(slot.unit):
 			var key: String = battle.hand[card]
@@ -611,7 +891,12 @@ func _auto_plan() -> void:
 						var is_finisher := key == Rules.ZiXi.ALMOST_SURE
 						var full_causality: bool = hero.causality == Rules.ZiXi.CAUSALITY_MAX
 						enhance = is_finisher == full_causality and Rules.ZiXi.enhancement_error(hero, slot.id).is_empty()
-					if battle.assign(card, slot.id, target, enhance).is_empty():
+					elif key == Rules.ZiWu.LONE_INTERCEPT and clashes:
+						enhance = Rules.ZiWu.enhancement_error(hero, slot.id, key).is_empty()
+					var error := battle.assign(card, slot.id, target, enhance)
+					if enhance and key == Rules.ZiWu.LONE_INTERCEPT and not error.is_empty():
+						error = battle.assign(card, slot.id, target)
+					if error.is_empty():
 						if clashes:
 							covered[target] = true
 						break
@@ -631,6 +916,11 @@ func _auto_slot_order(slot: Dictionary) -> int:
 			priority = 0
 	elif hero.character_id == Rules.ZIXINGYC_ID and slot.category != 1:
 		priority = slot.category / 2
+	elif hero.character_id == Rules.ZIWU_ID:
+		var teammates := Rules.ZiWu.living_teammates(battle.heroes, slot.unit)
+		var burst: bool = hero.hp > 5 and Rules.ZiWu.ultimate_error(hero, teammates).is_empty()
+		if slot.category == (1 if burst else 0):
+			priority = 0
 	return priority * battle.hero_slots.size() + slot.id
 
 func _card_order(unit: int) -> Array:
@@ -641,6 +931,14 @@ func _card_order(unit: int) -> Array:
 		var preferred := battle.hand.find(Rules.ZiXingYC.preferred_attack(hero))
 		if preferred >= 0:
 			order.append(preferred)
+	elif owner_id == Rules.ZIWU_ID:
+		var attack_order := [Rules.ZiWu.BACKSTAB, Rules.ZiWu.LONE_INTERCEPT]
+		if hero.insulation >= Rules.ZiWu.ENHANCE_COST:
+			attack_order.reverse()
+		for key in attack_order:
+			var i := battle.hand.find(key)
+			if i >= 0:
+				order.append(i)
 	for card in battle.hand.size():
 		if Rules.card_owner(battle.hand[card]) == owner_id and not order.has(card):
 			order.append(card)
@@ -654,32 +952,11 @@ func _resolve() -> void:
 		return
 	busy = true
 	item_popup.hide()
+	friendly_panel.hide()
 	stage.dragging = -1
 	clock_label.text = "双方已准备"
 	var events := battle.lock_and_resolve()
-	for event in events:
-		_refresh(event.snapshot)
-		match event.type:
-			"reveal":
-				log_label.text = "双方锁定，技能揭晓，按速度结算。"
-				await get_tree().create_timer(0.8 / speed).timeout
-			"intercept":
-				log_label.text = "%s 替队友接走攻击！" % battle.heroes[event.hero].name
-			"clash":
-				log_label.text = "拼点 %d : %d ｜ 剩余硬币 %d : %d" % [event.left, event.right, event.hero_remaining, event.enemy_remaining]
-			"refund", "stalemate":
-				log_label.text = "%s，返还 %d cost" % ["僵持" if event.type == "stalemate" else "拼点失败", event.amount]
-			"ability":
-				log_label.text = event.message
-				await get_tree().create_timer(0.8 / speed).timeout
-			"cancelled":
-				log_label.text = event.reason
-			"stagger":
-				log_label.text = "【失衡】%s %s！" % [event.name, event.reason]
-				await get_tree().create_timer(0.4 / speed).timeout
-			"overwhelm":
-				log_label.text = "【压制】分差 %d，追加 %d 点压制伤害！" % [event.margin, event.amount]
-		await stage.play_event(event, speed)
+	await _play_events(events)
 	busy = false
 	stage.reset_visuals()
 	selected_card = -1
@@ -704,7 +981,40 @@ func _resolve() -> void:
 		log_label.text = "胜利" if battle.outcome == "victory" else "失败"
 		sound.play_sound(battle.outcome)
 
+func _play_events(events: Array) -> void:
+	for event in events:
+		_refresh(event.snapshot)
+		match event.type:
+			"reveal":
+				log_label.text = "双方锁定，技能揭晓，按速度结算。"
+				await get_tree().create_timer(0.8 / speed).timeout
+			"intercept":
+				log_label.text = "%s 替队友接走攻击！" % event.snapshot.heroes[event.hero].name
+			"clash":
+				log_label.text = "拼点 %d : %d ｜ 剩余硬币 %d : %d" % [event.left, event.right, event.hero_remaining, event.enemy_remaining]
+			"refund", "stalemate":
+				var side := ("我方" if event.allied else "对手") if event.has("allied") else ""
+				log_label.text = "%s%s，返还 %d cost" % [side, "僵持" if event.type == "stalemate" else "拼点失败", event.amount]
+			"ability":
+				log_label.text = event.message
+				await get_tree().create_timer(0.8 / speed).timeout
+			"cancelled":
+				log_label.text = event.reason
+			"stagger":
+				log_label.text = "【失衡】%s %s！" % [event.name, event.reason]
+				await get_tree().create_timer(0.4 / speed).timeout
+			"overwhelm":
+				log_label.text = "【压制】分差 %d，追加 %d 点压制伤害！" % [event.margin, event.amount]
+		await stage.play_event(event, speed)
+
 func _input(event: InputEvent) -> void:
+	if friendly_panel.visible:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			_close_friendly_target()
+			get_viewport().set_input_as_handled()
+		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not friendly_panel.get_global_rect().has_point(event.position):
+			friendly_panel.hide()
+		return
 	if item_popup.visible:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 			_close_items()

@@ -6,6 +6,7 @@ const Reimu = preload("res://scripts/characters/hakurei_reimu.gd")
 const ZiXi = preload("res://scripts/characters/zixi.gd")
 const ZiXingYC = preload("res://scripts/characters/zixingyc.gd")
 const Marisa = preload("res://scripts/characters/kirisame_marisa.gd")
+const ZiWu = preload("res://scripts/characters/ziwu.gd")
 
 const MAX_SLOT_GROUPS := 3
 const ACTIONS_PER_GROUP := 2
@@ -56,6 +57,10 @@ const SKILLS := {
 	"marisa_laser": Marisa.MARISA_LASER,
 	"marisa_orrery": Marisa.MARISA_ORRERY,
 	"marisa_spark": Marisa.MARISA_SPARK,
+	"ziwu_cold_edge": ZiWu.COLD_EDGE_CARD,
+	"ziwu_backstab": ZiWu.BACKSTAB_CARD,
+	"ziwu_lone_intercept": ZiWu.LONE_INTERCEPT_CARD,
+	"ziwu_meridian_slash": ZiWu.MERIDIAN_SLASH_CARD,
 	"training_tap": {"name": "练习迎击", "cost": 0, "base": 1, "power": 0, "coins": 1, "kind": "attack", "no_damage": true},
 }
 
@@ -87,6 +92,21 @@ var guaranteed_heads := false
 var stagger_enabled := false
 var overwhelm_enabled := false
 var evolution_config := {}
+var deck_enchants := {}
+var echo_triggered_this_round := false
+
+func get_card_enchant(card_key: String) -> String:
+	return String(deck_enchants.get(card_key, ""))
+
+func get_card_cost(card_key: String) -> int:
+	if not SKILLS.has(card_key):
+		return 0
+	var orig_cost: int = int(SKILLS[card_key].cost)
+	if orig_cost == 0:
+		return 0
+	if get_card_enchant(card_key) == "rune_feather":
+		return maxi(1, orig_cost - 1)
+	return orig_cost
 
 func has_relic(key: String) -> bool:
 	return active_relics.has(key)
@@ -134,7 +154,7 @@ func use_item(item_key: String) -> Dictionary:
 			return {"ok": true, "message": "使用了野战膏药：%s 恢复 %d 生命。" % [hero.name, healed]}
 	return {"ok": true, "message": "道具使用成功"}
 
-enum { ASH_ID, BLADE_ID, WEAVER_ID, SAKUYA_ID, REIMU_ID, ZIXI_ID, ZIXINGYC_ID, MARISA_ID }
+enum { ASH_ID, BLADE_ID, WEAVER_ID, SAKUYA_ID, REIMU_ID, ZIXI_ID, ZIXINGYC_ID, MARISA_ID, ZIWU_ID }
 const DEFAULT_LINEUP := [ASH_ID, BLADE_ID, WEAVER_ID]
 const TOUHOU_LINEUP := [MARISA_ID, SAKUYA_ID, REIMU_ID]
 const ZIXI_LINEUP := [ASH_ID, ZIXI_ID, WEAVER_ID]
@@ -158,7 +178,7 @@ static func create_roster() -> Array[Dictionary]:
 		{"name": "长锋", "role": "破阵者", "hp": 42, "max_hp": 42, "shield": 0, "acted": false, "speed_min": 5, "speed_max": 8},
 		{"name": "织火", "role": "援护者", "hp": 46, "max_hp": 46, "shield": 0, "acted": false, "speed_min": 2, "speed_max": 5},
 		Sakuya.create_unit(), Reimu.create_unit(), ZiXi.create_unit(), ZiXingYC.create_unit(),
-		Marisa.create_unit(),
+		Marisa.create_unit(), ZiWu.create_unit(),
 	]
 	for id in roster.size():
 		roster[id].character_id = id
@@ -176,10 +196,12 @@ static func card_owner(key: String) -> int:
 		return ZIXINGYC_ID
 	if key in Marisa.CARDS:
 		return MARISA_ID
+	if key in ZiWu.CARDS:
+		return ZIWU_ID
 	return int(SKILLS[key].get("owner", -1))
 
 static func available_cards(members: Array) -> Array:
-	var cards := BASE_CARDS + Sakuya.CARDS + Reimu.CARDS + ZiXi.CARDS + ZiXingYC.CARDS + Marisa.CARDS
+	var cards := BASE_CARDS + Sakuya.CARDS + Reimu.CARDS + ZiXi.CARDS + ZiXingYC.CARDS + Marisa.CARDS + ZiWu.CARDS
 	return cards.filter(func(key: String) -> bool: return card_owner(key) < 0 or members.has(card_owner(key)))
 
 
@@ -188,6 +210,8 @@ func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = 
 	evolution_config = p_evolution_config.duplicate(true)
 	stagger_enabled = bool(evolution_config.get("enabled", false)) or bool(evolution_config.get("stagger", false))
 	overwhelm_enabled = bool(evolution_config.get("enabled", false)) or bool(evolution_config.get("overwhelm", false))
+	deck_enchants = evolution_config.get("deck_enchants", {}).duplicate(true)
+	echo_triggered_this_round = false
 	var members: Array = lineup if not lineup.is_empty() else (ZIXINGYC_LINEUP if use_zixingyc_team else (ZIXI_LINEUP if use_zixi_team else (TOUHOU_LINEUP if use_touhou_team else DEFAULT_LINEUP)))
 	var roster := create_roster()
 	heroes.clear()
@@ -238,11 +262,14 @@ func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = 
 	outcome = ""
 	_prepare_round()
 
-func enable_evolution(stagger: bool = true, overwhelm: bool = true) -> void:
+func enable_evolution(stagger: bool = true, overwhelm: bool = true, enchants: Dictionary = {}) -> void:
 	stagger_enabled = stagger
 	overwhelm_enabled = overwhelm
 	evolution_config["stagger"] = stagger
 	evolution_config["overwhelm"] = overwhelm
+	if not enchants.is_empty():
+		evolution_config["deck_enchants"] = enchants.duplicate(true)
+		deck_enchants = evolution_config["deck_enchants"]
 
 func _prepare_round() -> void:
 	phase = "response"
@@ -276,6 +303,8 @@ func _prepare_round() -> void:
 				units[u].shield += 5
 			if units[u].has("memory_log"):
 				ZiXingYC.prepare_round(units[u])
+			if units[u].has("insulation"):
+				ZiWu.prepare_round(units[u])
 			if side == 0:
 				units[u].acted = false
 			else:
@@ -329,7 +358,7 @@ func reserved_cost() -> int:
 	var total := 0
 	for slot in hero_slots:
 		if slot.active:
-			total += int(SKILLS[slot.key].cost)
+			total += get_card_cost(slot.key)
 	return total
 
 func snapshot() -> Dictionary:
@@ -338,7 +367,7 @@ func snapshot() -> Dictionary:
 		for slot in public_enemies:
 			slot.erase("key")
 			slot.erase("card")
-	return {"heroes": heroes.duplicate(true), "enemies": enemies.duplicate(true), "hand": hand.duplicate(), "hero_slots": hero_slots.duplicate(true), "enemy_slots": public_enemies, "cost": cost, "reserved": reserved_cost() if phase == "response" else 0, "turn": turn, "plays": plays, "outcome": outcome, "phase": phase, "touhou_team": touhou_team, "extra_income": extra_income, "stagger_enabled": stagger_enabled, "overwhelm_enabled": overwhelm_enabled}
+	return {"heroes": heroes.duplicate(true), "enemies": enemies.duplicate(true), "hand": hand.duplicate(), "hero_slots": hero_slots.duplicate(true), "enemy_slots": public_enemies, "cost": cost, "reserved": reserved_cost() if phase == "response" else 0, "turn": turn, "plays": plays, "outcome": outcome, "phase": phase, "touhou_team": touhou_team, "extra_income": extra_income, "stagger_enabled": stagger_enabled, "overwhelm_enabled": overwhelm_enabled, "deck_enchants": deck_enchants.duplicate(true)}
 
 func category_for(key: String) -> int:
 	return 2 if SKILLS[key].kind == "guard" else (1 if SKILLS[key].kind == "ultimate" else 0)
@@ -357,7 +386,7 @@ static func targets_enemy(key: String) -> bool:
 func can_clash(hero: Dictionary, enemy: Dictionary) -> bool:
 	return enemy.active and enemy.category != 2 and (hero.unit == enemy.target or hero.speed > enemy.speed or heroes[hero.unit].get("ignores_intercept_speed", false))
 
-func can_assign(card: int, slot_id: int, target: int, enhanced: bool = false) -> String:
+func can_assign(card: int, slot_id: int, target: int, enhanced: bool = false, friendly: bool = false) -> String:
 	if phase != "response" or not outcome.is_empty():
 		return "当前不能修改行动"
 	if card < 0 or card >= hand.size() or slot_id < 0 or slot_id >= hero_slots.size():
@@ -383,6 +412,10 @@ func can_assign(card: int, slot_id: int, target: int, enhanced: bool = false) ->
 		var ending_error := ZiXingYC.ending_error(heroes[slot.unit])
 		if not ending_error.is_empty():
 			return ending_error
+	if key == ZiWu.MERIDIAN_SLASH:
+		var ending_error := ZiWu.ultimate_error(heroes[slot.unit], ZiWu.living_teammates(heroes, slot.unit))
+		if not ending_error.is_empty():
+			return ending_error
 	var count := 0
 	for other in hero_slots:
 		if other.id == slot_id or not other.active:
@@ -393,8 +426,8 @@ func can_assign(card: int, slot_id: int, target: int, enhanced: bool = false) ->
 			count += 1
 	if count >= group_action_limit(slot):
 		return "这组行动格已安排满 %d 次" % group_action_limit(slot)
-	var old_cost := int(SKILLS[slot.key].cost) if slot.active else 0
-	var needed := reserved_cost() - old_cost + int(SKILLS[hand[card]].cost)
+	var old_cost := get_card_cost(slot.key) if slot.active else 0
+	var needed := reserved_cost() - old_cost + get_card_cost(hand[card])
 	if needed > cost:
 		if heroes[slot.unit].character_id == MARISA_ID:
 			var missing := needed - cost
@@ -409,47 +442,77 @@ func can_assign(card: int, slot_id: int, target: int, enhanced: bool = false) ->
 				return "可用 cost 不足，敌方 cost 不足"
 		else:
 			return "可用 cost 不足，请先撤销其他行动"
-	if targets_enemy(key):
+	if friendly:
+		if not skill.get("can_target_ally", false):
+			return "这张牌不能攻击队友"
+		if target < 0 or target >= heroes.size() or target == slot.unit or heroes[target].hp <= 0:
+			return "请选择一名存活队友"
+	elif targets_enemy(key):
 		if target < 0 or target >= enemy_slots.size() or enemies[enemy_slots[target].unit].hp <= 0:
 			return "请选择敌方行动格"
 		if skill.get("requires_clash", false) and not can_clash(slot, enemy_slots[target]):
 			return "这张牌需要与敌方拼点"
 	if enhanced:
+		if heroes[slot.unit].has("insulation"):
+			var hero := heroes[slot.unit]
+			var enhancement_error := ZiWu.enhancement_error(hero, slot_id, key)
+			if not enhancement_error.is_empty():
+				return enhancement_error
+			if hero.enhanced_slot != slot_id and int(hero.insulation) - ZiWu.ENHANCE_COST < ZiWu.ULTIMATE_INSULATION and ZiWu.living_teammates(heroes, slot.unit) > 1:
+				for other in hero_slots:
+					if other.active and other.unit == slot.unit and other.key == ZiWu.MERIDIAN_SLASH:
+						return "强化会让已安排的终符缺少绝缘，请先撤销终符"
+			return ""
 		if not heroes[slot.unit].has("metaphysics") or not skill.has("enhance_name"):
 			return "这张牌不能强化"
 		return ZiXi.enhancement_error(heroes[slot.unit], slot_id)
 	return ""
 
-func assign(card: int, slot_id: int, target: int, enhanced: bool = false) -> String:
-	var error := can_assign(card, slot_id, target, enhanced)
+func assign(card: int, slot_id: int, target: int, enhanced: bool = false, friendly: bool = false) -> String:
+	var error := can_assign(card, slot_id, target, enhanced, friendly)
 	if not error.is_empty():
 		return error
 	var slot: Dictionary = hero_slots[slot_id]
-	if slot.get("enhanced", false):
-		ZiXi.unreserve_enhancement(heroes[slot.unit], slot_id)
-		slot.erase("enhanced")
+	_release_enhancement(slot)
 	if enhanced:
-		ZiXi.reserve_enhancement(heroes[slot.unit], slot_id)
+		var hero := heroes[slot.unit]
+		if hero.has("insulation"):
+			ZiWu.reserve_enhancement(hero, slot_id)
+		else:
+			ZiXi.reserve_enhancement(hero, slot_id)
 		slot.enhanced = true
 	slot.active = true
 	slot.card = card
 	slot.key = hand[card]
-	slot.targeted = targets_enemy(slot.key)
+	slot.targeted = not friendly and targets_enemy(slot.key)
 	slot.target = target if slot.targeted else slot.unit
+	if friendly:
+		slot.ally_target = target
+	else:
+		slot.erase("ally_target")
 	return ""
+
+func _release_enhancement(slot: Dictionary) -> void:
+	if not slot.get("enhanced", false):
+		return
+	var hero := heroes[slot.unit]
+	if hero.has("insulation"):
+		ZiWu.unreserve_enhancement(hero, slot.id)
+	else:
+		ZiXi.unreserve_enhancement(hero, slot.id)
+	slot.erase("enhanced")
 
 func cancel(slot_id: int) -> void:
 	if phase != "response" or slot_id < 0 or slot_id >= hero_slots.size():
 		return
 	var slot: Dictionary = hero_slots[slot_id]
-	if slot.get("enhanced", false):
-		ZiXi.unreserve_enhancement(heroes[slot.unit], slot_id)
-		slot.erase("enhanced")
+	_release_enhancement(slot)
 	hero_slots[slot_id].active = false
 	hero_slots[slot_id].card = -1
 	hero_slots[slot_id].key = ""
 	hero_slots[slot_id].target = -1
 	hero_slots[slot_id].erase("targeted")
+	hero_slots[slot_id].erase("ally_target")
 
 func tick(delta: float) -> bool:
 	if phase != "response":
@@ -476,30 +539,12 @@ func lock_and_resolve() -> Array[Dictionary]:
 			_emit(events, {"type": "ability", "message": "魔理沙用 %d 生命偷取 %d 敌方cost" % [missing * 5, missing]})
 	for slot in hero_slots:
 		if slot.active:
-			cost -= int(SKILLS[slot.key].cost)
+			cost -= get_card_cost(slot.key)
 			plays += 1
 			if slot.key == "the_world":
 				heroes[slot.unit].world_used = true
 	_emit(events, {"type": "reveal"})
-	var pairs := {}
-	for enemy in enemy_slots:
-		if not enemy.active or enemy.category == 2:
-			continue
-		var candidates: Array[Dictionary] = []
-		for hero in hero_slots:
-			if hero.active and targets_enemy(hero.key) and hero.target == enemy.id and can_clash(hero, enemy):
-				candidates.append(hero)
-		candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.speed > b.speed if a.speed != b.speed else a.id < b.id)
-		if not candidates.is_empty():
-			pairs[enemy.id] = candidates[0].id
-	var timeline: Array[Dictionary] = []
-	for slot in hero_slots:
-		if slot.active and not pairs.values().has(slot.id):
-			timeline.append({"speed": slot.speed, "order": slot.id, "hero": slot.id, "enemy": -1})
-	for slot in enemy_slots:
-		if slot.active:
-			var h := int(pairs.get(slot.id, -1))
-			timeline.append({"speed": maxi(slot.speed, hero_slots[h].speed) if h >= 0 else slot.speed, "order": hero_slots.size() + slot.id, "hero": h, "enemy": slot.id})
+	var timeline := _turn_timeline()
 	timeline.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.speed > b.speed if a.speed != b.speed else a.order < b.order)
 	for entry in timeline:
 		if not outcome.is_empty():
@@ -530,10 +575,33 @@ func lock_and_resolve() -> Array[Dictionary]:
 		phase = "outcome"
 	return events
 
+func _turn_timeline() -> Array[Dictionary]:
+	var pairs := {}
+	for enemy in enemy_slots:
+		if not enemy.active or enemy.category == 2:
+			continue
+		var candidates: Array[Dictionary] = []
+		for hero in hero_slots:
+			if hero.active and hero.get("targeted", targets_enemy(hero.key)) and hero.target == enemy.id and can_clash(hero, enemy):
+				candidates.append(hero)
+		candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.speed > b.speed if a.speed != b.speed else a.id < b.id)
+		if not candidates.is_empty():
+			pairs[enemy.id] = candidates[0].id
+	var timeline: Array[Dictionary] = []
+	for slot in hero_slots:
+		if slot.active and not pairs.values().has(slot.id):
+			timeline.append({"speed": slot.speed, "order": slot.id, "hero": slot.id, "enemy": -1})
+	for slot in enemy_slots:
+		if slot.active:
+			var h := int(pairs.get(slot.id, -1))
+			timeline.append({"speed": maxi(slot.speed, hero_slots[h].speed) if h >= 0 else slot.speed, "order": hero_slots.size() + slot.id, "hero": h, "enemy": slot.id})
+	return timeline
+
 func next_round() -> void:
 	if phase != "finished":
 		return
 	turn += 1
+	echo_triggered_this_round = false
 	var income: int = 10 if has_relic("everburning_tinder") else BASE_INCOME
 	cost += income
 	if touhou_team:
@@ -549,10 +617,80 @@ func next_round() -> void:
 		_process_stagger_wake_up()
 	_prepare_round()
 
+func _apply_rune_overcharge(events: Array[Dictionary], card_key: String, hero_unit_idx: int) -> float:
+	if get_card_enchant(card_key) != "rune_overcharge":
+		return 1.0
+	var skill: Dictionary = SKILLS.get(card_key, {})
+	if skill.get("kind", "") != "attack" or skill.get("no_damage", false) or card_key == Marisa.LASER or card_key == Marisa.SPARK:
+		return 1.0
+	var hero: Dictionary = heroes[hero_unit_idx]
+	var cur_shield := int(hero.get("shield", 0))
+	var spent := 0
+	var bonus_mult := 1.0
+	if cur_shield >= 8:
+		spent = 8
+		bonus_mult = 1.30
+	elif cur_shield >= 4:
+		spent = 4
+		bonus_mult = 1.15
+	if spent > 0:
+		hero.shield -= spent
+		_emit(events, {"type": "ability", "message": "符文 · 超频：消耗 %d 护盾，本次技能伤害 +%d%%" % [spent, int(round((bonus_mult - 1.0) * 100))]})
+	return bonus_mult
+
+func _apply_rune_leech(events: Array[Dictionary], card_key: String, source_unit: int, total_hp_damage: int) -> void:
+	if get_card_enchant(card_key) != "rune_leech" or total_hp_damage <= 0:
+		return
+	var heal_amount := mini(5, int(floor(float(total_hp_damage) * 0.15)))
+	if heal_amount <= 0:
+		return
+	var target_hero := -1
+	var min_ratio := 1.0
+	for i in heroes.size():
+		var h_unit: Dictionary = heroes[i]
+		if h_unit.hp > 0 and h_unit.hp < h_unit.max_hp:
+			var ratio := float(h_unit.hp) / float(h_unit.max_hp)
+			if ratio < min_ratio:
+				min_ratio = ratio
+				target_hero = i
+	if target_hero >= 0:
+		var actual_heal: int = mini(heal_amount, int(heroes[target_hero].max_hp) - int(heroes[target_hero].hp))
+		if actual_heal > 0:
+			heroes[target_hero].hp += actual_heal
+			_emit(events, {"type": "ability", "message": "符文 · 汲血：%s 恢复 %d 生命" % [heroes[target_hero].name, actual_heal]})
+			_emit(events, {"type": "heal", "hero": target_hero, "amount": actual_heal, "source": source_unit})
+
+func _apply_rune_echo(events: Array[Dictionary], card_key: String, source_unit: int, target_idx: int, main_target_hp_loss: int) -> void:
+	if get_card_enchant(card_key) != "rune_echo" or echo_triggered_this_round:
+		return
+	var skill: Dictionary = SKILLS.get(card_key, {})
+	if skill.get("kind", "") != "attack" or skill.get("no_damage", false) or card_key == Marisa.LASER or card_key == Marisa.SPARK:
+		return
+	if target_idx < 0 or target_idx >= enemies.size() or enemies[target_idx].hp <= 0 or main_target_hp_loss <= 0:
+		return
+	if rng.randf() >= 0.25:
+		return
+	echo_triggered_this_round = true
+	var raw_echo := int(floor(float(main_target_hp_loss) * 0.35))
+	if raw_echo <= 0:
+		return
+	var victim: Dictionary = enemies[target_idx]
+	var pre_echo_hp := int(victim.hp)
+	var blocked := mini(int(victim.shield), raw_echo)
+	victim.shield -= blocked
+	var echo_dmg := maxi(0, raw_echo - blocked)
+	victim.hp = maxi(0, int(victim.hp) - echo_dmg)
+	_emit(events, {"type": "ability", "message": "符文 · 回响：触发余波，对【%s】造成 %d 点伤害（吸收 %d）" % [victim.name, echo_dmg, blocked]})
+	_emit(events, {"type": "echo", "allied": true, "source": source_unit, "target": target_idx, "damage": echo_dmg, "blocked": blocked, "amount": raw_echo})
+	_check_stagger_after_action(events, victim, false, pre_echo_hp)
+
 func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 	var skill: Dictionary = SKILLS[slot.key]
 	var units: Array[Dictionary] = heroes if allied else enemies
-	if allied and (skill.has("enhance_name") or (units[slot.unit].character_id == ZIXINGYC_ID and skill.get("requires_clash", false))):
+	if allied and slot.has("ally_target"):
+		_ziwu_friendly_attack(events, slot, skill)
+		return
+	if allied and (skill.has("enhance_name") or (units[slot.unit].character_id in [ZIXINGYC_ID, ZIWU_ID] and skill.get("requires_clash", false))):
 		_emit(events, {"type": "cancelled", "reason": "%s需要拼点，行动取消" % skill.name})
 		return
 	if not targets_enemy(slot.key):
@@ -605,12 +743,23 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 	_emit(events, {"type": "paid", "hero": slot.unit, "skill": skill.name, "paid": 0} if allied else {"type": "enemy_turn", "enemy": slot.unit, "hero": target})
 	if allied:
 		var hero := heroes[slot.unit]
+		var overcharge_scale := _apply_rune_overcharge(events, slot.key, slot.unit)
+		var target_pre_hps := {}
+		for idx in enemies.size():
+			target_pre_hps[idx] = enemies[idx].hp
 		if hero.has("memory_log") and skill.has("damage_base"):
-			_zixingyc_strike(events, slot, target, int(skill.coins), {})
+			_zixingyc_strike(events, slot, target, int(skill.coins), {}, overcharge_scale)
 		elif marisa_slot >= 0 and slot.unit == marisa_slot:
-			_attack_marisa(events, slot, target, int(skill.coins), false)
+			_attack_marisa(events, slot, target, int(skill.coins), false, overcharge_scale)
 		else:
-			_resolve_hero_skill(events, slot, target, skill.coins)
+			_resolve_hero_skill(events, slot, target, skill.coins, overcharge_scale)
+		var total_hp_damage := 0
+		var main_target_hp_loss := maxi(0, int(target_pre_hps.get(target, 0)) - int(enemies[target].hp))
+		for idx in enemies.size():
+			if enemies[idx].get("kind", "") != "training_dummy":
+				total_hp_damage += maxi(0, int(target_pre_hps.get(idx, 0)) - int(enemies[idx].hp))
+		_apply_rune_leech(events, slot.key, slot.unit, total_hp_damage)
+		_apply_rune_echo(events, slot.key, slot.unit, target, main_target_hp_loss)
 		if hero.has("memory_log") and not skill.get("no_damage", false):
 			for i in (2 if slot.key == ZiXingYC.RESIDUAL else 1):
 				var observation := ZiXingYC.write_memory(hero, ZiXingYC.OBSERVATION)
@@ -632,9 +781,28 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 	var left_skill: Dictionary = SKILLS[h.key].duplicate()
 	var hero := heroes[h.unit]
+	var ziwu := hero.has("insulation")
+	var teammates := ZiWu.living_teammates(heroes, h.unit) if ziwu else 0
+	if h.key == ZiWu.MERIDIAN_SLASH:
+		var error := ZiWu.ultimate_error(hero, teammates)
+		if not error.is_empty():
+			_emit(events, {"type": "cancelled", "reason": error})
+			_solo(events, e, false)
+			return
+	var ziwu_layers := int(hero.get("insulation", 0))
 	var bonus := clash_bonus(h.key, hero.character_id, int(hero.get("preparation", 0)))
+	if ziwu:
+		bonus += ZiWu.clash_bonus(hero, teammates) + int(hero.next_clash_bonus)
+		hero.next_clash_bonus = 0
+		if h.get("enhanced", false):
+			bonus += int(left_skill.get("enhance_bonus", 0))
+		if h.key == ZiWu.BACKSTAB and int(enemies[e.unit].hp) * 2 <= int(enemies[e.unit].max_hp):
+			bonus += 2
 	var breaker: bool = hero.character_id == BLADE_ID and bonus > 0
 	left_skill.base += bonus
+	if get_card_enchant(h.key) == "rune_impact":
+		left_skill.base += 1
+		_emit(events, {"type": "ability", "message": "符文 · 破势：拼点基础点数 +1"})
 	if h.key == "exploit" and bonus > 0:
 		hero.preparation = 0
 		_emit(events, {"type": "ability", "message": "灰烬 · 捕捉破绽：消耗准备，本次拼点威力 +%d" % bonus})
@@ -672,6 +840,7 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 	if has_relic("adversity_blade") and int(e.get("speed", 0)) > int(h.get("speed", 0)):
 		left_skill.base += 2
 		_emit(events, {"type": "ability", "message": "逆境断刃：目标速度高于自身，拼点基础威力 +2"})
+	var overcharge_scale := _apply_rune_overcharge(events, h.key, h.unit)
 	_emit(events, {"type": "intercept" if h.unit != e.target else "engage", "hero": h.unit, "enemy": e.unit})
 	while lc > 0 and rc > 0:
 		var left_min := maxi(0, int(left_skill.base) + mini(0, int(left_skill.power) * lc))
@@ -679,7 +848,7 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 		var right_min := maxi(0, right_base + mini(0, int(right_skill.power) * rc))
 		var right_max := maxi(0, right_base + maxi(0, int(right_skill.power) * rc))
 		if (left_min == left_max and right_min == right_max and left_min == right_min) or ties >= 100:
-			var refund := int(floor(left_skill.cost * REFUND_RATE))
+			var refund := int(floor(get_card_cost(h.key) * REFUND_RATE))
 			cost += refund
 			_emit(events, {"type": "stalemate", "amount": refund})
 			if h.key == "observe" and hero.hp > 0:
@@ -689,6 +858,8 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 				_finish_zixi_clash(events, h, -1, zixi_clash)
 			if h.key == ZiXingYC.ATTENTION:
 				_zixingyc_archive(events, hero, left_skill.archive_corpus)
+			if h.key == ZiWu.MERIDIAN_SLASH:
+				_ziwu_finish_ultimate(events, hero)
 			return
 		var left := _roll(left_skill.base, left_skill.power, lc, 0.65)
 		if zixi_clash.get("tail_available", false):
@@ -772,15 +943,27 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 			first_win_paid = true
 			cost += 1
 			_emit(events, {"type": "reward", "amount": 1, "hero": h.unit})
+		var target_pre_hps := {}
+		for idx in enemies.size():
+			target_pre_hps[idx] = enemies[idx].hp
 		if marisa_slot >= 0 and h.unit == marisa_slot:
-			_attack_marisa(events, h, e.unit, lc, true)
+			_attack_marisa(events, h, e.unit, lc, true, overcharge_scale)
+		elif h.key in ZiWu.CARDS:
+			_ziwu_strike(events, h, e.unit, lc, teammates, ziwu_layers, overcharge_scale)
 		elif left_skill.has("damage_base"):
 			if not zxy_clash.is_empty():
-				_zixingyc_strike(events, h, e.unit, lc, zxy_clash)
+				_zixingyc_strike(events, h, e.unit, lc, zxy_clash, overcharge_scale)
 			else:
-				_attack_with_zixi_spell(events, h, e.unit, lc, zixi_clash)
+				_attack_with_zixi_spell(events, h, e.unit, lc, zixi_clash, overcharge_scale)
 		else:
-			_resolve_hero_skill(events, h, e.unit, lc)
+			_resolve_hero_skill(events, h, e.unit, lc, overcharge_scale)
+		var total_hp_damage := 0
+		var main_target_hp_loss := maxi(0, int(target_pre_hps.get(e.unit, 0)) - int(enemies[e.unit].hp))
+		for idx in enemies.size():
+			if enemies[idx].get("kind", "") != "training_dummy":
+				total_hp_damage += maxi(0, int(target_pre_hps.get(idx, 0)) - int(enemies[idx].hp))
+		_apply_rune_leech(events, h.key, h.unit, total_hp_damage)
+		_apply_rune_echo(events, h.key, h.unit, e.unit, main_target_hp_loss)
 		if h.key == ZiXingYC.PARADOX:
 			if enemies[e.unit].hp > 0:
 				var association := ZiXingYC.apply_paradox(hero, enemies[e.unit])
@@ -821,7 +1004,7 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 		if breaker:
 			hero.hp = maxi(0, int(hero.hp) - BREAKER_HP_LOSS)
 			_emit(events, {"type": "ability", "message": "长锋 · 破阵：拼点失败，损失 %d 生命" % BREAKER_HP_LOSS})
-		var refund := int(floor(left_skill.cost * REFUND_RATE))
+		var refund := int(floor(get_card_cost(h.key) * REFUND_RATE))
 		cost += refund
 		_emit(events, {"type": "refund", "amount": refund, "hero": h.unit})
 		var scale := 1.0
@@ -857,15 +1040,84 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 			_zixingyc_archive(events, hero, left_skill.archive_corpus)
 	if not zixi_clash.is_empty() and heroes[h.unit].hp > 0:
 		_finish_zixi_clash(events, h, 0 if lc > 0 else 1, zixi_clash, margin)
+	if ziwu and hero.hp > 0:
+		if lc > 0:
+			if h.key == ZiWu.LONE_INTERCEPT and h.get("enhanced", false):
+				hero.next_clash_bonus = 2
+				_emit(events, {"type": "ability", "message": "绝影突袭：下次拼点 +2"})
+			if h.key != ZiWu.MERIDIAN_SLASH and ZiWu.on_clash_win(hero, teammates, turn) > 0:
+				_emit(events, {"type": "ability", "message": "ZiWu · 独行拼胜：绝缘 +1"})
+		elif h.key == ZiWu.COLD_EDGE:
+			hero.vulnerable_turn = turn + 1
+			_emit(events, {"type": "ability", "message": "冷刃试锋拼败：下回合每次受敌方攻击时首段伤害 +2"})
+		if h.key == ZiWu.MERIDIAN_SLASH:
+			_ziwu_finish_ultimate(events, hero)
 	if h.key == "observe" and hero.hp > 0:
 		hero.preparation = 1
 		_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
+
+func _ziwu_damage(key: String, coins: int, bonus: int) -> int:
+	var skill: Dictionary = SKILLS[key]
+	var heads := int(_roll(0, 0, coins, 0.65).heads)
+	var damage := int(skill.damage_base) + heads * int(skill.damage_power) + bonus
+	if key == ZiWu.COLD_EDGE and heads == int(skill.coins):
+		damage += 2
+	return damage
+
+func _ziwu_strike(events: Array[Dictionary], slot: Dictionary, target: int, coins: int, teammates: int, layers: int, scale: float) -> void:
+	var layer_damage := layers * 2 if slot.key == ZiWu.MERIDIAN_SLASH else layers
+	var bonus := maxi(0, 2 - teammates) + layer_damage
+	if slot.key == ZiWu.LONE_INTERCEPT:
+		bonus += 2
+	var damage := _ziwu_damage(slot.key, coins, bonus)
+	_deal_hit(events, true, slot.unit, target, int(floor(damage * scale)), 1, 1)
+
+func _ziwu_friendly_attack(events: Array[Dictionary], slot: Dictionary, skill: Dictionary) -> void:
+	var target: int = slot.ally_target
+	var victim := heroes[target]
+	if victim.hp <= 0:
+		_emit(events, {"type": "cancelled", "reason": "友军目标已退场，行动取消"})
+		return
+	var hp_before := int(victim.hp)
+	var hero := heroes[slot.unit]
+	var execute := ZiWu.can_execute_ally(slot.key, victim)
+	var damage := hp_before
+	if not execute:
+		var bonus := ZiWu.damage_bonus(hero, ZiWu.living_teammates(heroes, slot.unit))
+		damage = _ziwu_damage(slot.key, skill.coins, bonus)
+		if slot.key == ZiWu.COLD_EDGE:
+			damage *= 2
+	_emit(events, {"type": "ability", "message": "ZiWu · %s：%s%s" % [skill.name, "斩杀队友 " if execute else "攻击队友 ", victim.name]})
+	_deal_hit(events, false, slot.unit, target, damage, 1, 1, true, execute)
+	if victim.hp > 0:
+		_check_stagger_after_action(events, victim, true, hp_before)
+		return
+	var refund := 0
+	if not hero.ally_refund_used:
+		refund = 3
+		hero.ally_refund_used = true
+		cost += refund
+	var gained := ZiWu.add_insulation(hero, 2)
+	var healed := mini(5, int(hero.max_hp) - int(hero.hp))
+	hero.hp += healed
+	_emit(events, {"type": "ability", "message": "ZiWu · 击倒队友：绝缘 +%d，恢复 %d HP，返还 %d cost" % [gained, healed, refund]})
+	if slot.key == ZiWu.BACKSTAB:
+		hero.shield += 5
+		_emit(events, {"type": "guard", "hero": slot.unit, "amount": 5})
+
+func _ziwu_finish_ultimate(events: Array[Dictionary], hero: Dictionary) -> void:
+	var layers := int(hero.insulation)
+	hero.insulation = 0
+	hero.blocked_gain_turn = turn + 1
+	var lost := mini(5, maxi(0, int(hero.hp) - 1))
+	hero.hp -= lost
+	_emit(events, {"type": "ability", "message": "子午绝灭斩：消耗 %d 层绝缘，损失 %d HP，下回合拼胜不产绝缘" % [layers, lost]})
 
 func _emit_metaphysics(events: Array[Dictionary], gained: int) -> void:
 	if gained > 0:
 		_emit(events, {"type": "ability", "message": "ZiXi：超形上学 +%d" % gained})
 
-func _attack_with_zixi_spell(events: Array[Dictionary], slot: Dictionary, target: int, coins: int, clash: Dictionary) -> void:
+func _attack_with_zixi_spell(events: Array[Dictionary], slot: Dictionary, target: int, coins: int, clash: Dictionary, scale: float = 1.0) -> void:
 	var skill: Dictionary = SKILLS[slot.key]
 	var damage: Array[int] = []
 	var natural_heads := 0
@@ -885,10 +1137,13 @@ func _attack_with_zixi_spell(events: Array[Dictionary], slot: Dictionary, target
 	for i in damage.size():
 		if enemies[target].hp <= 0:
 			break
-		_deal_hit(events, true, slot.unit, target, damage[i], i + 1, coins)
+		var hit: int = damage[i]
+		if scale != 1.0:
+			hit = int(floor(hit * scale))
+		_deal_hit(events, true, slot.unit, target, hit, i + 1, coins)
 
 # ZiXingYC 的三张进攻：基础伤害用剩余硬币单独掷算，生成语料每份 +1（上限 +5）。
-func _zixingyc_strike(events: Array[Dictionary], slot: Dictionary, target: int, coins: int, clash: Dictionary) -> void:
+func _zixingyc_strike(events: Array[Dictionary], slot: Dictionary, target: int, coins: int, clash: Dictionary, scale: float = 1.0) -> void:
 	var skill: Dictionary = SKILLS[slot.key]
 	var hero := heroes[slot.unit]
 	var extra := ZiXingYC.generation_bonus(hero)
@@ -904,7 +1159,10 @@ func _zixingyc_strike(events: Array[Dictionary], slot: Dictionary, target: int, 
 	for i in damage.size():
 		if enemies[target].hp <= 0:
 			break
-		_deal_hit(events, true, slot.unit, target, damage[i], i + 1, damage.size())
+		var hit: int = damage[i]
+		if scale != 1.0:
+			hit = int(floor(hit * scale))
+		_deal_hit(events, true, slot.unit, target, hit, i + 1, damage.size())
 
 # 符卡结算后自动整理：每回合至多一次成功整理，材料不足时保持原状态。
 func _zixingyc_archive(events: Array[Dictionary], hero: Dictionary, recipe: String) -> void:
@@ -943,7 +1201,7 @@ func _finish_zixi_clash(events: Array[Dictionary], slot: Dictionary, result: int
 		hero.no_margin_round = turn + 1
 		_emit(events, {"type": "ability", "message": "因果律已清空，下回合暂停分差奖励"})
 
-func _resolve_hero_skill(events: Array[Dictionary], slot: Dictionary, target: int, coins: int) -> void:
+func _resolve_hero_skill(events: Array[Dictionary], slot: Dictionary, target: int, coins: int, scale: float = 1.0) -> void:
 	if slot.unit == sakuya_slot:
 		var message := Sakuya.release(heroes[sakuya_slot], slot.key, turn)
 		if not message.is_empty():
@@ -951,7 +1209,7 @@ func _resolve_hero_skill(events: Array[Dictionary], slot: Dictionary, target: in
 			return
 	var skill: Dictionary = SKILLS[slot.key]
 	if not skill.get("no_damage", false):
-		_attack(events, true, slot.unit, target, skill.base, skill.power, coins, 0.65, slot.key)
+		_attack(events, true, slot.unit, target, skill.base, skill.power, coins, 0.65, slot.key, scale)
 
 func _detonate_dream(events: Array[Dictionary]) -> void:
 	var hero := heroes[reimu_slot]
@@ -996,6 +1254,8 @@ func _attack(events: Array[Dictionary], allied: bool, source: int, target: int, 
 				hit += Sakuya.damage_bonus(heroes[source], turn)
 			elif heroes[source].character_id == ZIXINGYC_ID:
 				hit += ZiXingYC.generation_bonus(heroes[source])
+			elif heroes[source].character_id == ZIWU_ID:
+				hit += ZiWu.damage_bonus(heroes[source], ZiWu.living_teammates(heroes, source))
 		elif not allied and enemies[source].get("exorcism_active", false):
 			hit = hit / 2
 		var damage := _deal_hit(events, allied, source, target, hit, i + 1, coins)
@@ -1005,7 +1265,7 @@ func _attack(events: Array[Dictionary], allied: bool, source: int, target: int, 
 			if not message.is_empty():
 				_emit(events, {"type": "ability", "message": message})
 
-func _attack_marisa(events: Array[Dictionary], slot: Dictionary, target: int, coins: int, won: bool) -> void:
+func _attack_marisa(events: Array[Dictionary], slot: Dictionary, target: int, coins: int, won: bool, scale: float = 1.0) -> void:
 	var hero := heroes[slot.unit]
 	var skill: Dictionary = SKILLS[slot.key]
 	if slot.key == Marisa.ORRERY:
@@ -1039,6 +1299,8 @@ func _attack_marisa(events: Array[Dictionary], slot: Dictionary, target: int, co
 			var raw: int = 10 * sparks if slot.key == Marisa.SPARK else int(skill.damage_base) + accumulated - (4 if slot.key == Marisa.LASER else 0)
 			if step_idx == 0 and (slot.key != Marisa.SPARK or sparks > 0):
 				raw += bonus
+			if scale != 1.0:
+				raw = int(floor(raw * scale))
 			var damage := _deal_hit(events, true, slot.unit, id, maxi(0, raw), step_idx + 1, coins)
 			if damage > 0:
 				hit_targets[id] = true
@@ -1046,15 +1308,17 @@ func _attack_marisa(events: Array[Dictionary], slot: Dictionary, target: int, co
 		var sp := Marisa.add_spark(hero, hit_targets.size())
 		_emit(events, {"type": "ability", "message": "非指向性激光命中 %d 人：火花 %d / 10" % [hit_targets.size(), sp]})
 
-func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int, hit: int, index: int, total: int) -> int:
+func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int, hit: int, index: int, total: int, friendly: bool = false, execute: bool = false) -> int:
 	var victim := (enemies if allied else heroes)[target]
-	if not allied and target == marisa_slot and victim.get("orrery_active", false):
+	if not allied and not friendly and target == marisa_slot and victim.get("orrery_active", false):
 		hit = maxi(0, hit - 5)
+	if not allied and not friendly and index == 1 and hit > 0 and victim.get("vulnerable_turn", 0) == turn:
+		hit += 2
 	var stagger_extra := 0
-	if stagger_enabled and victim.get("is_staggered", false):
+	if stagger_enabled and not execute and victim.get("is_staggered", false):
 		stagger_extra = int(floor(hit * 0.2))
 		hit += stagger_extra
-	var blocked := mini(int(victim.shield), hit)
+	var blocked := 0 if execute else mini(int(victim.shield), hit)
 	if blocked > 0 and victim.has("shield_until"):
 		ZiXi.absorb_carried_shield(victim, blocked)
 	victim.shield -= blocked
@@ -1072,10 +1336,12 @@ func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int
 	if not allied and target == reimu_slot and victim.hp == 0:
 		victim.dream_due = 0
 		victim.dream_orbs = 0
-	if not allied and damage > 0 and enemies[source].kind == "scout" and int(victim.get("preparation", 0)) > 0:
+	if not allied and not friendly and damage > 0 and enemies[source].kind == "scout" and int(victim.get("preparation", 0)) > 0:
 		victim.preparation = 0
 		_emit(events, {"type": "ability", "message": "裂影斥候：命中移除了灰烬的准备"})
 	var strike_evt: Dictionary = {"type": "strike", "allied": allied, "source": source, "target": target, "damage": damage, "blocked": blocked, "hit": index, "total": total}
+	if friendly:
+		strike_evt.friendly = true
 	if stagger_extra > 0:
 		strike_evt["stagger_bonus"] = stagger_extra
 	_emit(events, strike_evt)
@@ -1119,7 +1385,7 @@ func _extinguish_remaining_slots(events: Array[Dictionary], unit: Dictionary, al
 			slot.active = false
 			if allied:
 				var key: String = slot.key
-				var refund := int(SKILLS[key].cost) if SKILLS.has(key) else 0
+				var refund := get_card_cost(key)
 				cost += refund
 				if slot.get("enhanced", false):
 					ZiXi.unreserve_enhancement(heroes[slot.unit], slot.id)

@@ -6,6 +6,10 @@ run/main_scene="res://battle_setup.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://icon.svg"
 
+[autoload]
+
+NetworkManager="*res://scripts/pvp/NetworkManager.gd"
+
 [display]
 window/size/viewport_width=1440
 window/size/viewport_height=900

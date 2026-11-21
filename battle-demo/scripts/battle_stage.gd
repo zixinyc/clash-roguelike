@@ -48,6 +48,12 @@ var priest_texture: Texture2D
 var zixi_texture: Texture2D
 var zixingyc_texture: Texture2D
 var impact_texture: Texture2D
+var shockwave_texture: Texture2D
+var debris_texture: Texture2D
+var blood_texture: Texture2D
+var ember_texture: Texture2D
+var slash_texture: Texture2D
+var active_fx: Array[Dictionary] = []
 
 func _ready() -> void:
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -57,10 +63,33 @@ func _ready() -> void:
 	mono_font.font_names = PackedStringArray(["Bahnschrift", "Consolas"])
 	station_texture = _optional_texture("res://art/rain-station.png")
 	actors_texture = _optional_texture("res://art/battle-actors.png")
-	priest_texture = _optional_texture("res://art/grave-priest.png")
-	zixi_texture = _optional_texture("res://art/zixi.png")
-	zixingyc_texture = _optional_texture("res://art/zixingyc-placeholder.png")
 	impact_texture = _optional_texture("res://art/battle-impact.png")
+	shockwave_texture = _optional_texture("res://runtime_assets/fx/fx_shockwave_00.png")
+	debris_texture = _optional_texture("res://runtime_assets/fx/fx_debris_00.png")
+	blood_texture = _optional_texture("res://runtime_assets/fx/fx_blood_splat_00.png")
+	ember_texture = _optional_texture("res://runtime_assets/fx/fx_ember_burst_00.png")
+	slash_texture = _optional_texture("res://runtime_assets/fx/fx_slash_trail_00.png")
+
+func spawn_fx(tex: Texture2D, pos: Vector2, extent: Vector2, color: Color = Color.WHITE, duration: float = 0.35, rot: float = 0.0) -> void:
+	if tex == null:
+		return
+	active_fx.append({
+		"texture": tex,
+		"position": pos,
+		"extent": extent,
+		"color": color,
+		"rotation": rot,
+		"age": 0.0,
+		"duration": duration
+	})
+
+func prepare_portraits(heroes: Array[Dictionary], enemies: Array[Dictionary]) -> void:
+	if priest_texture == null and enemies.any(func(unit: Dictionary) -> bool: return unit.kind == "priest"):
+		priest_texture = _optional_texture("res://art/grave-priest.png")
+	if zixi_texture == null and heroes.any(func(unit: Dictionary) -> bool: return unit.has("metaphysics")):
+		zixi_texture = _optional_texture("res://art/zixi.png")
+	if zixingyc_texture == null and heroes.any(func(unit: Dictionary) -> bool: return unit.has("memory_log")):
+		zixingyc_texture = _optional_texture("res://art/zixingyc-placeholder.png")
 
 func _optional_texture(path: String) -> Texture2D:
 	return load(path) as Texture2D if ResourceLoader.exists(path) else null
@@ -74,6 +103,7 @@ func reset_visuals() -> void:
 	flashes.assign([0.0, 0.0, 0.0, 0.0, 0.0])
 	overlay.clear()
 	floaters.clear()
+	active_fx.clear()
 	banner = ""
 	impact = 0.0
 	sparks = 0.0
@@ -91,6 +121,9 @@ func _process(delta: float) -> void:
 	for item in floaters:
 		item.age += delta
 	floaters = floaters.filter(func(item: Dictionary) -> bool: return item.age < 1.5)
+	for fx in active_fx:
+		fx.age += delta
+	active_fx = active_fx.filter(func(fx: Dictionary) -> bool: return fx.age < fx.duration)
 	queue_redraw()
 
 func _actor_position(id: int) -> Vector2:
@@ -168,7 +201,11 @@ func _planning_overlay() -> void:
 		if slot.active and slot.category != 2 and not slot.done:
 			_arrow(slot_position(false, slot.id), _actor_position(slot.target) + Vector2(0, -145), Color(RED, opacity), -65.0 - slot.id * 5)
 	for slot in state.hero_slots:
-		if slot.active and slot.get("targeted", slot.category != 2) and not slot.done:
+		if not slot.active or slot.done:
+			continue
+		if slot.has("ally_target"):
+			_arrow(slot_position(true, slot.id), _actor_position(slot.ally_target) + Vector2(0, -145), Color(Color("e8a2ba"), opacity), -52.0)
+		elif slot.get("targeted", slot.category != 2):
 			_arrow(slot_position(true, slot.id), slot_position(false, slot.target), Color(BLUE, opacity), 65.0 + slot.id * 4)
 	for side in 2:
 		var slots: Array = state.hero_slots if side == 0 else state.enemy_slots
@@ -283,21 +320,55 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 	draw_set_transform(Vector2.ZERO, 0, size / BASE)
 	var name_pos: Vector2 = _actor_position(id) + Vector2(0, 31)
 	_text(unit.name, name_pos, 17, Color(accent, alpha))
-	var hp_rect := Rect2(_actor_position(id) + Vector2(-47, 42), Vector2(94, 4))
-	draw_rect(hp_rect, Color("27343a"))
-	draw_rect(Rect2(hp_rect.position, Vector2(hp_rect.size.x * maxf(unit.hp, 0) / unit.max_hp, 4)), Color(accent, alpha))
-	_text("%02d / %02d" % [unit.hp, unit.max_hp], _actor_position(id) + Vector2(0, 64), 12, Color("8b999b"), mono_font)
+	var hp_rect := Rect2(_actor_position(id) + Vector2(-53, 40), Vector2(106, 7))
+	draw_rect(Rect2(hp_rect.position - Vector2(1, 1), hp_rect.size + Vector2(2, 2)), Color("111a1f"), true)
+	draw_rect(hp_rect, Color("202c34"))
+	var fill_w: float = hp_rect.size.x * maxf(unit.hp, 0) / unit.max_hp
+	draw_rect(Rect2(hp_rect.position, Vector2(fill_w, hp_rect.size.y)), Color(accent, alpha))
+	if unit.shield > 0 and alive:
+		var shield_w: float = minf(hp_rect.size.x, hp_rect.size.x * float(unit.shield) / unit.max_hp)
+		draw_rect(Rect2(hp_rect.position, Vector2(shield_w, hp_rect.size.y)), Color(BLUE, 0.65))
+	var tick_x := hp_rect.position.x + hp_rect.size.x * 0.5
+	var is_triggered: bool = unit.get("stagger_threshold_triggered", false)
+	var tick_color := Color(0.4, 0.45, 0.48, 0.5) if is_triggered else Color("ffcc00")
+	if not is_triggered and unit.hp <= unit.max_hp * 0.7:
+		var pulse := (sin(time * 8.0) + 1.0) * 0.5
+		tick_color = tick_color.lerp(Color.WHITE, pulse * 0.6)
+	draw_line(Vector2(tick_x, hp_rect.position.y - 2), Vector2(tick_x, hp_rect.position.y + hp_rect.size.y + 2), tick_color, 2.0)
+	
+	var hp_label := "%02d / %02d" % [unit.hp, unit.max_hp]
+	if unit.shield > 0 and alive:
+		hp_label += " (盾 %d)" % unit.shield
+	_text(hp_label, _actor_position(id) + Vector2(0, 62), 12, Color("8b999b"), mono_font)
+	
+	if alive and unit.get("is_staggered", false):
+		var stagger_pulse := (sin(time * 7.0) + 1.0) * 0.5
+		var stagger_c := Color("ff4422").lerp(Color("ffbb33"), stagger_pulse)
+		_text("【失衡 BREAK】", _actor_position(id) + Vector2(0, -180), 15, stagger_c)
+		_text("瘫痪 · 承伤+20%", _actor_position(id) + Vector2(0, -162), 11, Color("e0a080"))
+	
+	var tag_y := _actor_position(id).y + 80
 	if not allied and alive and unit.has("exorcism"):
 		var status := "退治 %d/4" % unit.exorcism
 		if unit.exorcism_active:
 			status += " · 已引爆"
 		if unit.seal_active:
 			status += " · 封魔"
-		_text(status, _actor_position(id) + Vector2(0, 84), 11, RED)
+		_text(status, _actor_position(id) + Vector2(0, tag_y), 11, RED)
+		tag_y += 16
+	if alive and unit.get("stagger_immune_turns", 0) > 0:
+		_text("失衡免疫 (1轮)", _actor_position(id) + Vector2(0, tag_y), 11, Color("70858c"))
+		tag_y += 16
+	elif alive and int(unit.get("consecutive_clash_loss", 0)) > 0:
+		_text("拼败 %d/2" % unit.consecutive_clash_loss, _actor_position(id) + Vector2(0, tag_y), 11, Color("cf8a65"))
+		tag_y += 16
 	if allied:
-		_text("已行动" if acted else "规划中", _actor_position(id) + Vector2(0, 84), 11, Color("677c81") if acted else BLUE)
+		_text("已行动" if acted else "规划中", _actor_position(id) + Vector2(0, tag_y), 11, Color("677c81") if acted else BLUE)
 	elif alive:
-		_text("已锁定 · 技能隐藏" if state.get("phase", "") == "response" else "行动已揭晓", _actor_position(id) + Vector2(0, -220), 12, RED)
+		var caption := "行动已揭晓"
+		if state.get("phase", "") == "response":
+			caption = "技能隐藏" if state.get("pvp", false) else "已锁定 · 技能隐藏"
+		_text(caption, _actor_position(id) + Vector2(0, -220), 12, RED)
 
 func _draw_placeholder_actor(accent: Color, alpha: float, bob: float, flash: float) -> void:
 	var outline := Color(accent.lerp(Color.WHITE, flash), alpha)
@@ -352,6 +423,13 @@ func _draw_overlay() -> void:
 			var dir := Vector2(cos(angle), sin(angle))
 			draw_line(center + dir * 6, center + dir * length, Color(GOLD, sparks), 1.5 if i % 2 else 2.6, true)
 		draw_line(center - Vector2(90, 40) * sparks, center + Vector2(90, 40) * sparks, Color(0.97, 0.89, 0.69, sparks), 3.5, true)
+	for fx in active_fx:
+		var progress: float = clampf(fx.age / fx.duration, 0.0, 1.0)
+		var a: float = (1.0 - progress) * fx.color.a
+		var c := Color(fx.color.r, fx.color.g, fx.color.b, a)
+		var current_size: Vector2 = fx.extent * (1.0 + progress * 0.25)
+		var rect := Rect2(fx.position - current_size * 0.5, current_size)
+		draw_texture_rect(fx.texture, rect, false, c)
 
 func _set_motion(value: Vector2, id: int) -> void:
 	motions[id] = value
@@ -392,40 +470,66 @@ func play_event(event: Dictionary, speed: float) -> void:
 				result_text = "连续平局 · 决胜判定"
 			elif event.winner == 0:
 				result_text = "拼点获胜 · 敌方破币"
+				impact_sound.emit("coin_break")
+				spawn_fx(slash_texture, Vector2(690, 190), Vector2(190, 190), GOLD, 0.35 * duration, -0.4)
 			elif event.winner == 1:
 				result_text = "拼点失利 · 我方破币"
+				impact_sound.emit("coin_break")
+				spawn_fx(slash_texture, Vector2(690, 190), Vector2(190, 190), RED, 0.35 * duration, 0.4)
 			floaters.append({"text": result_text, "position": Vector2(690, 230), "age": 0.0, "color": GOLD if event.winner == 0 else RED, "size": 18})
 			await _move_pair(hero_id, enemy_id, Vector2.ZERO, Vector2.ZERO, 0.19 * duration)
 			await get_tree().create_timer(0.12 * duration).timeout
 			overlay.clear()
 		"strike":
-			var attacker: int = event.source if event.allied else event.source + 3
+			var attacker: int = event.source if event.allied or event.get("friendly", false) else event.source + 3
 			var victim: int = event.target + 3 if event.allied else event.target
-			var direction := 1.0 if event.allied else -1.0
+			var direction := 1.0 if _actor_position(victim).x >= _actor_position(attacker).x else -1.0
 			var travel: Vector2 = _actor_position(victim) - _actor_position(attacker) - Vector2(92 * direction, 0)
 			await _move_pair(attacker, victim, Vector2(-14 * direction, 0), Vector2.ZERO, 0.10 * duration)
 			await _move_pair(attacker, victim, travel, Vector2.ZERO, 0.15 * duration)
 			flashes[victim] = 1.0
+			var hit_pos: Vector2 = _actor_position(victim) + Vector2(0, -82)
+			if event.get("blocked", 0) > 0 and event.damage == 0:
+				spawn_fx(shockwave_texture, hit_pos, Vector2(160, 160), Color("4db2ff"), 0.3 * duration)
+				await _contact(hit_pos, 0.7, "guard", 0.15 * duration)
+			elif event.damage >= 8 or event.get("stagger_bonus", 0) > 0:
+				spawn_fx(blood_texture, hit_pos, Vector2(210, 210), Color(1, 0.25, 0.2, 0.85), 0.45 * duration, randf_range(0, TAU))
+				spawn_fx(shockwave_texture, hit_pos, Vector2(180, 180), Color(1, 0.9, 0.6, 0.7), 0.3 * duration)
+				await _contact(hit_pos, 1.25, "heavy_strike", (0.28 if event.hit == event.total else 0.17) * duration)
+				if event.get("stagger_bonus", 0) > 0:
+					floaters.append({"text": "失衡爆发! +%d" % event.stagger_bonus, "position": _actor_position(victim) + Vector2(0, -185), "age": 0.0, "color": GOLD, "size": 22})
+			else:
+				spawn_fx(slash_texture, hit_pos, Vector2(170, 170), Color.WHITE, 0.28 * duration, randf_range(-0.5, 0.5))
+				await _contact(hit_pos, 1.0, "strike", (0.28 if event.hit == event.total else 0.17) * duration)
 			floaters.append({"text": "−%d" % event.damage, "position": _actor_position(victim) + Vector2((event.hit - 1) * 18 - 12, -152 - (event.hit - 1) * 19), "age": 0.0, "color": RED if not event.allied else GOLD, "size": 33})
-			await _contact(_actor_position(victim) + Vector2(0, -82), 1.0, "strike", (0.28 if event.hit == event.total else 0.17) * duration)
 			await _move_pair(attacker, victim, Vector2.ZERO, Vector2(26 * direction, 0), 0.13 * duration)
 			await _move_pair(attacker, victim, Vector2.ZERO, Vector2.ZERO, 0.11 * duration)
-		"guard":
-			flashes[event.hero] = 0.5
-			floaters.append({"text": "+%d 护盾" % event.amount, "position": _actor_position(event.hero) + Vector2(0, -150), "age": 0.0, "color": BLUE, "size": 22})
+		"guard", "enemy_guard":
+			if event.type == "enemy_guard" and not state.get("pvp", false):
+				return
+			var actor: int = event.hero if event.type == "guard" else event.enemy + 3
+			flashes[actor] = 0.5
+			spawn_fx(shockwave_texture, _actor_position(actor) + Vector2(0, -70), Vector2(180, 180), Color("4db2ff"), 0.4 * duration)
+			floaters.append({"text": "+%d 护盾" % event.amount, "position": _actor_position(actor) + Vector2(0, -150), "age": 0.0, "color": BLUE, "size": 22})
 			await get_tree().create_timer(0.4 * duration).timeout
 		"stagger":
 			var unit_id: int = event.unit if event.allied else event.unit + 3
-			floaters.append({"text": "BREAK 失衡!", "position": _actor_position(unit_id) + Vector2(0, -170), "age": 0.0, "color": RED if event.allied else GOLD, "size": 24})
+			spawn_fx(debris_texture, _actor_position(unit_id) + Vector2(0, -70), Vector2(240, 240), Color("ffcc00"), 0.55 * duration, randf_range(0, TAU))
+			impact = 1.4
+			impact_sound.emit("heavy_strike")
+			floaters.append({"text": "【破防失衡 BREAK!】", "position": _actor_position(unit_id) + Vector2(0, -175), "age": 0.0, "color": RED if event.allied else GOLD, "size": 28})
 			await get_tree().create_timer(0.20 * duration).timeout
 		"overwhelm":
 			var victim_id: int = event.target if not event.allied else event.target + 3
-			floaters.append({"text": "压制 −%d" % event.damage, "position": _actor_position(victim_id) + Vector2(0, -130), "age": 0.0, "color": RED if not event.allied else GOLD, "size": 26})
+			spawn_fx(ember_texture, _actor_position(victim_id) + Vector2(0, -70), Vector2(220, 220), Color("ff9922"), 0.5 * duration)
+			impact = 1.2
+			impact_sound.emit("skill")
+			floaters.append({"text": "【压制追击 OVERWHELM! −%d】" % event.damage, "position": _actor_position(victim_id) + Vector2(0, -140), "age": 0.0, "color": RED if not event.allied else GOLD, "size": 26})
 			await get_tree().create_timer(0.18 * duration).timeout
 		"refund", "reward":
 			await get_tree().create_timer(0.2 * duration).timeout
 		"enemy_turn":
-			banner = "%s  /  敌方行动" % state.enemies[event.enemy].name
+			banner = "%s  /  %s" % [state.enemies[event.enemy].name, event.get("skill", "敌方行动")]
 			await get_tree().create_timer(0.3 * duration).timeout
 		"unopposed":
 			banner = "敌方行动已消耗  /  单方面攻击"

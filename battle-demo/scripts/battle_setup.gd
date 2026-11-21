@@ -52,6 +52,8 @@ func _ready() -> void:
 		var toggle := Button.new()
 		toggle.toggle_mode = true
 		toggle.text = "%s\n%s" % [roster[id].name, roster[id].role]
+		if id == Rules.ZIWU_ID:
+			toggle.tooltip_text = "25 HP · 速度 7–11\n适合短局抢先接招。独行时更强，可用绝缘强化或换取终符伤害。"
 		toggle.custom_minimum_size.y = 64
 		var selected_style := StyleBoxFlat.new()
 		selected_style.bg_color = Color("28454d")
@@ -105,6 +107,11 @@ func _ready() -> void:
 	launch_explore.custom_minimum_size = Vector2(160, 42)
 	launch_explore.pressed.connect(_start_exploration)
 	footer.add_child(launch_explore)
+	var launch_pvp := Button.new()
+	launch_pvp.text = "好友对战"
+	launch_pvp.custom_minimum_size = Vector2(120, 42)
+	launch_pvp.pressed.connect(_start_pvp)
+	footer.add_child(launch_pvp)
 	_refresh_lineup()
 	role_buttons[0].grab_focus()
 
@@ -203,6 +210,14 @@ func _start_exploration() -> void:
 	active_battle = explore_scene
 	if explore_scene.has_signal("exploration_finished"):
 		explore_scene.connect("exploration_finished", _return_to_setup)
+
+func _start_pvp() -> void:
+	if is_instance_valid(active_battle):
+		return
+	active_battle = load("res://pvp_lobby.tscn").instantiate()
+	active_battle.connect("closed", _return_to_setup)
+	page.hide()
+	add_child(active_battle)
 
 func _return_to_setup() -> void:
 	remove_child(active_battle)

@@ -5,6 +5,17 @@ const ForestMapGraph = preload("res://scripts/forest_map_graph.gd")
 const RelicSystem = preload("res://scripts/relic_system.gd")
 const DemoBattleRules = preload("res://scripts/battle_rules.gd")
 
+const RUNES := {
+	"rune_feather": {"id": "rune_feather", "name": "轻灵", "desc": "有效费用 −1（最低保底 1 费）"},
+	"rune_leech": {"id": "rune_leech", "name": "汲血", "desc": "主技能实损生命 15% 转化为治疗（单次上限 5 HP）"},
+	"rune_impact": {"id": "rune_impact", "name": "破势", "desc": "拼点基础点数 +1"},
+	"rune_echo": {"id": "rune_echo", "name": "回响", "desc": "单体命中后 25% 几率追加 35% 实损余波（每回合限 1 次）"},
+	"rune_overcharge": {"id": "rune_overcharge", "name": "超频", "desc": "行动开始消耗 4/8 护盾，提升 15%/30% 技能伤害"},
+}
+const FORGE_ENCHANT_COST := 4
+
+var deck_enchants: Dictionary = {}
+
 var map: RefCounted
 var party_hp: Array[int] = [48, 42, 46]
 var party_max_hp: Array[int] = [48, 42, 46]
@@ -57,6 +68,7 @@ var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 
 func initialize(map_def: RefCounted, initial_roster: int = 0, initial_relics: Array[String] = [], initial_items: Array[String] = [], seed_val: int = 1337, custom_lineup: Array = [], custom_deck: Array = []) -> void:
 	reserve_stats.clear()
+	deck_enchants.clear()
 	map = map_def
 	rng.seed = seed_val
 	roster_id = initial_roster
@@ -115,6 +127,64 @@ func set_lineup_and_deck(new_lineup: Array, new_deck: Array) -> void:
 		party_hp.append(int(stats.hp))
 	log_event("队伍整备完成：当前阵容为【%s】，携带 %d 张牌。" % ["、".join(party_names), deck.size()])
 	version += 1
+
+func get_active_deck_enchants() -> Dictionary:
+	var available := DemoBattleRules.available_cards(lineup)
+	var active: Dictionary = {}
+	for card_key in deck_enchants:
+		if not deck.is_empty() and not deck.has(card_key):
+			continue
+		if available.has(card_key):
+			active[card_key] = deck_enchants[card_key]
+	return active
+
+func get_evolution_config() -> Dictionary:
+	return {
+		"enabled": true,
+		"stagger": true,
+		"overwhelm": true,
+		"deck_enchants": get_active_deck_enchants(),
+	}
+
+func can_enchant_card(card_key: String, rune_id: String) -> Dictionary:
+	var at_forge: bool = pending == "forge"
+	if not at_forge and map != null and map.has_node(position):
+		var n = map.get_node(position)
+		if n != null and n.kind == ForestMapGraph.NodeKind.FORGE and not cleared.get(position, false):
+			at_forge = true
+	if not at_forge:
+		return {"ok": false, "reason": "当前位置不是未结算的余烬锻台。"}
+	if carried_cost < FORGE_ENCHANT_COST:
+		return {"ok": false, "reason": "余烬费用不足（需要 %d cost）。" % FORGE_ENCHANT_COST}
+	if not RUNES.has(rune_id):
+		return {"ok": false, "reason": "未知的符文词条。"}
+	var available := DemoBattleRules.available_cards(lineup)
+	if not available.has(card_key) and not deck.has(card_key):
+		return {"ok": false, "reason": "当前队伍不可用此卡牌。"}
+	if deck_enchants.get(card_key, "") == rune_id:
+		return {"ok": false, "reason": "该卡牌已雕琢相同的符文。"}
+	return {"ok": true, "reason": ""}
+
+func enchant_card(card_key: String, rune_id: String) -> bool:
+	var check := can_enchant_card(card_key, rune_id)
+	if not check.ok:
+		message = check.reason
+		return false
+	carried_cost -= FORGE_ENCHANT_COST
+	var old_rune: String = deck_enchants.get(card_key, "")
+	deck_enchants[card_key] = rune_id
+	cleared[position] = true
+	pending = ""
+	var card_name: String = DemoBattleRules.SKILLS.get(card_key, {}).get("name", card_key)
+	var rune_name: String = RUNES[rune_id].name
+	if old_rune.is_empty():
+		log_event("余烬锻台：消耗 %d cost，为【%s】雕琢符文【%s】。" % [FORGE_ENCHANT_COST, card_name, rune_name])
+	else:
+		var old_name: String = RUNES.get(old_rune, {}).get("name", old_rune)
+		log_event("余烬锻台：消耗 %d cost，将【%s】的符文【%s】覆写为【%s】。" % [FORGE_ENCHANT_COST, card_name, old_name, rune_name])
+	message = "符卡雕琢完成。可继续向前探索。"
+	version += 1
+	return true
 
 func _setup_custom_lineup(members: Array) -> void:
 	var roster := DemoBattleRules.create_roster()
