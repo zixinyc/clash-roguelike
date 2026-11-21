@@ -11,6 +11,7 @@ var card_list: VBoxContainer
 var enemy_picker: OptionButton
 var launch: Button
 var launch_explore: Button
+var deck_cycle_checkbox: CheckBox
 var summary: Label
 var page: MarginContainer
 var active_battle: Control
@@ -77,6 +78,10 @@ func _ready() -> void:
 	for encounter_name in Rules.ENCOUNTER_NAMES:
 		enemy_picker.add_item(encounter_name)
 	left.add_child(enemy_picker)
+	deck_cycle_checkbox = CheckBox.new()
+	deck_cycle_checkbox.text = "启用尖塔抽弃牌堆循环（每回合抽 %d 张）" % Rules.DEFAULT_DRAW_COUNT
+	deck_cycle_checkbox.button_pressed = false
+	left.add_child(deck_cycle_checkbox)
 
 	var right := _panel(columns)
 	right.add_child(_label("携带卡牌", 21))
@@ -188,6 +193,8 @@ func _start_battle() -> void:
 	active_battle.lineup = members.duplicate()
 	active_battle.deck = _selected_cards()
 	active_battle.encounter = enemy_picker.selected
+	if is_instance_valid(deck_cycle_checkbox):
+		active_battle.use_deck_cycle = deck_cycle_checkbox.button_pressed
 	active_battle.setup_requested.connect(_return_to_setup)
 	page.hide()
 	add_child(active_battle)
@@ -197,7 +204,8 @@ func _start_exploration() -> void:
 		return
 	var explore_scene = load("res://exploration_map.tscn").instantiate()
 	explore_scene.initial_lineup = members.duplicate()
-	explore_scene.initial_deck = _selected_cards()
+	# 探索模式使用杀戮尖塔 10 张初始基础卡组，通过战后三选一与商店逐步收集构筑
+	explore_scene.initial_deck = []
 	page.hide()
 	add_child(explore_scene)
 	active_battle = explore_scene

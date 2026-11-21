@@ -14,6 +14,7 @@ func _init() -> void:
 	_test_relic_database()
 	_test_map_generator()
 	_test_forest_run_navigation()
+	_test_action_dice_system()
 	_test_forest_run_nodes_and_patrol()
 	_test_forest_run_center_boss_and_escape()
 	_test_battle_relic_effects()
@@ -70,36 +71,111 @@ func _test_forest_run_navigation() -> void:
 	run.initialize(map, 0, ["mercury_die"], ["dense_smoke"], 100)
 	
 	check(run.position == map.start_id, "Run starts at map start_id")
-	check(run.actions_left == 2, "Initial actions_left is 2")
-	check(run.action_budget == 2, "Initial action_budget is 2")
-	check(run.carried_cost == 30, "Initial carried cost is 30")
+	check(not run.dice_rolled, "Turn 1 starts unrolled")
+	check(run.actions_left == 0, "Initial actions_left is 0 before rolling")
+	check(run.action_budget == 0, "Initial action_budget is 0 before rolling")
+	check(run.carried_cost == ForestRun.START_COST and run.carried_cost == 18, "Initial carried cost is 18")
 	check(run.relics == ["mercury_die"], "Initial relics contains mercury_die")
 	check(run.items == ["dense_smoke"], "Initial items contains dense_smoke")
 	check(not run.ember_core, "Initial ember_core is false")
 	
-	# Find adjacent node
+	# Find adjacent node - blocked before rolling dice
 	var links: Array = map.get_links(run.position)
 	check(not links.is_empty(), "Start node has links")
 	var next_id: String = links[0].other(run.position)
-	check(run.can_move(next_id), "Can move to adjacent node")
+	check(not run.can_move(next_id) and "行动骰" in run.move_error(next_id), "Cannot move before rolling action dice")
+	
+	# Roll 1d4 dice (forced 3 for deterministic navigation assertion)
+	var roll_res: Dictionary = run.roll_action_dice(3)
+	check(roll_res.get("ok", false) and roll_res.get("steps", 0) == 3, "Rolling action dice grants 3 steps")
+	check(run.dice_rolled and run.action_budget == 3 and run.actions_left == 3, "Dice state updated cleanly")
+	check(run.can_move(next_id), "Can move to adjacent node after rolling dice")
 	
 	var moved := run.move(next_id)
 	check(moved, "Movement to next_id succeeded")
 	check(run.position == next_id, "Current position updated")
-	check(run.actions_left == 1, "Actions left deducted by 1 (now %d)" % run.actions_left)
+	check(run.actions_left == 2, "Actions left deducted by 1 (now %d)" % run.actions_left)
 	check(run.fatigue == 1, "Fatigue increased to 1")
 	check(run.visited.has(next_id), "Node marked visited")
 	
 	if run.in_battle:
 		run.apply_battle_result(true, run.party_hp, run.carried_cost)
+		if run.pending == "card_reward":
+			run.skip_card_reward()
 	elif not run.pending.is_empty():
 		run.apply_choice(0)
 	
-	# End turn
+	# End turn resets dice state for turn 2
 	var end_ok := run.end_turn()
 	check(end_ok, "End turn succeeded")
 	check(run.turn == 2, "Turn advanced to 2")
-	check(run.actions_left == 2, "Actions refreshed to 2")
+	check(not run.dice_rolled and run.actions_left == 0 and run.action_budget == 0, "Dice resets on new turn")
+
+func _test_action_dice_system() -> void:
+	var map = ForestRandomGenerator.generate(150)
+	var run_a = ForestRun.new()
+	var run_b = ForestRun.new()
+	run_a.initialize(map, 0, [], [], 7777)
+	run_b.initialize(map, 0, [], [], 7777)
+	
+	# 1. Deterministic 1d4 sequence across turns with same seed
+	var rolls_a: Array[int] = []
+	var rolls_b: Array[int] = []
+	for _i in 6:
+		var ra: Dictionary = run_a.roll_action_dice()
+		var rb: Dictionary = run_b.roll_action_dice()
+		check(ra.ok and rb.ok, "Auto dice roll succeeds")
+		check(ra.raw >= ForestRun.DICE_MIN and ra.raw <= ForestRun.DICE_MAX, "1d4 roll stays within 1..4 (got %d)" % ra.raw)
+		rolls_a.append(int(ra.raw))
+		rolls_b.append(int(rb.raw))
+		# Duplicate roll same turn rejected
+		var dup: Dictionary = run_a.roll_action_dice()
+		check(not dup.ok, "Cannot roll action dice twice in the same turn")
+		run_a.end_turn()
+		run_b.end_turn()
+		if run_a.in_battle:
+			run_a.apply_battle_result(true, run_a.party_hp, run_a.carried_cost)
+			if run_a.pending == "card_reward":
+				run_a.skip_card_reward()
+		if run_b.in_battle:
+			run_b.apply_battle_result(true, run_b.party_hp, run_b.carried_cost)
+			if run_b.pending == "card_reward":
+				run_b.skip_card_reward()
+	check(rolls_a == rolls_b, "Same seed yields identical dice sequence")
+	
+	# 2. High fatigue (>= 6) applies -1 penalty with minimum floor 1
+	var run_f = ForestRun.new()
+	run_f.initialize(map, 0, [], [], 8888)
+	run_f.fatigue = 6
+	var r_high: Dictionary = run_f.roll_action_dice(4)
+	check(r_high.ok and r_high.raw == 4 and r_high.penalty == 1 and r_high.steps == 3, "High fatigue reduces roll 4 to 3 steps")
+	check(run_f.actions_left == 3 and run_f.last_dice_penalty == 1, "Penalty recorded on run state")
+	
+	run_f.end_turn()
+	if run_f.in_battle:
+		run_f.apply_battle_result(true, run_f.party_hp, run_f.carried_cost)
+		if run_f.pending == "card_reward":
+			run_f.skip_card_reward()
+	run_f.fatigue = 7
+	var r_floor: Dictionary = run_f.roll_action_dice(1)
+	check(r_floor.ok and r_floor.raw == 1 and r_floor.penalty == 1 and r_floor.steps == 1, "High fatigue never drops steps below 1")
+	
+	# 3. Resting without rolling reduces fatigue by 2
+	run_f.end_turn()
+	if run_f.in_battle:
+		run_f.apply_battle_result(true, run_f.party_hp, run_f.carried_cost)
+		if run_f.pending == "card_reward":
+			run_f.skip_card_reward()
+	run_f.fatigue = 5
+	check(not run_f.dice_rolled and run_f.phase_text() == "等待掷骰", "Phase text reports waiting for dice roll")
+	run_f.end_turn()
+	check(run_f.fatigue == 3, "Ending turn without rolling counts as resting (-2 fatigue)")
+	
+	# 4. Floor advance resets dice state
+	var map2 = ForestRandomGenerator.generate(151)
+	run_f.roll_action_dice(4)
+	run_f.advance_to_next_floor(map2, 151)
+	check(not run_f.dice_rolled and run_f.actions_left == 0 and run_f.action_budget == 0, "Advancing floor resets dice state")
 
 func _test_forest_run_nodes_and_patrol() -> void:
 	var map = ForestRandomGenerator.generate(200)

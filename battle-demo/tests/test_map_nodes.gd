@@ -36,19 +36,22 @@ func _run() -> void:
 	m._choose(1)
 	check(m.carried_cost == 16 and m.carried_hp == [1,0,5], "event health floor and reward")
 	m._restart()
-	check(m.carried_cost == 30 and m.carried_hp == [48,42,46] and m.cleared.is_empty(), "restart resets")
+	check(m.carried_cost == ForestRun.START_COST and m.carried_cost == 18 and m.carried_hp == [48,42,46] and m.cleared.is_empty(), "restart resets")
+	check(not m.roll_dice_button.disabled and not m.run.dice_rolled, "roll dice button enabled at start of turn")
+	var rolled: Dictionary = m.roll_dice_instant(3)
+	check(rolled.get("ok", false) and m.run.actions_left == 3 and m.roll_dice_button.disabled, "rolling dice enables steps and disables button for current turn")
 	m.position_now = Vector2i(4,2)
 	m._start_battle(1)
 	await process_frame
 	m.battle.battle.outcome = "victory"
 	m._return_from_battle()
-	check(m.carried_cost == 38, "elite victory gives 8")
+	check(m.carried_cost == 26, "elite victory gives 8")
 	m.position_now = Vector2i(2,1)
 	m._start_battle(0)
 	await process_frame
 	m.battle.battle.outcome = "defeat"
 	m._return_from_battle()
-	check(m.carried_cost == 38 and m.finished and not m.cleared.has(Vector2i(2,1)), "defeat grants no reward")
+	check(m.carried_cost == 26 and m.finished and not m.cleared.has(Vector2i(2,1)), "defeat grants no reward")
 	m._restart()
 	await _test_shop_lineup(m)
 	m._restart()

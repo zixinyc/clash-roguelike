@@ -57,6 +57,28 @@ func _run() -> void:
 	check(g.valid and "空槽" in g.text and g.text in ui.hint.text, "slow attack gets the same valid idle target in the stage and hand")
 	ui._assign()
 	check(ui.battle.hero_slots[3].active and ui.battle.hero_slots[3].target == 0, "the slow attack is placed on the idle target")
+	check(g.get("tag", "") == "单打" and g.get("kind", "") == "solo", "solo guidance carries crisp tag")
+	check(ui.stage.hero_guidance.size() == ui.battle.hero_slots.size(), "stage receives hero slot guidance")
+	# Right-click active hero slot -> instant quick cancel
+	var rclick := InputEventMouseButton.new()
+	rclick.button_index = MOUSE_BUTTON_RIGHT
+	rclick.pressed = true
+	rclick.position = ui.stage.slot_position(true, 3) * ui.stage.size / ui.stage.BASE
+	ui.stage._gui_input(rclick)
+	check(not ui.battle.hero_slots[3].active, "right-clicking an active hero slot cancels it immediately")
+	# Direct left-click on glowing valid enemy slot -> 1-click quick assign
+	var e_pos: Vector2 = ui.stage.slot_position(false, 0) * ui.stage.size / ui.stage.BASE
+	var lpress := InputEventMouseButton.new()
+	lpress.button_index = MOUSE_BUTTON_LEFT
+	lpress.pressed = true
+	lpress.position = e_pos
+	ui.stage._gui_input(lpress)
+	var lrel := InputEventMouseButton.new()
+	lrel.button_index = MOUSE_BUTTON_LEFT
+	lrel.pressed = false
+	lrel.position = e_pos
+	ui.stage._gui_input(lrel)
+	check(ui.battle.hero_slots[3].active and ui.battle.hero_slots[3].target == 0, "clicking a glowing valid enemy slot assigns directly")
 	ui.queue_free()
 	await process_frame
 	print("TARGET_GUIDANCE failures=", failures)

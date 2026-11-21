@@ -108,50 +108,37 @@ static func generate(seed_val: int = -1) -> ForestMapGraph:
 			var suffix: String = SUFFIXES.get(kind, "旧地")
 			var title: String = prefix + suffix
 			
-			var node := ForestMapGraph.MapNode.new(node_id, title, kind, Vector2(pos_x, pos_y), ForestMapGraph.kind_icon(kind))
+			var node := ForestMapGraph.MapNode.new(node_id, title, kind, Vector2(pos_x, pos_y), ForestMapGraph.kind_icon(kind), ForestMapGraph.kind_summary(kind))
 			graph.add_node(node)
 		
 		layers.append(layer_nodes)
 	
-	# 保底必有关键功能节点修正
-	graph.get_node(layers[1][0]).kind = ForestMapGraph.NodeKind.SUPPLY
-	graph.get_node(layers[1][0]).name = "遗落行囊"
-	graph.get_node(layers[1][1]).kind = ForestMapGraph.NodeKind.BATTLE
-	graph.get_node(layers[1][1]).name = "迷雾哨卡"
+	# 保底必有关键功能节点修正（同步刷新图标与描述，避免图文错配）
+	_set_node_meta(graph.get_node(layers[1][0]), ForestMapGraph.NodeKind.SUPPLY, "遗落行囊")
+	_set_node_meta(graph.get_node(layers[1][1]), ForestMapGraph.NodeKind.BATTLE, "林间哨卡")
 	
 	if layers[2].size() >= 2:
-		graph.get_node(layers[2][0]).kind = ForestMapGraph.NodeKind.LOOKOUT
-		graph.get_node(layers[2][0]).name = "断枝高台"
-		graph.get_node(layers[2][1]).kind = ForestMapGraph.NodeKind.SHRINE
-		graph.get_node(layers[2][1]).name = "荒野御灵社"
+		_set_node_meta(graph.get_node(layers[2][0]), ForestMapGraph.NodeKind.LOOKOUT, "断枝高台")
+		_set_node_meta(graph.get_node(layers[2][1]), ForestMapGraph.NodeKind.SHRINE, "荒野御灵社")
 	
 	if layers[3].size() >= 2:
-		graph.get_node(layers[3][0]).kind = ForestMapGraph.NodeKind.HIDEOUT
-		graph.get_node(layers[3][0]).name = "深层树洞"
-		graph.get_node(layers[3][1]).kind = ForestMapGraph.NodeKind.DANGER
-		graph.get_node(layers[3][1]).name = "咒雾裂谷"
+		_set_node_meta(graph.get_node(layers[3][0]), ForestMapGraph.NodeKind.HIDEOUT, "翠影树洞")
+		_set_node_meta(graph.get_node(layers[3][1]), ForestMapGraph.NodeKind.DANGER, "荆棘裂谷")
 	
-	graph.get_node(layers[4][1]).kind = ForestMapGraph.NodeKind.CENTER
-	graph.get_node(layers[4][1]).name = "烬心祭坛"
+	_set_node_meta(graph.get_node(layers[4][1]), ForestMapGraph.NodeKind.CENTER, "烬心祭坛")
 	
 	if layers[5].size() >= 2:
-		graph.get_node(layers[5][0]).kind = ForestMapGraph.NodeKind.ELITE
-		graph.get_node(layers[5][0]).name = "追猎者驻地"
-		graph.get_node(layers[5][1]).kind = ForestMapGraph.NodeKind.EVENT
-		graph.get_node(layers[5][1]).name = "残碑秘窟"
+		_set_node_meta(graph.get_node(layers[5][0]), ForestMapGraph.NodeKind.ELITE, "追猎者驻地")
+		_set_node_meta(graph.get_node(layers[5][1]), ForestMapGraph.NodeKind.EVENT, "残碑秘窟")
 	
 	if layers[6].size() >= 2:
-		graph.get_node(layers[6][0]).kind = ForestMapGraph.NodeKind.SHOP
-		graph.get_node(layers[6][0]).name = "战前行商"
-		graph.get_node(layers[6][1]).kind = ForestMapGraph.NodeKind.CAMP
-		graph.get_node(layers[6][1]).name = "战前营地"
+		_set_node_meta(graph.get_node(layers[6][0]), ForestMapGraph.NodeKind.SHOP, "战前行商")
+		_set_node_meta(graph.get_node(layers[6][1]), ForestMapGraph.NodeKind.CAMP, "战前营地")
 	elif layers[6].size() >= 1:
-		graph.get_node(layers[6][0]).kind = ForestMapGraph.NodeKind.SHOP
-		graph.get_node(layers[6][0]).name = "战前行商"
+		_set_node_meta(graph.get_node(layers[6][0]), ForestMapGraph.NodeKind.SHOP, "战前行商")
 		
 	var exit_node = graph.get_node(layers[layers.size() - 1][0])
-	exit_node.kind = ForestMapGraph.NodeKind.EXIT
-	exit_node.name = "关底守卫 · 归途石门"
+	_set_node_meta(exit_node, ForestMapGraph.NodeKind.EXIT, "关底守卫 · 归途石门")
 	
 	# 建立层间连线 (主干、支线与环路)
 	var edge_count := 0
@@ -220,6 +207,14 @@ static func generate(seed_val: int = -1) -> ForestMapGraph:
 		graph.add_edge(sc)
 	
 	return graph
+
+static func _set_node_meta(node: ForestMapGraph.MapNode, kind: int, title: String) -> void:
+	if node == null:
+		return
+	node.kind = kind
+	node.name = title
+	node.icon = ForestMapGraph.kind_icon(kind)
+	node.description = ForestMapGraph.kind_summary(kind)
 
 static func _add_edge_internal(g: ForestMapGraph, id: String, from_id: String, to_id: String, kind: int, rng: RandomNumberGenerator) -> void:
 	if from_id == to_id or g.find_edge(from_id, to_id) != null:

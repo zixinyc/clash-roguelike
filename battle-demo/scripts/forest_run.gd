@@ -4,6 +4,23 @@ extends RefCounted
 const ForestMapGraph = preload("res://scripts/forest_map_graph.gd")
 const RelicSystem = preload("res://scripts/relic_system.gd")
 const DemoBattleRules = preload("res://scripts/battle_rules.gd")
+const CardPool = preload("res://scripts/card_pool.gd")
+
+const START_COST := 18
+const DICE_MIN := 1
+const DICE_MAX := 4
+const FATIGUE_PENALTY_THRESHOLD := 6
+
+# 战斗演进阶段 3 · 符卡附魔与余烬锻台
+const FORGE_ENCHANT_COST := 4
+const VALID_RUNES := ["rune_feather", "rune_leech", "rune_impact", "rune_echo", "rune_overcharge"]
+const RUNE_META := {
+	"rune_feather": {"name": "轻灵", "desc": "有效费用 −1（正费用最低 1）", "cost_mod": -1},
+	"rune_leech": {"name": "汲血", "desc": "主技能聚合实扣生命 15% 转化为最低存活队友治疗（上限 5）", "cost_mod": 0},
+	"rune_impact": {"name": "破势", "desc": "拼点基础威力 +1", "cost_mod": 0},
+	"rune_echo": {"name": "回响", "desc": "普通攻击 25% 概率追加主目标实损 35% 次生伤害", "cost_mod": 0},
+	"rune_overcharge": {"name": "超频", "desc": "普通攻击扣至多 8 盾，每完整 4 盾增伤 15%", "cost_mod": 0},
+}
 
 var map: RefCounted
 var party_hp: Array[int] = [48, 42, 46]
@@ -12,18 +29,24 @@ var party_names: Array[String] = ["灰烬", "长锋", "织火"]
 var reserve_stats: Dictionary = {}
 var lineup: Array[int] = [0, 1, 2]
 var deck: Array[String] = []
+var card_instances: Array[Dictionary] = [] # [{"uid": "inst_1_1", "key": "guard", "enchant": ""}, ...]
+var deck_enchants: Dictionary[String, String] = {} # instance uid -> rune_id
+var card_uid_counter: int = 0
 var roster_id: int = 0
 var floor_level: int = 1
 var floor_cleared: bool = false
-var carried_cost: int = 30
+var carried_cost: int = START_COST
 var relics: Array[String] = []
 var items: Array[String] = []
 
 var position: String = ""
 var selected: String = ""
 var turn: int = 1
-var actions_left: int = 2
-var action_budget: int = 2
+var dice_rolled: bool = false
+var last_dice_raw: int = 0
+var last_dice_penalty: int = 0
+var actions_left: int = 0
+var action_budget: int = 0
 var fatigue: int = 0
 var alert: int = 0
 var hidden_turns: int = 0
@@ -33,7 +56,7 @@ var in_battle: bool = false
 var finished: bool = false
 var pending: String = ""
 var event_variant: int = 0
-var message: String = "沿亮起的林间小径探索，夺取烬核后返回归途石门。"
+var message: String = "请先掷出行动骰（1d4）决定本回合可行动步数，夺取烬核后返回归途石门。"
 var current_encounter: int = 0
 var version: int = 0
 
@@ -54,19 +77,55 @@ var signals: Array[Dictionary] = []
 var signal_counter: int = 0
 var observation_expires: int = 0
 var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var dice_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var card_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var pending_card_rewards: Array[String] = []
+var shop_card_offers: Dictionary = {}
+var shop_removal_used: Dictionary = {}
 
 func initialize(map_def: RefCounted, initial_roster: int = 0, initial_relics: Array[String] = [], initial_items: Array[String] = [], seed_val: int = 1337, custom_lineup: Array = [], custom_deck: Array = []) -> void:
 	reserve_stats.clear()
 	map = map_def
 	rng.seed = seed_val
+	dice_rng.seed = seed_val ^ 0x51A7D1CE
+	card_rng.seed = seed_val ^ 0x43415244
 	roster_id = initial_roster
+	carried_cost = START_COST
+	turn = 1
+	dice_rolled = false
+	last_dice_raw = 0
+	last_dice_penalty = 0
+	action_budget = 0
+	actions_left = 0
+	fatigue = 0
+	alert = 0
+	hidden_turns = 0
+	intel_fragments = 0
+	ember_core = false
+	in_battle = false
+	finished = false
+	floor_cleared = false
+	pending = ""
+	pending_card_rewards.clear()
+	shop_card_offers.clear()
+	shop_removal_used.clear()
 	if not custom_lineup.is_empty():
 		_setup_custom_lineup(custom_lineup)
 		deck.clear()
-		for k in custom_deck:
-			deck.append(String(k))
+		if not custom_deck.is_empty():
+			for k in custom_deck:
+				deck.append(String(k))
+		else:
+			deck.assign(CardPool.build_starter_deck(lineup))
 	else:
 		_setup_roster(initial_roster)
+		deck.assign(CardPool.build_starter_deck(lineup))
+	card_uid_counter = 0
+	card_instances.clear()
+	deck_enchants.clear()
+	for k in deck:
+		var uid := _next_card_uid()
+		card_instances.append({"uid": uid, "key": String(k), "enchant": ""})
 	relics.assign(initial_relics.duplicate())
 	items.assign(initial_items.duplicate())
 	
@@ -83,7 +142,8 @@ func initialize(map_def: RefCounted, initial_roster: int = 0, initial_relics: Ar
 		patrol_node = patrol_route[0]
 		
 	reveal()
-	log_event("小队进入焦黑森林第 %d 层，归途石门已在身后闭锁。" % floor_level)
+	message = "请先掷出行动骰（1d4）决定本回合可行动步数，沿林间小径探索。"
+	log_event("小队进入焦黑森林第 %d 层，归途石门已在身后闭锁。请掷出行动骰决定步数。" % floor_level)
 
 func has_living_member(members: Array) -> bool:
 	for id in members:
@@ -104,6 +164,7 @@ func set_lineup_and_deck(new_lineup: Array, new_deck: Array) -> void:
 	deck.clear()
 	for k in new_deck:
 		deck.append(String(k))
+	_sync_card_instances()
 	party_names.clear()
 	party_hp.clear()
 	party_max_hp.clear()
@@ -160,13 +221,42 @@ func phase_text() -> String:
 		return "遭遇战斗"
 	if not pending.is_empty():
 		return "地点抉择"
+	if not dice_rolled:
+		return "等待掷骰"
 	if actions_left == 0:
 		return "等待结束回合"
 	return "探索行动"
 
+func can_roll_action_dice() -> bool:
+	return not finished and not in_battle and pending.is_empty() and not dice_rolled
+
+func roll_action_dice(forced_raw: int = -1) -> Dictionary:
+	if finished or in_battle or not pending.is_empty():
+		return {"ok": false, "reason": "请先处理当前地点或战斗。"}
+	if dice_rolled:
+		return {"ok": false, "reason": "本回合已掷过行动骰。"}
+	var raw: int = forced_raw if (forced_raw >= DICE_MIN and forced_raw <= DICE_MAX) else dice_rng.randi_range(DICE_MIN, DICE_MAX)
+	var penalty: int = 1 if fatigue >= FATIGUE_PENALTY_THRESHOLD else 0
+	var steps: int = maxi(1, raw - penalty)
+	last_dice_raw = raw
+	last_dice_penalty = penalty
+	action_budget = steps
+	actions_left = steps
+	dice_rolled = true
+	if penalty > 0:
+		message = "行动骰掷出 %d（高疲劳 −%d），本回合可行动 %d 步。" % [raw, penalty, steps]
+		log_event("第 %d 回合掷出行动骰 [%d]（高疲劳 −%d），获得 %d 步行动点。" % [turn, raw, penalty, steps])
+	else:
+		message = "行动骰掷出 %d，本回合可行动 %d 步。" % [raw, steps]
+		log_event("第 %d 回合掷出行动骰 [%d]，获得 %d 步行动点。" % [turn, raw, steps])
+	version += 1
+	return {"ok": true, "raw": raw, "penalty": penalty, "steps": steps}
+
 func move_error(to_id: String) -> String:
 	if finished or in_battle or not pending.is_empty():
 		return "请先处理当前地点或战斗。"
+	if not dice_rolled:
+		return "请先掷出本回合行动骰决定步数。"
 	if not map.has_node(to_id) or not known.has(to_id):
 		return "尚未发现该地点。"
 	if to_id == position:
@@ -445,20 +535,197 @@ func leave_shop() -> bool:
 	if pending != "shop":
 		return false
 	pending = ""
-	message = "已暂离黑商，随时可以再次点击进入交易。"
+	message = "已暂离行商，随时可以再次点击进入交易。"
 	version += 1
 	return true
+
+func _next_card_uid() -> String:
+	card_uid_counter += 1
+	return "inst_%d_%d" % [floor_level, card_uid_counter]
+
+func _sync_card_instances() -> void:
+	if card_instances.size() != deck.size():
+		var new_instances: Array[Dictionary] = []
+		for i in deck.size():
+			var key := deck[i]
+			if i < card_instances.size() and String(card_instances[i].get("key", "")) == key:
+				new_instances.append(card_instances[i])
+			else:
+				var uid := _next_card_uid()
+				var enchant := String(deck_enchants.get(uid, ""))
+				new_instances.append({"uid": uid, "key": key, "enchant": enchant})
+		card_instances = new_instances
+	else:
+		for i in deck.size():
+			card_instances[i]["key"] = deck[i]
+			var uid: String = card_instances[i].get("uid", "")
+			if not uid.is_empty() and deck_enchants.has(uid):
+				card_instances[i]["enchant"] = deck_enchants[uid]
+
+func claim_card_reward(choice_idx: int) -> Dictionary:
+	if pending != "card_reward" or pending_card_rewards.is_empty():
+		return {"ok": false, "reason": "当前没有待领取的战利品符卡。"}
+	if choice_idx < 0 or choice_idx >= pending_card_rewards.size():
+		return {"ok": false, "reason": "请选择有效的战利品符卡。"}
+	var key: String = pending_card_rewards[choice_idx]
+	var check_res: Dictionary = CardPool.can_add_card(deck, key)
+	if not check_res.ok:
+		return check_res
+	var uid := _next_card_uid()
+	deck.append(key)
+	card_instances.append({"uid": uid, "key": key, "enchant": ""})
+	pending_card_rewards.clear()
+	pending = ""
+	var cname: String = DemoBattleRules.SKILLS[key].name if DemoBattleRules.SKILLS.has(key) else key
+	message = "已将【%s】收入牌库（当前 %d/%d 张）。" % [cname, deck.size(), CardPool.MAX_DECK_SIZE]
+	log_event("战利品选卡：获得【%s】（%s），当前牌库 %d/%d 张。" % [cname, CardPool.rarity_label(key), deck.size(), CardPool.MAX_DECK_SIZE])
+	version += 1
+	return {"ok": true, "key": key}
+
+func skip_card_reward() -> Dictionary:
+	if pending != "card_reward":
+		return {"ok": false, "reason": "当前没有待领取的战利品符卡。"}
+	pending_card_rewards.clear()
+	pending = ""
+	carried_cost += CardPool.SKIP_REWARD_COST
+	message = "已跳过选卡，将残余符力折算为 +%d cost。" % CardPool.SKIP_REWARD_COST
+	log_event("跳过战利品选卡：获得 +%d cost。" % CardPool.SKIP_REWARD_COST)
+	version += 1
+	return {"ok": true, "bonus_cost": CardPool.SKIP_REWARD_COST}
+
+func ensure_shop_offers(node_id: String = "") -> Array:
+	var sid := position if node_id.is_empty() else node_id
+	if shop_card_offers.has(sid):
+		return shop_card_offers[sid]
+	var shop_rng := RandomNumberGenerator.new()
+	shop_rng.seed = (card_rng.seed ^ absi(sid.hash()) ^ (floor_level * 9973))
+	var picks: Array[String] = CardPool.roll_card_choices(lineup, deck, shop_rng, "shop", 3)
+	var offers: Array = []
+	for key in picks:
+		offers.append({"key": key, "price": CardPool.shop_price(key), "sold": false})
+	shop_card_offers[sid] = offers
+	return offers
+
+func is_shop_removal_used(node_id: String = "") -> bool:
+	var sid := position if node_id.is_empty() else node_id
+	return bool(shop_removal_used.get(sid, false))
+
+func shop_buy_card(offer_idx: int) -> Dictionary:
+	if pending != "shop":
+		return {"ok": false, "reason": "当前不在商店界面。"}
+	var offers := ensure_shop_offers(position)
+	if offer_idx < 0 or offer_idx >= offers.size():
+		return {"ok": false, "reason": "无效的符卡货位。"}
+	var offer: Dictionary = offers[offer_idx]
+	if bool(offer.get("sold", false)):
+		return {"ok": false, "reason": "该张符卡已售罄。"}
+	var key: String = String(offer.get("key", ""))
+	var price: int = int(offer.get("price", 4))
+	if carried_cost < price:
+		return {"ok": false, "reason": "余烬不足（需要 %d cost）。" % price}
+	var cap_check: Dictionary = CardPool.can_add_card(deck, key)
+	if not cap_check.ok:
+		return cap_check
+	var uid := _next_card_uid()
+	carried_cost -= price
+	deck.append(key)
+	card_instances.append({"uid": uid, "key": key, "enchant": ""})
+	offer["sold"] = true
+	var cname: String = DemoBattleRules.SKILLS[key].name if DemoBattleRules.SKILLS.has(key) else key
+	message = "在行商处购得【%s】（−%d cost），当前牌库 %d/%d 张。" % [cname, price, deck.size(), CardPool.MAX_DECK_SIZE]
+	log_event("购买符卡【%s】：−%d cost，当前牌库 %d/%d 张。" % [cname, price, deck.size(), CardPool.MAX_DECK_SIZE])
+	version += 1
+	return {"ok": true, "key": key, "price": price}
+
+func shop_remove_card(deck_idx: int) -> Dictionary:
+	if pending != "shop":
+		return {"ok": false, "reason": "当前不在商店界面。"}
+	if is_shop_removal_used(position):
+		return {"ok": false, "reason": "本商店本层已使用过精简删牌服务。"}
+	if carried_cost < CardPool.REMOVE_CARD_COST:
+		return {"ok": false, "reason": "余烬不足（删牌需要 %d cost）。" % CardPool.REMOVE_CARD_COST}
+	var rem_check: Dictionary = CardPool.can_remove_card(deck, deck_idx)
+	if not rem_check.ok:
+		return rem_check
+	var removed_key: String = deck[deck_idx]
+	var removed_uid := ""
+	if deck_idx < card_instances.size():
+		removed_uid = String(card_instances[deck_idx].get("uid", ""))
+		card_instances.remove_at(deck_idx)
+	if not removed_uid.is_empty() and deck_enchants.has(removed_uid):
+		deck_enchants.erase(removed_uid)
+	carried_cost -= CardPool.REMOVE_CARD_COST
+	deck.remove_at(deck_idx)
+	shop_removal_used[position] = true
+	var cname: String = DemoBattleRules.SKILLS[removed_key].name if DemoBattleRules.SKILLS.has(removed_key) else removed_key
+	message = "已在行商处精简移除【%s】（−%d cost），当前牌库 %d/%d 张。" % [cname, CardPool.REMOVE_CARD_COST, deck.size(), CardPool.MAX_DECK_SIZE]
+	log_event("商店精简删牌：移除【%s】（−%d cost），当前牌库 %d/%d 张。" % [cname, CardPool.REMOVE_CARD_COST, deck.size(), CardPool.MAX_DECK_SIZE])
+	version += 1
+	return {"ok": true, "key": removed_key}
+
+func can_forge_enchant(deck_idx: int, rune_id: String) -> Dictionary:
+	if pending != "forge":
+		return {"ok": false, "reason": "当前不在林野锻台。"}
+	if carried_cost < FORGE_ENCHANT_COST:
+		return {"ok": false, "reason": "余烬不足（附魔需要 %d cost）。" % FORGE_ENCHANT_COST}
+	if deck_idx < 0 or deck_idx >= deck.size():
+		return {"ok": false, "reason": "请选择有效的卡牌。"}
+	if not VALID_RUNES.has(rune_id):
+		return {"ok": false, "reason": "未知的符文类型：%s" % rune_id}
+	var key := deck[deck_idx]
+	var avail: Array = DemoBattleRules.available_cards(lineup)
+	if not avail.has(key):
+		return {"ok": false, "reason": "当前出战队伍无法使用此卡牌进行附魔。"}
+	var uid := String(card_instances[deck_idx].get("uid", "")) if deck_idx < card_instances.size() else ""
+	var current_rune := String(deck_enchants.get(uid, ""))
+	if current_rune == rune_id:
+		return {"ok": false, "reason": "该卡牌已拥有【%s】符文，无需重复附魔。" % RUNE_META[rune_id].name}
+	return {"ok": true, "reason": ""}
+
+func forge_enchant_card(deck_idx: int, rune_id: String) -> Dictionary:
+	var check_res := can_forge_enchant(deck_idx, rune_id)
+	if not check_res.ok:
+		return check_res
+	var key := deck[deck_idx]
+	var uid := String(card_instances[deck_idx].get("uid", "")) if deck_idx < card_instances.size() else ""
+	if uid.is_empty():
+		uid = _next_card_uid()
+		if deck_idx < card_instances.size():
+			card_instances[deck_idx]["uid"] = uid
+	carried_cost -= FORGE_ENCHANT_COST
+	deck_enchants[uid] = rune_id
+	if deck_idx < card_instances.size():
+		card_instances[deck_idx]["enchant"] = rune_id
+	cleared[position] = true
+	pending = ""
+	var cname: String = DemoBattleRules.SKILLS[key].name if DemoBattleRules.SKILLS.has(key) else key
+	var rname: String = RUNE_META[rune_id].name
+	message = "已在余烬锻台为【%s】附魔【%s】符文（−%d cost）。" % [cname, rname, FORGE_ENCHANT_COST]
+	log_event("余烬锻台附魔：为【%s】（实例 %s）镌刻【%s】（−%d cost）。" % [cname, uid, rname, FORGE_ENCHANT_COST])
+	version += 1
+	return {"ok": true, "uid": uid, "key": key, "rune_id": rune_id, "cost": FORGE_ENCHANT_COST}
+
+func get_card_instance(deck_idx: int) -> Dictionary:
+	if deck_idx >= 0 and deck_idx < card_instances.size():
+		return card_instances[deck_idx]
+	return {}
+
+func get_active_enchants() -> Dictionary:
+	return deck_enchants.duplicate()
 
 func end_turn() -> bool:
 	if in_battle or finished or not pending.is_empty():
 		return false
-	var rested: bool = actions_left == action_budget
+	var rested: bool = not dice_rolled or actions_left == action_budget
 	turn += 1
 	hidden_turns = maxi(0, hidden_turns - 1)
 	fatigue = maxi(0, fatigue - (2 if rested else 1))
 	alert = maxi(0, alert - (2 if hidden_turns > 0 else (1 if rested else 0)))
-	action_budget = 1 if fatigue >= 6 else 2
-	actions_left = action_budget
+	dice_rolled = false
+	last_dice_raw = 0
+	last_dice_penalty = 0
+	action_budget = 0
+	actions_left = 0
 	
 	signals = signals.filter(func(s: Dictionary) -> bool: return int(s.get("expires_turn", 0)) >= turn)
 	_move_patrol()
@@ -467,7 +734,9 @@ func end_turn() -> bool:
 	
 	if not in_battle:
 		var stealth_note := "【隐蔽中】" if hidden_turns > 0 else ""
-		log_event("第 %d 回合开始，行动力 %d 点。%s" % [turn, action_budget, stealth_note])
+		var fatigue_note := "（当前高疲劳，本回合骰点 −1，保底 1 步）" if fatigue >= FATIGUE_PENALTY_THRESHOLD else ""
+		message = "第 %d 回合开始，请掷出行动骰（1d4）决定本回合步数。%s" % [turn, fatigue_note]
+		log_event("第 %d 回合开始，等待掷出行动骰。%s%s" % [turn, stealth_note, fatigue_note])
 	version += 1
 	return true
 
@@ -609,6 +878,14 @@ func apply_battle_result(victory: bool, remaining_hp: Array, remaining_cost: int
 			patrol_encounter = false
 			patrol_return_turn = turn + 3 # Patrol respawns in 3 turns
 			log_event("击退巡游巨兽，兽群溃退深林（3 回合内不会出现）。")
+
+		# Slay-the-Spire post-battle 3-choose-1 card draft
+		var reward_tier := "boss" if is_boss else ("elite" if is_elite else "normal")
+		var choices: Array[String] = CardPool.roll_card_choices(lineup, deck, card_rng, reward_tier, 3)
+		if not choices.is_empty():
+			pending_card_rewards = choices
+			pending = "card_reward"
+			log_event("战利品符卡已就绪：可从 3 张符卡中择一加入牌库，或跳过换取 +%d cost。" % CardPool.SKIP_REWARD_COST)
 	else:
 		finished = true
 		message = "全军覆没……小队未能走出焦黑森林。"
@@ -626,6 +903,11 @@ func advance_to_next_floor(new_map: RefCounted, seed_val: int = -1) -> void:
 	map = new_map
 	if seed_val >= 0:
 		rng.seed = seed_val
+		dice_rng.seed = seed_val ^ 0x51A7D1CE
+		card_rng.seed = seed_val ^ 0x43415244
+	pending_card_rewards.clear()
+	shop_card_offers.clear()
+	shop_removal_used.clear()
 		
 	# Reset floor-specific exploration state
 	position = map.start_id
@@ -638,8 +920,11 @@ func advance_to_next_floor(new_map: RefCounted, seed_val: int = -1) -> void:
 	turn = 1
 	fatigue = 0
 	alert = 0
-	action_budget = 2
-	actions_left = 2
+	dice_rolled = false
+	last_dice_raw = 0
+	last_dice_penalty = 0
+	action_budget = 0
+	actions_left = 0
 	hidden_turns = 0
 	observation_expires = 0
 	
@@ -651,8 +936,8 @@ func advance_to_next_floor(new_map: RefCounted, seed_val: int = -1) -> void:
 	patrol_return_turn = 0
 	
 	reveal()
-	log_event("小队深入焦黑森林第 %d 层！更强烈的魔力在迷雾深处翻涌……" % floor_level)
-	message = "已进入焦黑森林第 %d 层。沿亮起的小径前行，寻访战前行商与关底石门。" % floor_level
+	log_event("小队深入焦黑森林第 %d 层！更强烈的魔力在迷雾深处翻涌……请掷出行动骰决定步数。" % floor_level)
+	message = "已进入焦黑森林第 %d 层。请先掷出行动骰（1d4）决定本回合可行动步数。" % floor_level
 	version += 1
 
 func log_event(text: String) -> void:

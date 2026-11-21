@@ -113,7 +113,7 @@ func _run() -> void:
 	check(b.heroes[0].hp == 45, "Cancel preserves Marisa HP")
 	check(b.assign(b.hand.find("marisa_stars"), 0, 0).is_empty(), "Re-assign stars")
 	b.lock_and_resolve()
-	check(b.heroes[0].hp == 35 and b.enemy_cost == 28, "Lock and resolve deducts 10 HP (2 cost * 5) and reduces enemy cost to 28")
+	check(b.heroes[0].hp == 35 and b.enemy_cost == Rules.START_COST - 2, "Lock and resolve deducts 10 HP (2 cost * 5) and reduces enemy cost by 2")
 	
 	# 8. Theft fatal check
 	b = Heads.new()

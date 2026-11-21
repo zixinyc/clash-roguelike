@@ -122,33 +122,85 @@ static func kind_icon(kind: int) -> String:
 		NodeKind.EXIT: return "⚑"
 		_: return "•"
 
+static func kind_key(kind: int) -> String:
+	match kind:
+		NodeKind.SPAWN: return "spawn"
+		NodeKind.BATTLE: return "battle"
+		NodeKind.ELITE: return "elite"
+		NodeKind.SUPPLY: return "supply"
+		NodeKind.EVENT: return "event"
+		NodeKind.HIDEOUT: return "hideout"
+		NodeKind.LOOKOUT: return "lookout"
+		NodeKind.DANGER: return "danger"
+		NodeKind.CENTER: return "center"
+		NodeKind.PASSAGE: return "passage"
+		NodeKind.CAMP: return "camp"
+		NodeKind.SHOP: return "shop"
+		NodeKind.SHRINE: return "shrine"
+		NodeKind.FORGE: return "forge"
+		NodeKind.GAMBLE: return "gamble"
+		NodeKind.EXIT: return "exit"
+		_: return "node"
+
+static func kind_tier(kind: int) -> int:
+	match kind:
+		NodeKind.CENTER, NodeKind.EXIT:
+			return 2
+		NodeKind.ELITE, NodeKind.CAMP, NodeKind.SHOP, NodeKind.FORGE, NodeKind.SHRINE, NodeKind.GAMBLE:
+			return 1
+		_:
+			return 0
+
+static func kind_texture_path(kind: int) -> String:
+	return "res://art/map/node_%s.png" % kind_key(kind)
+
+static func kind_summary(kind: int) -> String:
+	match kind:
+		NodeKind.SPAWN: return "阳光穿过林冠洒在石径起点，可在此整备队伍并掷骰出发。"
+		NodeKind.BATTLE: return "林间遭遇游荡敌兵。获胜可缴获 6 cost，并在战后休整恢复 6 生命。"
+		NodeKind.ELITE: return "强敌镇守的高危据点。击破可缴获 10 cost 并随机获得 1 件遗物。"
+		NodeKind.SUPPLY: return "旅人遗落的补给行囊，抵达即可拾取 +5 cost。"
+		NodeKind.EVENT: return "林间未知遗迹与偶遇，不同抉择对应稳妥收益或冒险回报。"
+		NodeKind.HIDEOUT: return "茂密枝叶掩映的静谧树洞。进入后隐蔽 2 回合且警戒度 −2。"
+		NodeKind.LOOKOUT: return "可俯瞰林野的高台。情报 +2，并在 2 回合内大幅扩展探索视野。"
+		NodeKind.DANGER: return "荆棘密布的险峻小径。警戒度 +1，但可在险处寻得 +6 cost。"
+		NodeKind.CENTER: return "蕴藏余烬核心的古老祭坛。击败守卫【烬心巨像】即可夺取烬核。"
+		NodeKind.PASSAGE: return "铺满青苔的古道石阶，通往林野深处的岔路。"
+		NodeKind.CAMP: return "温暖安全的林间营火。可选生火休整（+10 HP、疲劳 −3）或搜集余烬（+6 cost）。"
+		NodeKind.SHOP: return "行商支起的林间摊位。可购买伤药、遗物、道具，或随时调整配队与卡牌。"
+		NodeKind.SHRINE: return "沐浴林光的古老石龛。可选圣泉洗礼（清疲劳并治疗重伤）或全体最大生命 +4。"
+		NodeKind.FORGE: return "余温尚存的林野锻台。可淬炼战铠（全体最大生命 +2）或熔铸催化剂。"
+		NodeKind.GAMBLE: return "游民摆下的骨骰赌局。消耗 4 cost 下注，有机会赢取 10 cost 或特制铅币。"
+		NodeKind.EXIT: return "藤蔓缠绕的归途石拱门。击溃关底守卫【烬心巨像】后即可迈入下一层。"
+		_: return "林野中的一处静谧地标。"
+
 static func kind_color(kind: int) -> Color:
 	match kind:
-		NodeKind.SPAWN: return Color("c6d2bc")
-		NodeKind.BATTLE: return Color("e07a5f")
-		NodeKind.ELITE: return Color("d62828")
-		NodeKind.SUPPLY: return Color("81b29a")
-		NodeKind.EVENT: return Color("b298dc")
-		NodeKind.HIDEOUT: return Color("4f772d")
-		NodeKind.LOOKOUT: return Color("64dfdf")
-		NodeKind.DANGER: return Color("9d4edd")
-		NodeKind.CENTER: return Color("f4a261")
-		NodeKind.PASSAGE: return Color("90a955")
-		NodeKind.CAMP: return Color("e9c46a")
-		NodeKind.SHOP: return Color("48cae4")
-		NodeKind.SHRINE: return Color("ff70a6")
-		NodeKind.FORGE: return Color("f77f00")
-		NodeKind.GAMBLE: return Color("ffd166")
-		NodeKind.EXIT: return Color("a7c957")
-		_: return Color("e6c38a")
+		NodeKind.SPAWN: return Color("7ab36b")
+		NodeKind.BATTLE: return Color("d45d48")
+		NodeKind.ELITE: return Color("c1292e")
+		NodeKind.SUPPLY: return Color("4c9f70")
+		NodeKind.EVENT: return Color("8d6bc1")
+		NodeKind.HIDEOUT: return Color("3f8452")
+		NodeKind.LOOKOUT: return Color("2fa4b8")
+		NodeKind.DANGER: return Color("9d447b")
+		NodeKind.CENTER: return Color("e07a16")
+		NodeKind.PASSAGE: return Color("7e9a59")
+		NodeKind.CAMP: return Color("d99126")
+		NodeKind.SHOP: return Color("2989b5")
+		NodeKind.SHRINE: return Color("d95b84")
+		NodeKind.FORGE: return Color("d96b1f")
+		NodeKind.GAMBLE: return Color("c9981a")
+		NodeKind.EXIT: return Color("5a9e3d")
+		_: return Color("c99846")
 
 static func route_color(kind: int) -> Color:
 	match kind:
-		RouteKind.MAIN: return Color("e6c38a")
-		RouteKind.BRANCH: return Color("8cbfc8")
-		RouteKind.LOOP: return Color("e6a15c")
-		RouteKind.SHORTCUT: return Color("64dfdf")
-		_: return Color("a8dadc")
+		RouteKind.MAIN: return Color("f4dfa6")
+		RouteKind.BRANCH: return Color("d7e7c8")
+		RouteKind.LOOP: return Color("e9a46c")
+		RouteKind.SHORTCUT: return Color("5fe0d4")
+		_: return Color("e8dfb8")
 
 static func bezier_points(p0: Vector2, p1: Vector2, bend: float = 0.0, segments: int = 12) -> PackedVector2Array:
 	var pts := PackedVector2Array()

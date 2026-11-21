@@ -296,7 +296,7 @@ func test_corpora_effects() -> void:
 	hero.corpora[ZiXingYC.REASONING] = 1
 	battle.phase = "finished"
 	battle.next_round()
-	check(battle.cost == 39, "the first reasoning corpus grants one extra cost next round")
+	check(battle.cost == Rules.START_COST + Rules.BASE_INCOME + 1 and battle.cost == 27, "the first reasoning corpus grants one extra cost next round")
 	check(int(battle.extra_income) == 1, "the extra income is reported in the snapshot")
 	hero.corpora[ZiXingYC.REASONING] = 6
 	battle.phase = "finished"

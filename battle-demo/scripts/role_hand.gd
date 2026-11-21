@@ -8,15 +8,35 @@ signal enhancement_changed(enabled: bool)
 const Rules = preload("res://scripts/battle_rules.gd")
 const Card = preload("res://scripts/card_view.gd")
 const ROLE_COLORS := [Color("dfbc80"), Color("8bc8ce"), Color("c3d29b")]
-const CARD_ORDER := ["probe", "observe", "exploit", "follow", "steady_edge", "all_in", "shatter",
-	"cover", "light_guard", "support_strike", "steady", "ember", "needle", "cleave", "guard", "nova"]
+const CARD_ORDER := [
+	# 灰烬
+	"probe", "observe", "exploit", "follow",
+	# 长锋
+	"steady_edge", "all_in", "shatter",
+	# 织火
+	"cover", "support_strike", "light_guard",
+	# 十六夜咲夜
+	"murder_doll", "private_square", "stopwatch", "the_world",
+	# 博丽灵梦
+	"yin_yang_orb", "fantasy_seal", "demon_seal", "fantasy_nature",
+	# ZiXi
+	"zixi_central_limit", "zixi_convergence", "zixi_martingale", "zixi_almost_sure",
+	# ZiXingYC
+	"zixingyc_attention", "zixingyc_residual", "zixingyc_paradox", "zixingyc_yesterday", "zixingyc_ending",
+	# 雾雨魔理沙
+	"marisa_stars", "marisa_orrery", "marisa_laser", "marisa_spark",
+	# 通用
+	"needle", "ember", "steady", "cleave", "risk", "guard", "nova"
+]
 
 var show_shared := false
+var show_all_playable := false
 var visible_indices: Array[int] = []
 var detail: Label
 var role_summary: Label
 var enhance_toggle: CheckButton
 var hero_buttons: Array[Button] = []
+var all_playable_button: Button
 var group_buttons: Array[Button] = []
 var cards: Array[DemoCardView] = []
 var displayed_hand: Array = []
@@ -51,6 +71,11 @@ func _ready() -> void:
 	enhance_toggle.text = "强化 · 3 层"
 	enhance_toggle.toggled.connect(func(enabled: bool) -> void: enhancement_changed.emit(enabled))
 	groups.add_child(enhance_toggle)
+	all_playable_button = Button.new()
+	all_playable_button.custom_minimum_size.x = 108
+	all_playable_button.visible = false
+	all_playable_button.pressed.connect(_choose_all_playable)
+	groups.add_child(all_playable_button)
 	for shared in [false, true]:
 		var tab := Button.new()
 		tab.custom_minimum_size.x = 102
@@ -66,9 +91,16 @@ func _ready() -> void:
 	detail.custom_minimum_size.y = 25
 	body.add_child(detail)
 
-func _choose_group(shared: bool) -> void:
-	if shared == show_shared:
+func _choose_all_playable() -> void:
+	if show_all_playable:
 		return
+	show_all_playable = true
+	group_changed.emit()
+
+func _choose_group(shared: bool) -> void:
+	if not show_all_playable and shared == show_shared:
+		return
+	show_all_playable = false
 	show_shared = shared
 	group_changed.emit()
 
@@ -91,14 +123,19 @@ func _add_cards(hand: Array) -> void:
 		node.queue_free()
 	displayed_hand = hand.duplicate()
 	cards.resize(hand.size())
-	var keys := CARD_ORDER.duplicate()
-	for key in hand:
-		if not keys.has(key):
-			keys.append(key)
-	for key in keys:
-		var i := hand.find(key)
-		if i < 0:
-			continue
+	var order_indices: Array[int] = []
+	for i in hand.size():
+		order_indices.append(i)
+	order_indices.sort_custom(func(a: int, b: int) -> bool:
+		var ra := CARD_ORDER.find(hand[a])
+		var rb := CARD_ORDER.find(hand[b])
+		if ra < 0:
+			ra = 1000 + a
+		if rb < 0:
+			rb = 1000 + b
+		return ra < rb if ra != rb else a < b)
+	for i in order_indices:
+		var key: String = hand[i]
 		var card := Card.new()
 		card.skill_key = key
 		card.hand_index = i
@@ -153,12 +190,16 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 			role_summary.text = Rules.ZiXingYC.summary(hero)
 		Rules.MARISA_ID:
 			role_summary.text = "火花 %d/10 · 敌方 cost 偷取与星辰轰炸" % int(hero.get("spark", 0))
+	var cycle_on: bool = state.get("deck_cycle_enabled", false)
+	all_playable_button.visible = cycle_on
+	if not cycle_on:
+		show_all_playable = false
 	var has_personal: bool = state.hand.any(func(key: String) -> bool: return Rules.card_owner(key) == hero.character_id)
 	var has_shared: bool = state.hand.any(func(key: String) -> bool: return Rules.card_owner(key) < 0)
-	if not has_personal or not has_shared:
+	if not show_all_playable and (not has_personal or not has_shared):
 		show_shared = has_shared and not has_personal
 	var is_zixi := hero.has("metaphysics")
-	enhance_toggle.visible = is_zixi and not show_shared
+	enhance_toggle.visible = is_zixi and (show_all_playable or not show_shared)
 	var enhancement_error := ""
 	if is_zixi:
 		role_summary.text = "超形上学 %d/%d   ·   因果律 %d/%d" % [hero.metaphysics, Rules.ZiXi.METAPHYSICS_MAX, hero.causality, Rules.ZiXi.CAUSALITY_MAX]
@@ -177,7 +218,10 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 		var owner := Rules.card_owner(card.skill_key)
 		personal_count += int(owner == hero.character_id)
 		shared_count += int(owner < 0)
-		card.visible = owner < 0 if show_shared else owner == hero.character_id
+		if show_all_playable:
+			card.visible = owner < 0 or owner == hero.character_id
+		else:
+			card.visible = owner < 0 if show_shared else owner == hero.character_id
 		if not card.visible:
 			continue
 		visible_indices.append(i)
@@ -197,8 +241,11 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 				var occupied: Dictionary = state.hero_slots[hero.enhanced_slot]
 				card.can_enhance = Rules.SKILLS[occupied.key].kind == card.skill.kind
 		card.queue_redraw()
+	all_playable_button.text = "本轮可用 %d" % (personal_count + shared_count)
+	all_playable_button.disabled = not planning or (personal_count + shared_count) == 0
+	_tab_state(all_playable_button, show_all_playable, ROLE_COLORS[unit])
 	group_buttons[0].text = "专属 %d" % personal_count
 	group_buttons[1].text = "通用 %d" % shared_count
 	for i in group_buttons.size():
 		group_buttons[i].disabled = not planning or not (has_shared if i == 1 else has_personal)
-		_tab_state(group_buttons[i], bool(i) == show_shared, ROLE_COLORS[unit])
+		_tab_state(group_buttons[i], (not show_all_playable) and bool(i) == show_shared, ROLE_COLORS[unit])

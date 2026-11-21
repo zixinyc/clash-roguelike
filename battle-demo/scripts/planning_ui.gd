@@ -4,6 +4,7 @@ signal setup_requested
 var lineup: Array = []
 var deck: Variant = null
 var exploration_run: RefCounted
+var use_deck_cycle := false
 var setup_button: Button
 
 const Rules = preload("res://scripts/battle_rules.gd")
@@ -48,6 +49,13 @@ var item_popup: PanelContainer
 var item_close_button: Button
 var item_rows: VBoxContainer
 var item_feedback: Label
+var draw_pile_button: Button
+var discard_pile_button: Button
+var pile_popup: PanelContainer
+var pile_title: Label
+var pile_rows: VBoxContainer
+var pile_close_button: Button
+var pile_mode := ""
 
 func _ready() -> void:
 	var font := SystemFont.new()
@@ -56,14 +64,15 @@ func _ready() -> void:
 	skin.default_font = font
 	skin.default_font_size = 16
 	var box := StyleBoxFlat.new()
-	box.bg_color = Color("1b2c36")
-	box.border_color = Color("58717c")
+	box.bg_color = Color("28342b")
+	box.border_color = Color("7b8a6b")
 	box.set_border_width_all(1)
+	box.set_corner_radius_all(5)
 	box.set_content_margin_all(9)
 	skin.set_stylebox("normal", "Button", box)
 	theme = skin
 	var bg := ColorRect.new()
-	bg.color = Color("0c1720")
+	bg.color = Color("161f19")
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 	var margin := MarginContainer.new()
@@ -99,6 +108,7 @@ func _ready() -> void:
 	var fast := button("演出 ×1", func() -> void: speed = 1.0 if speed >= 4.0 else speed * 2.0)
 	fast.pressed.connect(func() -> void: fast.text = "演出 ×%d" % int(speed))
 	top.add_child(fast)
+	_build_pile_popup(top)
 	_build_item_popup(top)
 	var statuses := HBoxContainer.new()
 	statuses.add_theme_constant_override("separation", 12)
@@ -110,8 +120,10 @@ func _ready() -> void:
 	stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	stage.slot_selected.connect(_slot_selected)
 	stage.aim_committed.connect(_aim)
-	stage.aim_cancelled.connect(func() -> void: log_label.text = "未安排：请将行动格拖到敌方上方的攻／大／防小格，再松开。")
-	stage.unit_selected.connect(func(allied: bool, index: int) -> void: _slot_selected(allied, index * 3))
+	stage.aim_cancelled.connect(func() -> void: log_label.text = "未安排：请将行动格拖到敌方上方的攻／大／防小格，或直接点击高亮敌方槽。")
+	stage.quick_assign_requested.connect(_quick_assign)
+	stage.slot_cancel_requested.connect(_quick_cancel)
+	stage.unit_selected.connect(_on_unit_selected)
 	column.add_child(stage)
 	var selectors := HBoxContainer.new()
 	column.add_child(selectors)
@@ -231,6 +243,90 @@ func _switch_zixingyc() -> void:
 	zixi_team = false
 	new_battle()
 
+func _build_pile_popup(top: HBoxContainer) -> void:
+	draw_pile_button = button("📚 抽牌 0", _open_pile.bind("draw"))
+	draw_pile_button.tooltip_text = "查看当前抽牌堆中的卡牌（乱序展示，不透露下一张抽牌顺序）"
+	draw_pile_button.visible = false
+	top.add_child(draw_pile_button)
+
+	discard_pile_button = button("♻ 弃牌 0", _open_pile.bind("discard"))
+	discard_pile_button.tooltip_text = "查看当前弃牌堆中的卡牌（抽牌堆抽空后将自动洗回）"
+	discard_pile_button.visible = false
+	top.add_child(discard_pile_button)
+
+	pile_popup = PanelContainer.new()
+	pile_popup.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	pile_popup.offset_left = -430
+	pile_popup.offset_right = -18
+	pile_popup.offset_top = 66
+	pile_popup.offset_bottom = 440
+	pile_popup.hide()
+	var panel := StyleBoxFlat.new()
+	panel.bg_color = Color("241d15")
+	panel.border_color = Color("e0b35e")
+	panel.set_border_width_all(2)
+	panel.set_corner_radius_all(8)
+	pile_popup.add_theme_stylebox_override("panel", panel)
+	add_child(pile_popup)
+	var margin := MarginContainer.new()
+	for side in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 14)
+	pile_popup.add_child(margin)
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 8)
+	margin.add_child(body)
+	var heading := HBoxContainer.new()
+	body.add_child(heading)
+	pile_title = label("牌堆", 18)
+	pile_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pile_title.add_theme_color_override("font_color", Color("f0c66d"))
+	heading.add_child(pile_title)
+	pile_close_button = button("关闭", _close_pile)
+	heading.add_child(pile_close_button)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(scroll)
+	pile_rows = VBoxContainer.new()
+	pile_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pile_rows.add_theme_constant_override("separation", 6)
+	scroll.add_child(pile_rows)
+
+func _open_pile(mode: String) -> void:
+	if pile_popup.visible and pile_mode == mode:
+		_close_pile()
+		return
+	item_popup.hide()
+	pile_mode = mode
+	for child in pile_rows.get_children():
+		pile_rows.remove_child(child)
+		child.queue_free()
+	var source_pile: Array = battle.draw_pile if mode == "draw" else battle.discard_pile
+	pile_title.text = "📚 抽牌堆（%d 张 · 按卡名排序）" % source_pile.size() if mode == "draw" else "♻ 弃牌堆（%d 张）" % source_pile.size()
+	if source_pile.is_empty():
+		pile_rows.add_child(label("当前为空。", 14))
+	else:
+		var counts := {}
+		for inst in source_pile:
+			var k: String = String(inst.get("key", ""))
+			counts[k] = int(counts.get(k, 0)) + 1
+		var sorted_keys: Array = counts.keys()
+		sorted_keys.sort()
+		for k in sorted_keys:
+			var s: Dictionary = Rules.SKILLS.get(k, {})
+			var qty := int(counts[k])
+			var qty_str := " ×%d" % qty if qty > 1 else ""
+			var row_lbl := label("• %s%s（%d cost）— %s" % [String(s.get("name", k)), qty_str, int(s.get("cost", 0)), String(s.get("description", ""))], 14)
+			row_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			pile_rows.add_child(row_lbl)
+	pile_popup.show()
+	move_child(pile_popup, get_child_count() - 1)
+	pile_close_button.grab_focus()
+
+func _close_pile() -> void:
+	pile_popup.hide()
+	pile_mode = ""
+
 func _build_item_popup(top: HBoxContainer) -> void:
 	item_button = button("道具 0", _open_items)
 	item_button.tooltip_text = "在行动规划期间查看和使用消耗道具"
@@ -329,10 +425,21 @@ func new_battle() -> void:
 	if busy:
 		return
 	item_popup.hide()
+	if is_instance_valid(pile_popup):
+		pile_popup.hide()
+	var enable_cycle: bool = use_deck_cycle or exploration_run != null
+	var stage3_combat_cfg := {
+		"flex_attack_in_ultimate": true,
+		"unopposed_bonus": true,
+		"deck_cycle": enable_cycle,
+		"draw_count": Rules.DEFAULT_DRAW_COUNT,
+		"card_instances": exploration_run.card_instances.duplicate(true) if exploration_run != null else [],
+		"deck_enchants": exploration_run.deck_enchants.duplicate() if exploration_run != null else {},
+	}
 	if exploration_run == null:
-		battle.start(73129, encounter, touhou_team, zixi_team, lineup, deck, zixingyc_team)
+		battle.start(73129, encounter, touhou_team, zixi_team, lineup, deck, zixingyc_team, [], [], stage3_combat_cfg)
 	else:
-		battle.start(randi(), encounter, false, false, lineup, deck, false, exploration_run.relics, exploration_run.items)
+		battle.start(randi(), encounter, false, false, lineup, deck, false, exploration_run.relics, exploration_run.items, stage3_combat_cfg)
 		battle.cost = exploration_run.carried_cost
 		for i in battle.heroes.size():
 			battle.heroes[i].hp = exploration_run.party_hp[i]
@@ -356,6 +463,7 @@ func new_battle() -> void:
 				selected_target = slot.id
 				break
 	hand_view.show_shared = false
+	hand_view.show_all_playable = battle.deck_cycle_enabled
 	last_second = -1
 	_refresh(battle.snapshot())
 	log_label.text = "每组三格可安排两次行动；少人时下一回合补格。"
@@ -388,17 +496,95 @@ func _target_guidance(target: int) -> Dictionary:
 		else:
 			error = "拦截队友需要速度更高：我方 %d，敌方 %d" % [hero.speed, enemy.speed]
 	if not error.is_empty():
-		return {"valid": false, "text": error}
+		return {"valid": false, "kind": "invalid", "tag": "不可", "text": error, "detail": "✖ " + error}
 	if battle.can_clash(hero, enemy):
-		return {"valid": true, "text": "可迎击自身攻击" if enemy.target == hero.unit else "可拦截队友受到的攻击"}
+		var holder_id := battle.predicted_clash_hero(target, selected_slot)
+		if holder_id >= 0:
+			var holder: Dictionary = battle.hero_slots[holder_id]
+			var holder_wins: bool = holder.speed > hero.speed or (holder.speed == hero.speed and holder.id < hero.id)
+			var holder_name: String = battle.heroes[holder.unit].name
+			if holder_wins:
+				var bonus_txt := " (+%d伤)" % Rules.UNOPPOSED_BONUS if battle.unopposed_bonus_enabled else ""
+				return {
+					"valid": true,
+					"kind": "flank",
+					"tag": "夹击",
+					"text": "%s已接下拼点 · 可单方面夹击%s" % [holder_name, bonus_txt],
+					"detail": "⚡ 单方面夹击%s · %s已接下拼点，本击无阻" % [bonus_txt, holder_name]
+				}
+			return {
+				"valid": true,
+				"kind": "intercept" if enemy.target != hero.unit else "engage",
+				"tag": "接管",
+				"text": "速度更高 · 接管%s的拼点（对方转夹击）" % holder_name,
+				"detail": "⚡ 接管拼点 · 我方速 %d > %s速 %d，原队友转单方面夹击" % [hero.speed, holder_name, holder.speed]
+			}
+		if enemy.target == hero.unit:
+			return {
+				"valid": true,
+				"kind": "engage",
+				"tag": "迎击",
+				"text": "可迎击自身攻击",
+				"detail": "⚔ 迎击拼点 · 我方速 %d vs 敌方速 %d" % [hero.speed, enemy.speed]
+			}
+		var ally_name: String = battle.heroes[enemy.target].name if enemy.target >= 0 and enemy.target < battle.heroes.size() else "队友"
+		return {
+			"valid": true,
+			"kind": "intercept",
+			"tag": "拦截",
+			"text": "可拦截队友受到的攻击",
+			"detail": "⚡ 高速拦截 · 速 %d > %d · 替%s接招" % [hero.speed, enemy.speed, ally_name]
+		}
+	var solo_bonus := " (+%d伤)" % Rules.UNOPPOSED_BONUS if battle.unopposed_bonus_enabled else ""
 	if not enemy.active:
-		return {"valid": true, "text": "空槽 · 可单方面攻击"}
+		return {"valid": true, "kind": "solo", "tag": "单打", "text": "空槽 · 可单方面攻击%s" % solo_bonus, "detail": "🗡 空槽 · 单方面攻击%s" % solo_bonus}
 	if enemy.category == 2:
-		return {"valid": true, "text": "防御格 · 可单方面攻击"}
-	return {"valid": true, "text": "可单方面攻击 · 对方原行动照常"}
+		return {"valid": true, "kind": "solo", "tag": "单打", "text": "防御格 · 可单方面攻击%s" % solo_bonus, "detail": "🗡 防御格 · 单方面攻击%s" % solo_bonus}
+	return {"valid": true, "kind": "solo", "tag": "单打", "text": "可单方面攻击%s · 对方原行动照常" % solo_bonus, "detail": "🗡 单方面攻击%s · 对方原行动照常" % solo_bonus}
+
+func _hero_slot_guidance(slot_id: int) -> Dictionary:
+	var slot: Dictionary = battle.hero_slots[slot_id]
+	var used := 0
+	for other in battle.hero_slots:
+		if other.active and other.unit == slot.unit and other.get("row", 0) == slot.get("row", 0):
+			used += 1
+	var lim := Rules.group_action_limit(slot)
+	var group_full: bool = used >= lim and not slot.active
+	var info := {"valid": false, "is_guard": false, "group_full": group_full, "tooltip": ""}
+	if slot.active:
+		var sname: String = Rules.SKILLS[slot.key].name if Rules.SKILLS.has(slot.key) else slot.key
+		info.tooltip = "已安排【%s】· 右键此格可快速撤销" % sname
+	elif group_full:
+		info.tooltip = "本组行动格已排满 %d 次，可右键撤销其他已排格" % lim
+	if busy or battle.phase != "response" or selected_card < 0 or selected_card >= battle.hand.size():
+		return info
+	var key: String = battle.hand[selected_card]
+	var is_guard := not Rules.targets_enemy(key)
+	info.is_guard = is_guard
+	if is_guard:
+		var err := battle.can_assign(selected_card, slot_id, -1, enhance_selected)
+		if err.is_empty():
+			info.valid = true
+			info.tooltip = "点击此格直接安排防御【%s】" % Rules.SKILLS[key].name
+		elif info.tooltip.is_empty():
+			info.tooltip = err
+	else:
+		# Check if any enemy slot is valid for this hero slot + selected card
+		var any_ok := false
+		for e_slot in battle.enemy_slots:
+			if battle.can_assign(selected_card, slot_id, e_slot.id, enhance_selected).is_empty():
+				any_ok = true
+				break
+		if any_ok:
+			info.valid = true
+			info.tooltip = "可从此格拖向敌方高亮格，或直接点击高亮敌方格安排【%s】" % Rules.SKILLS[key].name
+	return info
 
 func _refresh(state: Dictionary) -> void:
 	stage.target_guidance.clear()
+	stage.hero_guidance.clear()
+	for h_idx in battle.hero_slots.size():
+		stage.hero_guidance.append(_hero_slot_guidance(h_idx))
 	if not busy and state.phase == "response" and selected_card >= 0:
 		for target in battle.enemy_slots.size():
 			stage.target_guidance.append(_target_guidance(target))
@@ -441,6 +627,14 @@ func _refresh(state: Dictionary) -> void:
 	item_button.text = "道具 %d" % battle.active_items.size()
 	item_button.disabled = busy or state.phase != "response"
 	item_button.add_theme_color_override("font_color", Color("a7e1e2") if not battle.active_items.is_empty() else Color("d3e0e4"))
+	if is_instance_valid(draw_pile_button) and is_instance_valid(discard_pile_button):
+		var show_piles: bool = state.get("deck_cycle_enabled", false)
+		draw_pile_button.visible = show_piles
+		discard_pile_button.visible = show_piles
+		draw_pile_button.text = "📚 抽牌 %d" % int(state.get("draw_count", 0))
+		discard_pile_button.text = "♻ 弃牌 %d" % int(state.get("discard_count", 0))
+		draw_pile_button.disabled = busy
+		discard_pile_button.disabled = busy
 	if setup_button != null:
 		setup_button.disabled = busy
 	ready_button.text = "交锋进行中" if busy else "准备交锋  ·  Enter"
@@ -450,9 +644,17 @@ func _refresh(state: Dictionary) -> void:
 			count += 1
 	ally_status.text = "我方  ·  规划中    已安排 %d 次行动" % count
 	enemy_status.text = "敌方  ·  已锁定    目标公开 / 技能隐藏"
-	guide.text = "选牌后：绿色框可安排；灰色框不可用。鼠标停在敌方格可查看原因。"
-	if count > 0:
-		guide.text = "已安排 %d 次行动 · 可继续选牌或撤销调整；安排完毕点击「准备交锋」" % count
+	if selected_card >= 0 and selected_card < battle.hand.size():
+		var sel_key: String = battle.hand[selected_card]
+		var sel_name: String = Rules.SKILLS[sel_key].name
+		if not Rules.targets_enemy(sel_key):
+			guide.text = "① 已选【%s】 → ② 直接点击上方亮起的蓝色「防」槽安排（右键可撤销） → ③ 准备交锋" % sel_name
+		else:
+			guide.text = "① 已选【%s】 → ② 直接点击带「迎击/拦截/单打」标的敌方槽，或从亮起我方槽拖过去 → ③ 准备交锋" % sel_name
+	elif count > 0:
+		guide.text = "已安排 %d 次行动 · 可继续选牌或右键我方槽撤销；安排完毕点击「准备交锋」" % count
+	else:
+		guide.text = "① 从下方选择手牌 → ② 点击高亮目标槽或从我方槽拖向敌方槽 → ③ 准备交锋"
 	if state.hero_slots.any(func(slot: Dictionary) -> bool: return slot.get("flexible", false)):
 		enemy_status.text = "敌方  ·  时间停止"
 		guide.text = "本回合只有咲夜能行动，可以在三个技能槽安排任意类别的牌"
@@ -513,11 +715,33 @@ func _change_slot(index: int) -> void:
 	if battle.hero_slots[index].unit != battle.hero_slots[selected_slot].unit:
 		hand_view.show_shared = false
 		selected_card = -1
-	elif selected_card >= 0 and not battle.hero_slots[index].get("flexible", false) and battle.category_for(battle.hand[selected_card]) != battle.hero_slots[index].category:
+	elif selected_card >= 0 and not battle.slot_accepts_category(battle.hero_slots[index], battle.hand[selected_card]):
 		selected_card = -1
 	if selected_card < 0:
 		enhance_selected = false
 	selected_slot = index
+
+func _on_unit_selected(allied: bool, index: int) -> void:
+	if allied:
+		_slot_selected(true, index * 3)
+		return
+	if selected_card >= 0 and selected_card < battle.hand.size() and Rules.targets_enemy(battle.hand[selected_card]):
+		var best_slot := index * 3
+		var best_rank := -1
+		for offset in 3:
+			var sid := index * 3 + offset
+			if sid >= battle.enemy_slots.size():
+				continue
+			var g := _target_guidance(sid)
+			if not g.get("valid", false):
+				continue
+			var rank := 4 if g.get("kind", "") == "engage" else (3 if g.get("kind", "") == "flank" else (2 if g.get("kind", "") == "solo" else 1))
+			if rank > best_rank:
+				best_rank = rank
+				best_slot = sid
+		_slot_selected(false, best_slot)
+		return
+	_slot_selected(false, index * 3)
 
 func _slot_selected(allied: bool, index: int) -> void:
 	if busy or battle.phase != "response":
@@ -538,8 +762,22 @@ func _select_card(index: int) -> void:
 	if battle.heroes[slot_now.unit].hp <= 0:
 		return
 	selected_card = index
+	var key: String = battle.hand[index]
 	if not battle.hero_slots[selected_slot].get("flexible", false):
-		selected_slot += battle.category_for(battle.hand[index]) - int(slot_now.category)
+		var want_cat := battle.category_for(key)
+		var base_id := selected_slot - int(slot_now.category)
+		if want_cat == 0 and battle.flex_attack_in_ultimate:
+			# Keep current slot if already on open 攻 or 大, else pick open 攻 first, then open 大!
+			if battle.slot_accepts_category(slot_now, key) and not slot_now.active:
+				pass
+			elif not battle.hero_slots[base_id].active:
+				selected_slot = base_id
+			elif not battle.hero_slots[base_id + 1].active:
+				selected_slot = base_id + 1
+			else:
+				selected_slot = base_id
+		else:
+			selected_slot = base_id + want_cat
 	var slot := battle.hero_slots[selected_slot]
 	enhance_selected = slot.card == index and slot.get("enhanced", false)
 	sound.play_sound("select")
@@ -553,6 +791,21 @@ func _aim(source: int, target: int) -> void:
 		enhance_selected = battle.hero_slots[source].get("enhanced", false)
 		hand_view.show_shared = Rules.card_owner(battle.hand[selected_card]) < 0
 	_assign()
+
+func _quick_assign(allied: bool, slot_id: int) -> void:
+	if busy or battle.phase != "response" or selected_card < 0:
+		return
+	if allied:
+		selected_slot = slot_id
+	else:
+		selected_target = slot_id
+	_assign()
+
+func _quick_cancel(slot_id: int) -> void:
+	if busy or battle.phase != "response":
+		return
+	selected_slot = slot_id
+	_cancel()
 
 func _assign() -> void:
 	if busy:
@@ -594,7 +847,7 @@ func _auto_plan() -> void:
 			else:
 				intercepts.append(enemy.id)
 		var targets := own_targets + intercepts + remaining_targets
-		for card in _card_order(slot.unit):
+		for card in _card_order(slot.unit, int(slot.category)):
 			var key: String = battle.hand[card]
 			if Rules.targets_enemy(key):
 				var hero: Dictionary = battle.heroes[slot.unit]
@@ -631,9 +884,22 @@ func _auto_slot_order(slot: Dictionary) -> int:
 			priority = 0
 	elif hero.character_id == Rules.ZIXINGYC_ID and slot.category != 1:
 		priority = slot.category / 2
+	else:
+		# 大招格优化：若持有可用大招牌，优先规划大招格，防止普通攻击占用或费用被耗尽
+		if int(slot.category) == 1:
+			var has_ultimate := false
+			for card_idx in battle.hand.size():
+				var key: String = battle.hand[card_idx]
+				if battle.category_for(key) == 1:
+					var owner := Rules.card_owner(key)
+					if owner < 0 or owner == hero.character_id:
+						has_ultimate = true
+						break
+			if has_ultimate:
+				priority = 0
 	return priority * battle.hero_slots.size() + slot.id
 
-func _card_order(unit: int) -> Array:
+func _card_order(unit: int, slot_category: int = -1) -> Array:
 	var hero: Dictionary = battle.heroes[unit]
 	var owner_id := int(hero.character_id)
 	var order: Array = []
@@ -641,11 +907,34 @@ func _card_order(unit: int) -> Array:
 		var preferred := battle.hand.find(Rules.ZiXingYC.preferred_attack(hero))
 		if preferred >= 0:
 			order.append(preferred)
+	
+	if slot_category >= 0:
+		# 1. 本角色专属且类别完全契合的牌
+		for card in battle.hand.size():
+			var key: String = battle.hand[card]
+			if Rules.card_owner(key) == owner_id and battle.category_for(key) == slot_category and not order.has(card):
+				order.append(card)
+		# 2. 通用且类别完全契合的牌
+		for card in battle.hand.size():
+			var key: String = battle.hand[card]
+			if Rules.card_owner(key) < 0 and battle.category_for(key) == slot_category and not order.has(card):
+				order.append(card)
+		# 3. 大招格兼放攻击牌时的保底攻击填充（专属攻 -> 通用攻）
+		if slot_category == 1 and battle.flex_attack_in_ultimate:
+			for card in battle.hand.size():
+				var key: String = battle.hand[card]
+				if Rules.card_owner(key) == owner_id and battle.category_for(key) == 0 and not order.has(card):
+					order.append(card)
+			for card in battle.hand.size():
+				var key: String = battle.hand[card]
+				if Rules.card_owner(key) < 0 and battle.category_for(key) == 0 and not order.has(card):
+					order.append(card)
+
 	for card in battle.hand.size():
 		if Rules.card_owner(battle.hand[card]) == owner_id and not order.has(card):
 			order.append(card)
 	for card in battle.hand.size():
-		if Rules.card_owner(battle.hand[card]) < 0:
+		if Rules.card_owner(battle.hand[card]) < 0 and not order.has(card):
 			order.append(card)
 	return order
 
@@ -672,6 +961,8 @@ func _resolve() -> void:
 			"ability":
 				log_label.text = event.message
 				await get_tree().create_timer(0.8 / speed).timeout
+			"unopposed":
+				log_label.text = event.message
 			"cancelled":
 				log_label.text = event.reason
 			"stagger":
@@ -705,6 +996,14 @@ func _resolve() -> void:
 		sound.play_sound(battle.outcome)
 
 func _input(event: InputEvent) -> void:
+	if is_instance_valid(pile_popup) and pile_popup.visible:
+		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+			_close_pile()
+			get_viewport().set_input_as_handled()
+		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			if not pile_popup.get_global_rect().has_point(event.position) and not draw_pile_button.get_global_rect().has_point(event.position) and not discard_pile_button.get_global_rect().has_point(event.position):
+				_close_pile()
+		return
 	if item_popup.visible:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 			_close_items()

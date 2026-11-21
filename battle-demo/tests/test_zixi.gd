@@ -58,7 +58,7 @@ func test_planning() -> void:
 	check(battle.hand.has(ZiXi.ALMOST_SURE) and not battle.hand.has("all_in") and battle.hand.has("cover"), "ZiXi replaces only Long Blade")
 	check(not play(battle, ZiXi.CENTRAL_LIMIT, 3, 0, true), "no enhancement below three layers")
 	hero.metaphysics = 6
-	check(play(battle, ZiXi.CENTRAL_LIMIT, 3, 0, true) and hero.metaphysics == 3 and battle.cost == 30, "declaration consumes layers and reserves cost")
+	check(play(battle, ZiXi.CENTRAL_LIMIT, 3, 0, true) and hero.metaphysics == 3 and battle.cost == Rules.START_COST, "declaration consumes layers and reserves cost")
 	check(play(battle, ZiXi.CENTRAL_LIMIT, 3, 0, true) and hero.metaphysics == 3, "editing same enhancement does not spend twice")
 	check(not play(battle, ZiXi.MARTINGALE, 5, 3, true) and hero.metaphysics == 3, "one enhancement even with six starting layers")
 	check(not play(battle, ZiXi.CENTRAL_LIMIT, 3, 1, true) and hero.metaphysics == 3, "invalid replacement preserves prior choice")
