@@ -3,6 +3,7 @@ config_version=5
 [application]
 config/name="Clash Roguelike · 余烬交锋"
 run/main_scene="res://battle_setup.tscn"
+run/max_fps=60
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://icon.svg"
 

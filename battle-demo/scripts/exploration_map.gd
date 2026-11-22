@@ -8,11 +8,15 @@ const RelicSystem = preload("res://scripts/relic_system.gd")
 const DemoBattleRules = preload("res://scripts/battle_rules.gd")
 const MapVisuals = preload("res://scripts/map_visuals.gd")
 const CardPool = preload("res://scripts/card_pool.gd")
+const TeamSynergy = preload("res://scripts/team_synergy.gd")
+const VictoryView = preload("res://scripts/forest_victory_view.gd")
 
 signal exploration_finished
 
 var initial_lineup: Array = []
 var initial_deck: Array = []
+var initial_contract: String = "standard"
+var initial_seed: int = -1
 
 const GOLD := MapVisuals.SUN_GOLD
 const PANEL_BG := MapVisuals.WALNUT_BG
@@ -67,6 +71,9 @@ var actions_label: Label
 var fatigue_label: Label
 var alert_label: Label
 var intel_label: Label
+var destiny_label: Label
+var destiny_pill: PanelContainer
+var destiny_side_label: Label
 var core_badge: Label
 var relics_container: HBoxContainer
 var items_container: HBoxContainer
@@ -84,11 +91,27 @@ var modal_desc: Label
 var modal_btn_1: Button
 var modal_btn_2: Button
 var modal_btn_3: Button
+var shop_revive_section: VBoxContainer
+var shop_revive_buttons: Array[Button] = []
 var shop_cards_section: VBoxContainer
 var shop_card_buttons: Array[Button] = []
 var shop_remove_card_btn: Button
 var modal_shop_lineup_btn: Button
 var modal_leave_btn: Button
+
+# Destiny Gate Modal Section (matching 命运交互预览)
+var destiny_gate_section: VBoxContainer
+var destiny_modal_balance_a: Label
+var destiny_modal_balance_b: Label
+var destiny_claim_title_lbl: Label
+var destiny_claim_sub_lbl: Label
+var destiny_claim_btn: Button
+var destiny_upgrade_rate_lbl: Label
+var destiny_upgrade_btn: Button
+var destiny_preview_rate_lbl: Label
+var destiny_preview_sub_lbl: Label
+var destiny_gate_feedback: Label
+var destiny_expected_next_tier: int = -1
 
 # Post-Battle 3-Choose-1 Card Reward Modal
 var card_reward_panel: PanelContainer
@@ -130,6 +153,10 @@ var item_detail_close_btn: Button
 
 # Next Floor Modal
 var next_floor_panel: PanelContainer
+var next_floor_shade: ColorRect
+var enemy_modifier_buttons := {}
+var selected_enemy_modifier := ""
+var victory_view: VictoryView
 var next_floor_title: Label
 var next_floor_desc: Label
 var next_floor_advance_btn: Button
@@ -152,7 +179,11 @@ const DICE_GLYPHS := ["1", "2", "3", "4"]
 
 # Hovered / selected state
 var hovered_node_id: String = ""
+var hovered_cell: Vector2i = Vector2i(-1, -1)
+var route_target_id: String = ""
+var route_preview_path: Array[String] = []
 var pulse_time: float = 0.0
+var next_map_redraw := 0.0
 var is_rolling_dice: bool = false
 var dice_anim_elapsed: float = 0.0
 var dice_anim_duration: float = 0.42
@@ -166,20 +197,7 @@ func _ready() -> void:
 	_start_new_run()
 
 func _setup_theme() -> void:
-	var font := SystemFont.new()
-	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif"])
-	var skin := Theme.new()
-	skin.default_font = font
-	skin.default_font_size = 14
-	skin.set_stylebox("normal", "Button", MapVisuals.make_box(Color("453423"), MapVisuals.WALNUT_BORDER, 1, 6, 10, 6))
-	skin.set_stylebox("hover", "Button", MapVisuals.make_box(Color("59432c"), MapVisuals.SUN_GOLD, 1, 6, 10, 6))
-	skin.set_stylebox("pressed", "Button", MapVisuals.make_box(Color("695034"), MapVisuals.SUN_GOLD, 2, 6, 10, 6))
-	skin.set_stylebox("disabled", "Button", MapVisuals.make_box(Color("2d2218"), Color("54422c"), 1, 6, 10, 6))
-	skin.set_color("font_color", "Button", MapVisuals.CREAM_TEXT)
-	skin.set_color("font_hover_color", "Button", Color("fff8e6"))
-	skin.set_color("font_pressed_color", "Button", MapVisuals.SUN_GOLD)
-	skin.set_color("font_disabled_color", "Button", Color("8f7d64"))
-	theme = skin
+	theme = MapVisuals.create_ember_theme(14)
 
 func _setup_layout() -> void:
 	var bg := ColorRect.new()
@@ -230,6 +248,7 @@ func _setup_layout() -> void:
 	map_canvas.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	map_canvas.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	map_canvas.draw.connect(_on_map_canvas_draw)
+	map_canvas.resized.connect(_sync_grid_node_positions)
 	map_canvas.gui_input.connect(_on_map_canvas_input)
 	map_clip.add_child(map_canvas)
 
@@ -328,6 +347,16 @@ func _build_party_top_bar() -> PanelContainer:
 	items_container.add_theme_constant_override("separation", 5)
 	trays_box.add_child(items_container)
 
+	destiny_pill = PanelContainer.new()
+	destiny_pill.add_theme_stylebox_override("panel", MapVisuals.make_box(Color("291f15"), MapVisuals.BRASS_GOLD, 1, 10, 10, 3))
+	hbox.add_child(destiny_pill)
+
+	destiny_label = Label.new()
+	destiny_label.text = "◆ 命运 0/10 · 正面率 45%"
+	destiny_label.add_theme_font_size_override("font_size", 13)
+	destiny_label.add_theme_color_override("font_color", MapVisuals.SUN_GOLD)
+	destiny_pill.add_child(destiny_label)
+
 	return hud
 
 func _build_right_sidebar() -> PanelContainer:
@@ -400,6 +429,12 @@ func _build_right_sidebar() -> PanelContainer:
 	intel_label.add_theme_font_size_override("font_size", 12)
 	intel_label.add_theme_color_override("font_color", Color("6fd8e6"))
 	sub_res.add_child(intel_label)
+
+	destiny_side_label = Label.new()
+	destiny_side_label.text = "◆ 命运 0/10  ·  我方拼点正面率 45%"
+	destiny_side_label.add_theme_font_size_override("font_size", 12)
+	destiny_side_label.add_theme_color_override("font_color", MapVisuals.SUN_GOLD)
+	res_vbox.add_child(destiny_side_label)
 
 	# 2. Sculpted 1d4 Action Dice Tray + Primary Turn Controls
 	dice_tray_canvas = Control.new()
@@ -593,6 +628,12 @@ func _build_modal_panel() -> void:
 	modal_btn_3.pressed.connect(_on_modal_choice.bind(2))
 	btn_box.add_child(modal_btn_3)
 
+	# Shop Teammate Revival Section (shown only in shop when party members are knocked out)
+	shop_revive_section = VBoxContainer.new()
+	shop_revive_section.add_theme_constant_override("separation", 6)
+	shop_revive_section.visible = false
+	btn_box.add_child(shop_revive_section)
+
 	# Shop Card Shelf & Card Removal Section (shown only in shop)
 	shop_cards_section = VBoxContainer.new()
 	shop_cards_section.add_theme_constant_override("separation", 6)
@@ -631,6 +672,8 @@ func _build_modal_panel() -> void:
 	modal_shop_lineup_btn.visible = false
 	btn_box.add_child(modal_shop_lineup_btn)
 
+	_build_destiny_gate_section(btn_box)
+
 	modal_leave_btn = Button.new()
 	modal_leave_btn.text = "稍后再来"
 	modal_leave_btn.pressed.connect(_on_modal_leave)
@@ -644,6 +687,204 @@ func _build_modal_panel() -> void:
 	choice_a = modal_btn_1
 	choice_b = modal_btn_2
 	leave_button = modal_leave_btn
+
+func _build_destiny_gate_section(parent: VBoxContainer) -> void:
+	destiny_gate_section = VBoxContainer.new()
+	destiny_gate_section.add_theme_constant_override("separation", 8)
+	destiny_gate_section.visible = false
+	parent.add_child(destiny_gate_section)
+
+	var cards_row := HBoxContainer.new()
+	cards_row.add_theme_constant_override("separation", 12)
+	destiny_gate_section.add_child(cards_row)
+
+	# Left Card: 节点交互 (领取命运 + 强化全队)
+	var left_card := PanelContainer.new()
+	left_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left_card.add_theme_stylebox_override("panel", MapVisuals.make_box(Color("241b13"), MapVisuals.WALNUT_BORDER, 1, 10, 12, 10))
+	cards_row.add_child(left_card)
+
+	var lv := VBoxContainer.new()
+	lv.add_theme_constant_override("separation", 8)
+	left_card.add_child(lv)
+
+	var lh := HBoxContainer.new()
+	lv.add_child(lh)
+
+	var lt := Label.new()
+	lt.text = "节点交互"
+	lt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lt.add_theme_font_size_override("font_size", 15)
+	lt.add_theme_color_override("font_color", MapVisuals.CREAM_TEXT)
+	lh.add_child(lt)
+
+	var bal_pill_a := PanelContainer.new()
+	bal_pill_a.add_theme_stylebox_override("panel", MapVisuals.make_box(Color("1c150f"), MapVisuals.BRASS_GOLD, 1, 10, 8, 2))
+	lh.add_child(bal_pill_a)
+	destiny_modal_balance_a = Label.new()
+	destiny_modal_balance_a.text = "◆ 命运 0/10"
+	destiny_modal_balance_a.add_theme_font_size_override("font_size", 12)
+	destiny_modal_balance_a.add_theme_color_override("font_color", MapVisuals.SUN_GOLD)
+	bal_pill_a.add_child(destiny_modal_balance_a)
+
+	lv.add_child(HSeparator.new())
+
+	# Claim Subcard (Parchment)
+	var claim_box := PanelContainer.new()
+	claim_box.add_theme_stylebox_override("panel", MapVisuals.make_box(MapVisuals.PARCHMENT, MapVisuals.BRASS_GOLD, 1, 8, 12, 10))
+	lv.add_child(claim_box)
+
+	var claim_h := HBoxContainer.new()
+	claim_h.add_theme_constant_override("separation", 8)
+	claim_box.add_child(claim_h)
+
+	var claim_text_v := VBoxContainer.new()
+	claim_text_v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	claim_text_v.add_theme_constant_override("separation", 2)
+	claim_h.add_child(claim_text_v)
+
+	destiny_claim_title_lbl = Label.new()
+	destiny_claim_title_lbl.text = "领取命运 +2"
+	destiny_claim_title_lbl.add_theme_font_size_override("font_size", 16)
+	destiny_claim_title_lbl.add_theme_color_override("font_color", MapVisuals.INK_DARK)
+	claim_text_v.add_child(destiny_claim_title_lbl)
+
+	destiny_claim_sub_lbl = Label.new()
+	destiny_claim_sub_lbl.text = "每座门可领取一次"
+	destiny_claim_sub_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	destiny_claim_sub_lbl.add_theme_font_size_override("font_size", 11)
+	destiny_claim_sub_lbl.add_theme_color_override("font_color", MapVisuals.INK_MUTED)
+	claim_text_v.add_child(destiny_claim_sub_lbl)
+
+	destiny_claim_btn = Button.new()
+	destiny_claim_btn.text = "领取 +2"
+	destiny_claim_btn.custom_minimum_size = Vector2(96, 36)
+	destiny_claim_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	destiny_claim_btn.pressed.connect(_on_destiny_claim_pressed)
+	claim_h.add_child(destiny_claim_btn)
+
+	# Upgrade Subcard (Dark Walnut + Brass Gold)
+	var upg_box := PanelContainer.new()
+	upg_box.add_theme_stylebox_override("panel", MapVisuals.make_box(Color("1c140d"), MapVisuals.BRASS_GOLD, 1, 8, 12, 10))
+	lv.add_child(upg_box)
+
+	var upg_h := HBoxContainer.new()
+	upg_h.add_theme_constant_override("separation", 8)
+	upg_box.add_child(upg_h)
+
+	var upg_text_v := VBoxContainer.new()
+	upg_text_v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	upg_text_v.add_theme_constant_override("separation", 2)
+	upg_h.add_child(upg_text_v)
+
+	var upg_title := Label.new()
+	upg_title.text = "强化全队"
+	upg_title.add_theme_font_size_override("font_size", 16)
+	upg_title.add_theme_color_override("font_color", MapVisuals.CREAM_TEXT)
+	upg_text_v.add_child(upg_title)
+
+	var upg_cap := Label.new()
+	upg_cap.text = "拼点正面率"
+	upg_cap.add_theme_font_size_override("font_size", 11)
+	upg_cap.add_theme_color_override("font_color", Color("b8a88c"))
+	upg_text_v.add_child(upg_cap)
+
+	destiny_upgrade_rate_lbl = Label.new()
+	destiny_upgrade_rate_lbl.text = "45% → 60%"
+	destiny_upgrade_rate_lbl.add_theme_font_size_override("font_size", 15)
+	destiny_upgrade_rate_lbl.add_theme_color_override("font_color", MapVisuals.SUN_GOLD)
+	upg_text_v.add_child(destiny_upgrade_rate_lbl)
+
+	destiny_upgrade_btn = Button.new()
+	destiny_upgrade_btn.text = "花费 2 命运"
+	destiny_upgrade_btn.custom_minimum_size = Vector2(110, 40)
+	destiny_upgrade_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	destiny_upgrade_btn.pressed.connect(_on_destiny_upgrade_pressed)
+	upg_h.add_child(destiny_upgrade_btn)
+
+	# Right Card: 下场战斗 (当前正面率预览)
+	var right_card := PanelContainer.new()
+	right_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right_card.add_theme_stylebox_override("panel", MapVisuals.make_box(Color("241b13"), MapVisuals.WALNUT_BORDER, 1, 10, 12, 10))
+	cards_row.add_child(right_card)
+
+	var rv := VBoxContainer.new()
+	rv.add_theme_constant_override("separation", 8)
+	right_card.add_child(rv)
+
+	var rh := HBoxContainer.new()
+	rv.add_child(rh)
+
+	var rt := Label.new()
+	rt.text = "下场战斗"
+	rt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rt.add_theme_font_size_override("font_size", 15)
+	rt.add_theme_color_override("font_color", MapVisuals.CREAM_TEXT)
+	rh.add_child(rt)
+
+	var bal_pill_b := PanelContainer.new()
+	bal_pill_b.add_theme_stylebox_override("panel", MapVisuals.make_box(Color("1c150f"), MapVisuals.BRASS_GOLD, 1, 10, 8, 2))
+	rh.add_child(bal_pill_b)
+	destiny_modal_balance_b = Label.new()
+	destiny_modal_balance_b.text = "◆ 命运 0/10"
+	destiny_modal_balance_b.add_theme_font_size_override("font_size", 12)
+	destiny_modal_balance_b.add_theme_color_override("font_color", MapVisuals.SUN_GOLD)
+	bal_pill_b.add_child(destiny_modal_balance_b)
+
+	rv.add_child(HSeparator.new())
+
+	var prev_box := PanelContainer.new()
+	prev_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	prev_box.add_theme_stylebox_override("panel", MapVisuals.make_box(MapVisuals.PARCHMENT, MapVisuals.BRASS_GOLD, 1, 8, 14, 12))
+	rv.add_child(prev_box)
+
+	var pv := VBoxContainer.new()
+	pv.add_theme_constant_override("separation", 6)
+	prev_box.add_child(pv)
+
+	var p_cap := Label.new()
+	p_cap.text = "我方拼点硬币正面率"
+	p_cap.add_theme_font_size_override("font_size", 13)
+	p_cap.add_theme_color_override("font_color", MapVisuals.INK_MUTED)
+	pv.add_child(p_cap)
+
+	var rate_row := HBoxContainer.new()
+	pv.add_child(rate_row)
+
+	destiny_preview_rate_lbl = Label.new()
+	destiny_preview_rate_lbl.text = "45%"
+	destiny_preview_rate_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	destiny_preview_rate_lbl.add_theme_font_size_override("font_size", 32)
+	destiny_preview_rate_lbl.add_theme_color_override("font_color", MapVisuals.INK_DARK)
+	rate_row.add_child(destiny_preview_rate_lbl)
+
+	var max_lbl := Label.new()
+	max_lbl.text = "满级 100%"
+	max_lbl.size_flags_vertical = Control.SIZE_SHRINK_END
+	max_lbl.add_theme_font_size_override("font_size", 12)
+	max_lbl.add_theme_color_override("font_color", MapVisuals.INK_MUTED)
+	rate_row.add_child(max_lbl)
+
+	pv.add_child(HSeparator.new())
+
+	var p_note1 := Label.new()
+	p_note1.text = "全队参与拼点的技能均生效"
+	p_note1.add_theme_font_size_override("font_size", 13)
+	p_note1.add_theme_color_override("font_color", MapVisuals.INK_DARK)
+	pv.add_child(p_note1)
+
+	destiny_preview_sub_lbl = Label.new()
+	destiny_preview_sub_lbl.text = "强化跨战斗、跨层与换队员保留"
+	destiny_preview_sub_lbl.add_theme_font_size_override("font_size", 11)
+	destiny_preview_sub_lbl.add_theme_color_override("font_color", MapVisuals.INK_MUTED)
+	pv.add_child(destiny_preview_sub_lbl)
+
+	destiny_gate_feedback = Label.new()
+	destiny_gate_feedback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	destiny_gate_feedback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	destiny_gate_feedback.add_theme_font_size_override("font_size", 12)
+	destiny_gate_feedback.add_theme_color_override("font_color", Color("f0d999"))
+	destiny_gate_section.add_child(destiny_gate_feedback)
 
 func _build_card_reward_modal() -> void:
 	card_reward_panel = PanelContainer.new()
@@ -902,48 +1143,70 @@ func _build_item_detail_modal() -> void:
 	item_detail_panel.visible = false
 
 func _build_next_floor_modal() -> void:
+	next_floor_shade = ColorRect.new()
+	next_floor_shade.color = Color(0.08, 0.06, 0.04, 0.65)
+	next_floor_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	next_floor_shade.hide()
+	add_child(next_floor_shade)
+
 	next_floor_panel = PanelContainer.new()
 	next_floor_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	next_floor_panel.offset_left = -265
-	next_floor_panel.offset_right = 265
-	next_floor_panel.offset_top = -135
-	next_floor_panel.offset_bottom = 135
-	next_floor_panel.add_theme_stylebox_override("panel", MapVisuals.make_box(Color("2d2217"), MapVisuals.SUN_GOLD, 2, 10, 18, 16))
+	next_floor_panel.offset_left = -420
+	next_floor_panel.offset_right = 420
+	next_floor_panel.offset_top = -175
+	next_floor_panel.offset_bottom = 175
+	next_floor_panel.add_theme_stylebox_override("panel", MapVisuals.make_box(MapVisuals.WALNUT_BG, MapVisuals.SUN_GOLD, 2, 12, 26, 22))
 	add_child(next_floor_panel)
 
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 10)
-	next_floor_panel.add_child(vbox)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 14)
+	next_floor_panel.add_child(column)
 
 	next_floor_title = Label.new()
-	next_floor_title.text = "🌟 关底首领击破！"
-	next_floor_title.add_theme_font_size_override("font_size", 18)
-	next_floor_title.add_theme_color_override("font_color", GOLD)
-	vbox.add_child(next_floor_title)
+	next_floor_title.add_theme_font_size_override("font_size", 28)
+	next_floor_title.add_theme_color_override("font_color", MapVisuals.CREAM_TEXT)
+	column.add_child(next_floor_title)
 
 	next_floor_desc = Label.new()
 	next_floor_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	next_floor_desc.add_theme_font_size_override("font_size", 13)
 	next_floor_desc.add_theme_color_override("font_color", MapVisuals.CREAM_TEXT)
-	vbox.add_child(next_floor_desc)
+	column.add_child(next_floor_desc)
+	column.add_child(HSeparator.new())
 
-	vbox.add_child(HSeparator.new())
+	var choices := HBoxContainer.new()
+	choices.add_theme_constant_override("separation", 12)
+	column.add_child(choices)
+	var group := ButtonGroup.new()
+	for key in ForestRun.ENEMY_MODIFIERS:
+		var modifier: Dictionary = ForestRun.ENEMY_MODIFIERS[key]
+		var card := Button.new()
+		card.text = "%s\n最大生命 +%d%%\n攻击伤害 +%d%%" % [modifier.name, modifier.health, modifier.damage]
+		card.custom_minimum_size.y = 120
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.toggle_mode = true
+		card.button_group = group
+		card.add_theme_stylebox_override("normal", MapVisuals.make_box(MapVisuals.PARCHMENT, MapVisuals.BRASS_GOLD))
+		card.add_theme_stylebox_override("pressed", MapVisuals.make_box(MapVisuals.PARCHMENT, MapVisuals.SUN_GOLD, 3))
+		card.add_theme_stylebox_override("hover", MapVisuals.make_box(MapVisuals.PARCHMENT_SOFT, MapVisuals.SUN_GOLD))
+		for color_name in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+			card.add_theme_color_override(color_name, MapVisuals.INK_DARK)
+		card.pressed.connect(_select_enemy_modifier.bind(key))
+		choices.add_child(card)
+		enemy_modifier_buttons[key] = card
 
-	var btn_box := VBoxContainer.new()
-	btn_box.add_theme_constant_override("separation", 6)
-	vbox.add_child(btn_box)
-
-	next_floor_advance_btn = Button.new()
-	next_floor_advance_btn.text = "🌲 深入下一层"
-	next_floor_advance_btn.pressed.connect(_on_advance_next_floor_pressed)
-	btn_box.add_child(next_floor_advance_btn)
-
+	var actions := HBoxContainer.new()
+	actions.alignment = BoxContainer.ALIGNMENT_END
+	column.add_child(actions)
 	next_floor_stay_btn = Button.new()
-	next_floor_stay_btn.text = "暂留本层 (可在石门前整备)"
-	next_floor_stay_btn.pressed.connect(func() -> void: next_floor_panel.visible = false)
-	btn_box.add_child(next_floor_stay_btn)
-
-	next_floor_panel.visible = false
+	next_floor_stay_btn.text = "暂留本层"
+	next_floor_stay_btn.pressed.connect(_close_next_floor_modal)
+	actions.add_child(next_floor_stay_btn)
+	next_floor_advance_btn = Button.new()
+	next_floor_advance_btn.add_theme_stylebox_override("normal", MapVisuals.make_box(MapVisuals.SUN_GOLD, MapVisuals.BRASS_GOLD))
+	next_floor_advance_btn.add_theme_color_override("font_color", MapVisuals.INK_DARK)
+	next_floor_advance_btn.pressed.connect(_on_advance_next_floor_pressed)
+	actions.add_child(next_floor_advance_btn)
+	next_floor_panel.hide()
 
 func _build_lineup_modal() -> void:
 	lineup_modal_panel = PanelContainer.new()
@@ -992,11 +1255,17 @@ func _build_lineup_modal() -> void:
 	left_title.add_theme_color_override("font_color", MapVisuals.EMERALD_LIGHT)
 	left_vbox.add_child(left_title)
 
+	var roles_scroll := ScrollContainer.new()
+	roles_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	roles_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left_vbox.add_child(roles_scroll)
+
 	var roles_grid := GridContainer.new()
 	roles_grid.columns = 2
+	roles_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	roles_grid.add_theme_constant_override("h_separation", 6)
 	roles_grid.add_theme_constant_override("v_separation", 6)
-	left_vbox.add_child(roles_grid)
+	roles_scroll.add_child(roles_grid)
 
 	var roster := DemoBattleRules.create_roster()
 	lineup_role_buttons.clear()
@@ -1401,9 +1670,19 @@ func _show_item_detail(item_id: String, item_idx: int) -> void:
 	item_detail_type.text = "【战术消耗品】"
 	item_detail_desc.text = info.get("description", "")
 
-	if item_id == "field_poultice":
+	if item_id in ["field_poultice", "echo_pendulum", "phoenix_feather", "clarity_elixir", "gambler_die"]:
 		item_detail_use_btn.visible = true
-		item_detail_use_btn.text = "使用野战膏药"
+		match item_id:
+			"field_poultice":
+				item_detail_use_btn.text = "使用野战膏药（恢复 12 生命）"
+			"echo_pendulum":
+				item_detail_use_btn.text = "使用回响灵摆（疲劳 -2 · +3 Cost）"
+			"phoenix_feather":
+				item_detail_use_btn.text = "使用凤凰尾羽（复活队员 / 恢复 16 生命）"
+			"clarity_elixir":
+				item_detail_use_btn.text = "使用澄明甘露（疲劳归零 · +4 Cost）"
+			"gambler_die":
+				item_detail_use_btn.text = "投掷命运秘骰（单数 +6 Cost · 双数 +2 命运）"
 		var callables = item_detail_use_btn.pressed.get_connections()
 		for c in callables:
 			item_detail_use_btn.pressed.disconnect(c.callable)
@@ -1436,32 +1715,133 @@ func _use_item_in_exploration(item_id: String, item_idx: int) -> void:
 		run.log_event("使用野战膏药，恢复 %d 生命。" % restored)
 		item_detail_panel.visible = false
 		_refresh_ui()
+	elif item_id == "echo_pendulum":
+		run.items.remove_at(item_idx)
+		run.fatigue = maxi(0, run.fatigue - 2)
+		run.carried_cost += 3
+		carried_cost = run.carried_cost
+		run.log_event("使用回响灵摆：疲劳 −2，获得 3 cost。")
+		item_detail_panel.visible = false
+		_refresh_ui()
+	elif item_id == "phoenix_feather":
+		var dead := run.get_dead_hero_slots()
+		run.items.remove_at(item_idx)
+		if not dead.is_empty():
+			run.revive_hero_with_feather(dead[0], 0.30)
+		else:
+			run.heal_lowest_hero(16)
+			run.log_event("使用凤凰尾羽：圣光沐浴，伤势最重队员恢复 16 生命。")
+		for i in run.party_hp.size():
+			if i < carried_hp.size():
+				carried_hp[i] = run.party_hp[i]
+		item_detail_panel.visible = false
+		_refresh_ui()
+	elif item_id == "clarity_elixir":
+		run.items.remove_at(item_idx)
+		run.fatigue = 0
+		run.carried_cost += 4
+		carried_cost = run.carried_cost
+		run.log_event("使用澄明甘露：疲劳完全消除，获得 4 cost。")
+		item_detail_panel.visible = false
+		_refresh_ui()
+	elif item_id == "gambler_die":
+		run.items.remove_at(item_idx)
+		var d := (randi() % 6) + 1
+		if d % 2 == 1:
+			run.carried_cost += 6
+			carried_cost = run.carried_cost
+			run.log_event("掷出命运秘骰【%d 点 · 奇数】：探险收获 6 cost！" % d)
+		else:
+			run.destiny = mini(ForestRun.DESTINY_MAX, run.destiny + 2)
+			run.log_event("掷出命运秘骰【%d 点 · 偶数】：命运指针跳动，命运 +2！" % d)
+		item_detail_panel.visible = false
+		_refresh_ui()
+
+func _on_shop_revive_pressed(slot_idx: int) -> void:
+	if run == null:
+		return
+	var res := run.shop_revive_hero(slot_idx)
+	if res.get("ok", false):
+		carried_cost = run.carried_cost
+		for i in run.party_hp.size():
+			if i < carried_hp.size():
+				carried_hp[i] = run.party_hp[i]
+		_open_modal("shop")
+		_refresh_ui()
+
+func shop_revive_hero(slot_idx: int) -> Dictionary:
+	if run == null:
+		return {"ok": false}
+	var res := run.shop_revive_hero(slot_idx)
+	if res.get("ok", false):
+		carried_cost = run.carried_cost
+		for i in run.party_hp.size():
+			if i < carried_hp.size():
+				carried_hp[i] = run.party_hp[i]
+		_refresh_ui()
+	return res
 
 func _show_next_floor_modal() -> void:
-	if run == null:
+	if run == null or not run.floor_cleared or run.finished or run.floor_level >= ForestRun.MAX_FLOOR:
 		return
-	next_floor_title.text = "🌟 第 %d 层突破！" % run.floor_level
-	next_floor_desc.text = "关底守卫【烬心巨像】已被击溃，归途石门上的远古符文已完全激活！\n石阶通往更深处的林野，新的风景与试炼正在前方等待。"
-	next_floor_advance_btn.text = "🌲 深入下一层 (进入第 %d 层)" % (run.floor_level + 1)
-	next_floor_panel.visible = true
+	selected_enemy_modifier = ""
+	for card in enemy_modifier_buttons.values():
+		card.set_pressed_no_signal(false)
+	next_floor_title.text = "第 %d 层已突破" % run.floor_level
+	next_floor_desc.text = "选择一项敌方强化，才能进入第 %d 层。强化会叠加到之后每一场探索战斗。" % (run.floor_level + 1)
+	next_floor_advance_btn.text = "确认 · 进入第 %d 层" % (run.floor_level + 1)
+	next_floor_advance_btn.disabled = true
+	next_floor_shade.show()
+	next_floor_panel.show()
+	enemy_modifier_buttons.values()[0].grab_focus()
+
+func _close_next_floor_modal() -> void:
+	next_floor_panel.hide()
+	next_floor_shade.hide()
+
+func _select_enemy_modifier(key: String) -> void:
+	if next_floor_panel.visible and run != null and run.can_advance_to_next_floor(key):
+		selected_enemy_modifier = key
+		next_floor_advance_btn.disabled = false
 
 func _on_advance_next_floor_pressed() -> void:
-	if run == null:
+	if run == null or not run.can_advance_to_next_floor(selected_enemy_modifier):
 		return
+	var new_seed := int(Time.get_unix_time_from_system() * 1000) ^ randi()
+	var new_map: ForestMapGraph = ForestRandomGenerator.generate_grid(new_seed, run.floor_level + 1)
+	if not run.advance_to_next_floor(new_map, new_seed, selected_enemy_modifier):
+		return
+	selected_enemy_modifier = ""
 	is_rolling_dice = false
 	dice_anim_elapsed = 0.0
 	dice_prompt_flash = 0.0
-	var new_seed := int(Time.get_unix_time_from_system() * 1000) ^ randi()
-	var new_map: ForestMapGraph = ForestRandomGenerator.generate(new_seed)
-	run.advance_to_next_floor(new_map, new_seed)
-	carried_hp.clear()
-	for hp in run.party_hp:
-		carried_hp.append(hp)
+	hovered_node_id = ""
+	hovered_cell = Vector2i(-1, -1)
+	route_target_id = ""
+	route_preview_path.clear()
+	carried_hp.assign(run.party_hp)
 	carried_cost = run.carried_cost
-	next_floor_panel.visible = false
+	_close_next_floor_modal()
 	_apply_floor_terrain_texture(run.floor_level)
 	_rebuild_team_hud()
 	_refresh_ui()
+
+func _show_expedition_victory() -> void:
+	if is_instance_valid(victory_view):
+		return
+	victory_view = VictoryView.new()
+	victory_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	victory_view.cleared_floors = run.floor_level
+	victory_view.total_floors = ForestRun.MAX_FLOOR
+	victory_view.modifier_count = run.enemy_modifiers.size()
+	victory_view.menu_requested.connect(_return_from_victory)
+	add_child(victory_view)
+
+func _return_from_victory() -> void:
+	if exploration_finished.get_connections().is_empty():
+		get_tree().change_scene_to_file("res://battle_setup.tscn")
+	else:
+		exploration_finished.emit()
 
 func _at_run_start() -> bool:
 	return run != null and run.floor_level == 1 and run.turn == 1 and run.position == run.map.start_id and run.travelled.is_empty() and run.pending.is_empty() and not run.finished
@@ -1589,6 +1969,10 @@ func _on_lineup_save_pressed() -> void:
 	_close_lineup_modal()
 
 func _start_new_run() -> void:
+	_close_next_floor_modal()
+	if is_instance_valid(victory_view):
+		victory_view.queue_free()
+		victory_view = null
 	if is_instance_valid(battle):
 		battle.queue_free()
 		battle = null
@@ -1596,20 +1980,27 @@ func _start_new_run() -> void:
 	dice_anim_elapsed = 0.0
 	dice_prompt_flash = 0.0
 	hovered_node_id = ""
+	hovered_cell = Vector2i(-1, -1)
+	route_target_id = ""
+	route_preview_path.clear()
 	return_button.visible = false
 	lineup_modal_panel.hide()
 	modal_panel.hide()
 	card_reward_panel.hide()
 	deck_viewer_panel.hide()
 	deck_viewer_remove_mode = false
+	if is_instance_valid(destiny_gate_feedback):
+		destiny_gate_feedback.text = ""
 
-	var seed_val := int(Time.get_unix_time_from_system() * 1000) ^ randi()
-	var map: ForestMapGraph = ForestRandomGenerator.generate(seed_val)
+	var seed_val := initial_seed if initial_seed >= 0 else (int(Time.get_unix_time_from_system() * 1000) ^ randi())
+	var map: ForestMapGraph = ForestRandomGenerator.generate_floor1_grid(seed_val)
 	run = ForestRun.new()
 	if not initial_lineup.is_empty():
 		run.initialize(map, 0, ["mercury_die"], ["field_poultice", "dense_smoke"], seed_val, initial_lineup, initial_deck)
 	else:
 		run.initialize(map, 0, ["mercury_die"], ["field_poultice", "dense_smoke"], seed_val)
+	if initial_contract != "standard":
+		run.apply_contract(initial_contract)
 
 	carried_hp.clear()
 	for hp in run.party_hp:
@@ -1648,8 +2039,26 @@ func _rebuild_team_hud() -> void:
 		bar.add_theme_stylebox_override("fill", MapVisuals.make_box(hero_colors[i % hero_colors.size()], Color.TRANSPARENT, 0, 3, 0, 0))
 		chip.add_child(bar)
 		hero_hp_bars.append(bar)
+	var syn_text := TeamSynergy.compact_badges(run.lineup)
+	if not syn_text.is_empty():
+		var syn_pill := PanelContainer.new()
+		syn_pill.add_theme_stylebox_override("panel", MapVisuals.make_box(Color("3b2c1d"), MapVisuals.BRASS_GOLD, 1, 6, 8, 3))
+		syn_pill.tooltip_text = TeamSynergy.summary_line(run.lineup)
+		var syn_lbl := Label.new()
+		syn_lbl.text = syn_text
+		syn_lbl.add_theme_font_size_override("font_size", 11)
+		syn_lbl.add_theme_color_override("font_color", MapVisuals.SUN_GOLD)
+		syn_pill.add_child(syn_lbl)
+		hud_team_container.add_child(syn_pill)
 
 func _process(delta: float) -> void:
+	if is_instance_valid(victory_view):
+		return
+	if is_instance_valid(battle):
+		return_button.visible = not battle.busy and not battle.battle.outcome.is_empty()
+		return
+	if not is_visible_in_tree():
+		return
 	pulse_time += delta
 	if dice_prompt_flash > 0.0:
 		dice_prompt_flash = maxf(0.0, dice_prompt_flash - delta * 2.0)
@@ -1667,18 +2076,20 @@ func _process(delta: float) -> void:
 			if run != null and run.can_roll_action_dice():
 				run.roll_action_dice()
 			_refresh_ui()
-	if is_instance_valid(map_canvas):
+	var redraw_ambient := pulse_time >= next_map_redraw
+	if redraw_ambient:
+		next_map_redraw = pulse_time + 1.0 / 20.0
 		map_canvas.queue_redraw()
-	if is_instance_valid(dice_tray_canvas):
+	if is_rolling_dice or (redraw_ambient and run != null and run.can_roll_action_dice()):
 		dice_tray_canvas.queue_redraw()
-	if is_instance_valid(battle) and not battle.busy and not battle.battle.outcome.is_empty():
-		return_button.visible = true
 
 func _inspected_node() -> ForestMapGraph.MapNode:
 	if run == null or run.map == null:
 		return null
 	if not hovered_node_id.is_empty() and run.known.has(hovered_node_id):
 		return run.map.get_node(hovered_node_id)
+	if not route_target_id.is_empty() and run.known.has(route_target_id):
+		return run.map.get_node(route_target_id)
 	return run.map.get_node(run.position)
 
 func _on_inspect_icon_draw() -> void:
@@ -1701,6 +2112,19 @@ func _on_dice_tray_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		_on_roll_dice_pressed()
 
+func _sync_grid_node_positions() -> void:
+	if run == null or run.map == null or not run.map.is_grid or not is_instance_valid(map_canvas):
+		return
+	var rect := map_canvas.get_rect()
+	if rect.size.x <= 10.0 or rect.size.y <= 10.0:
+		return
+	var layout := MapVisuals.compute_grid_layout(rect, run.map.grid_size)
+	for node in run.map.nodes.values():
+		var n := node as ForestMapGraph.MapNode
+		if n.cell.x >= 0 and n.cell.y >= 0:
+			var center := MapVisuals.grid_cell_center(layout, n.cell)
+			n.pos = Vector2(center.x / rect.size.x, center.y / rect.size.y)
+
 func _on_map_canvas_draw() -> void:
 	if run == null or run.map == null:
 		return
@@ -1714,34 +2138,46 @@ func _on_map_canvas_draw() -> void:
 	# 1. Sunlit morning atmosphere (sunbeams, framing vignette, pollen & leaves)
 	MapVisuals.draw_sunlit_atmosphere(map_canvas, rect, pulse_time, run.floor_level)
 
-	# 2. Soft airy cream-white morning mist clouds over unexplored nodes
-	MapVisuals.draw_morning_mist(map_canvas, run, w, h, pulse_time, run.floor_level)
+	if run.map.is_grid:
+		var active_route: Array = []
+		if not hovered_node_id.is_empty() and hovered_node_id != run.position and run.known.has(hovered_node_id):
+			var h_route := run.preview_route_to(hovered_node_id)
+			if h_route.ok and int(h_route.steps) >= 2:
+				active_route = h_route.path
+		if active_route.is_empty() and not route_target_id.is_empty() and route_target_id != run.position and run.known.has(route_target_id):
+			var r_info := run.preview_route_to(route_target_id)
+			if r_info.ok and int(r_info.steps) >= 1:
+				active_route = r_info.path
+		MapVisuals.draw_grid_map(map_canvas, run, rect, hovered_cell, active_route, pulse_time, font)
+	else:
+		# 2. Soft airy cream-white morning mist clouds over unexplored nodes
+		MapVisuals.draw_morning_mist(map_canvas, run, w, h, pulse_time, run.floor_level)
 
-	# 3. High-contrast cartographic trails & animated footsteps
-	MapVisuals.draw_map_edges(map_canvas, run, w, h, pulse_time, font)
+		# 3. High-contrast cartographic trails & animated footsteps
+		MapVisuals.draw_map_edges(map_canvas, run, w, h, pulse_time, font)
 
-	# 4. Patrol tracks & noise ripple signals
-	MapVisuals.draw_patrol_signals(map_canvas, run, w, h, pulse_time, font)
+		# 4. Patrol tracks & noise ripple signals
+		MapVisuals.draw_patrol_signals(map_canvas, run, w, h, pulse_time, font)
 
-	# 5. Medallion nodes (draw unknown first, known/current on top for clean layering)
-	var ordered_nodes: Array = []
-	for node in run.map.nodes.values():
-		ordered_nodes.append(node)
-	ordered_nodes.sort_custom(func(a, b) -> bool:
-		var pa := 2 if a.id == run.position else (1 if run.known.has(a.id) else 0)
-		var pb := 2 if b.id == run.position else (1 if run.known.has(b.id) else 0)
-		return pa < pb)
-	for node in ordered_nodes:
-		var n := node as ForestMapGraph.MapNode
-		var pos := Vector2(n.pos.x * w, n.pos.y * h)
-		MapVisuals.draw_map_node(map_canvas, n, run, pos, n.id == hovered_node_id, pulse_time, font)
+		# 5. Medallion nodes (draw unknown first, known/current on top for clean layering)
+		var ordered_nodes: Array = []
+		for node in run.map.nodes.values():
+			ordered_nodes.append(node)
+		ordered_nodes.sort_custom(func(a, b) -> bool:
+			var pa := 2 if a.id == run.position else (1 if run.known.has(a.id) else 0)
+			var pb := 2 if b.id == run.position else (1 if run.known.has(b.id) else 0)
+			return pa < pb)
+		for node in ordered_nodes:
+			var n := node as ForestMapGraph.MapNode
+			var pos := Vector2(n.pos.x * w, n.pos.y * h)
+			MapVisuals.draw_map_node(map_canvas, n, run, pos, n.id == hovered_node_id, pulse_time, font)
 
-	# 6. Patrol beast marker when inside sight
-	if run.is_patrol_visible():
-		var p_node = run.map.get_node(run.patrol_node)
-		if p_node != null:
-			var p_pos := Vector2(p_node.pos.x * w, p_node.pos.y * h)
-			MapVisuals.draw_patrol_beast(map_canvas, p_pos, pulse_time, font)
+		# 6. Patrol beast marker when inside sight
+		if run.is_patrol_visible():
+			var p_node = run.map.get_node(run.patrol_node)
+			if p_node != null:
+				var p_pos := Vector2(p_node.pos.x * w, p_node.pos.y * h)
+				MapVisuals.draw_patrol_beast(map_canvas, p_pos, pulse_time, font)
 
 	# 7. Compact sunlit dice prompt pill at top of map when unrolled or rolling
 	if not is_instance_valid(battle) and (is_rolling_dice or run.can_roll_action_dice()):
@@ -1753,12 +2189,13 @@ func _on_map_canvas_draw() -> void:
 			banner_text = "🎲 第 %d 回合：点击右侧行动骰盘掷出本回合步数%s" % [run.turn, penalty_hint]
 		var banner_size := font.get_string_size(banner_text, HORIZONTAL_ALIGNMENT_CENTER, -1, 13)
 		var pill_w := banner_size.x + 32.0
-		var pill_h := 30.0
-		var pill_rect := Rect2((w - pill_w) * 0.5, 10.0, pill_w, pill_h)
+		var pill_h := 26.0 if run.map.is_grid else 30.0
+		var pill_y := 6.0 if run.map.is_grid else 10.0
+		var pill_rect := Rect2((w - pill_w) * 0.5, pill_y, pill_w, pill_h)
 		var border_col := MapVisuals.SUN_GOLD.lerp(Color("ff7b00"), dice_prompt_flash)
 		map_canvas.draw_rect(pill_rect, Color(MapVisuals.WALNUT_DEEP, 0.88), true)
 		map_canvas.draw_rect(pill_rect, border_col, false, 2.0)
-		map_canvas.draw_string(font, Vector2(pill_rect.position.x + 16.0, pill_rect.position.y + 20.0), banner_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MapVisuals.CREAM_TEXT)
+		map_canvas.draw_string(font, Vector2(pill_rect.position.x + 16.0, pill_rect.position.y + (18.0 if run.map.is_grid else 20.0)), banner_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MapVisuals.CREAM_TEXT)
 
 func _on_map_canvas_input(event: InputEvent) -> void:
 	if run == null or run.map == null:
@@ -1766,6 +2203,63 @@ func _on_map_canvas_input(event: InputEvent) -> void:
 	var rect := map_canvas.get_rect()
 	var w := rect.size.x
 	var h := rect.size.y
+
+	if run.map.is_grid:
+		var layout := MapVisuals.compute_grid_layout(rect, run.map.grid_size)
+		if event is InputEventMouseMotion:
+			var cell := MapVisuals.grid_cell_at_point(layout, event.position, run.map.grid_size)
+			var found_id := ""
+			if cell.x >= 0:
+				var nid: String = run.map.node_id_at(cell)
+				if not nid.is_empty() and run.known.has(nid):
+					found_id = nid
+			if cell != hovered_cell or found_id != hovered_node_id:
+				hovered_cell = cell
+				hovered_node_id = found_id
+				if cell.x >= 0:
+					var clbl := ForestMapGraph.cell_label(cell)
+					var is_known_c: bool = run.known_cells.has(cell) or (not found_id.is_empty() and run.known.has(found_id))
+					if not is_known_c:
+						map_canvas.tooltip_text = "%s（迷雾未探索）" % clbl
+					elif run.map.is_obstacle(cell):
+						map_canvas.tooltip_text = "%s（%s）" % [clbl, "树林障碍 · 不可通行" if run.map.obstacle_kind(cell) == "trees" else "水域障碍 · 不可通行"]
+					elif not found_id.is_empty():
+						var h_node = run.map.get_node(found_id)
+						var tip_line := ""
+						if found_id == run.position:
+							if h_node.kind == ForestMapGraph.NodeKind.SHOP and not run.finished:
+								tip_line = "点击打开商店，可调整配队与卡牌。"
+							elif h_node.kind == ForestMapGraph.NodeKind.DESTINY_GATE and not run.finished:
+								tip_line = "点击打开命运石之门，可领取命运或强化全队。"
+							else:
+								tip_line = "当前所在位置"
+						elif run.can_move(found_id):
+							tip_line = "可前往（点击消耗 1 步）"
+						else:
+							var r_info := run.preview_route_to(found_id)
+							if r_info.ok and int(r_info.steps) >= 2:
+								tip_line = "路线 %d 步%s（点击查看路线，需逐格前行）" % [int(r_info.steps), (" · 抵达后余 %d 步" % int(r_info.remaining)) if r_info.can_reach_this_turn else ""]
+							else:
+								tip_line = run.cell_move_error(cell)
+						map_canvas.tooltip_text = "%s · %s (%s)\n%s" % [clbl, h_node.name, ForestMapGraph.kind_title(h_node.kind), tip_line]
+				else:
+					map_canvas.tooltip_text = ""
+				_refresh_inspection_card()
+				map_canvas.queue_redraw()
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			var click_pos: Vector2 = event.position
+			var cell := MapVisuals.grid_cell_at_point(layout, click_pos, run.map.grid_size)
+			if cell.x >= 0:
+				_handle_grid_cell_clicked(cell)
+			else:
+				# Legacy normalized-pos click fallback (for tests clicking node.pos * map_canvas.size)
+				for node in run.map.nodes.values():
+					var n := node as ForestMapGraph.MapNode
+					var pos := Vector2(n.pos.x * w, n.pos.y * h)
+					if click_pos.distance_to(pos) <= 34.0:
+						_handle_grid_cell_clicked(n.cell)
+						break
+		return
 
 	if event is InputEventMouseMotion:
 		var mouse_pos: Vector2 = event.position
@@ -1783,6 +2277,8 @@ func _on_map_canvas_input(event: InputEvent) -> void:
 				var err := run.move_error(hovered_node_id)
 				if hovered_node_id == run.position and h_node.kind == ForestMapGraph.NodeKind.SHOP and not run.finished:
 					err = "点击打开商店，可调整配队与卡牌。"
+				elif hovered_node_id == run.position and h_node.kind == ForestMapGraph.NodeKind.DESTINY_GATE and not run.finished:
+					err = "点击打开命运石之门，可领取命运或强化全队。"
 				map_canvas.tooltip_text = "%s (%s)\n%s" % [h_node.name, ForestMapGraph.kind_title(h_node.kind), "可前往" if err.is_empty() else err]
 			else:
 				map_canvas.tooltip_text = ""
@@ -1801,6 +2297,66 @@ func _on_map_canvas_input(event: InputEvent) -> void:
 func _any_modal_open() -> bool:
 	return modal_panel.visible or (is_instance_valid(lineup_modal_panel) and lineup_modal_panel.visible) or (is_instance_valid(next_floor_panel) and next_floor_panel.visible) or (is_instance_valid(card_reward_panel) and card_reward_panel.visible) or (is_instance_valid(deck_viewer_panel) and deck_viewer_panel.visible)
 
+func _handle_grid_cell_clicked(cell: Vector2i) -> void:
+	if is_rolling_dice or is_instance_valid(battle) or _any_modal_open():
+		return
+	if run == null or run.map == null or not run.map.is_grid:
+		return
+	if not run.map.is_in_bounds(cell):
+		return
+	var clbl := ForestMapGraph.cell_label(cell)
+	var nid: String = run.map.node_id_at(cell)
+	var is_known_cell: bool = run.known_cells.has(cell) or (not nid.is_empty() and run.known.has(nid))
+	if not is_known_cell:
+		route_target_id = ""
+		route_preview_path.clear()
+		log_label.text = "%s 为未探索迷雾区域，请先向相邻格推进侦察。" % clbl
+		map_canvas.queue_redraw()
+		return
+	if run.map.is_obstacle(cell):
+		route_target_id = ""
+		route_preview_path.clear()
+		log_label.text = "%s：%s" % [clbl, "树林障碍，无法通行。" if run.map.obstacle_kind(cell) == "trees" else "水域障碍，无法通行。"]
+		map_canvas.queue_redraw()
+		return
+	if nid.is_empty():
+		return
+	if nid == run.position:
+		route_target_id = ""
+		route_preview_path.clear()
+		_handle_node_clicked(nid)
+		return
+	# Adjacent orthogonal cell -> attempt 1-step move
+	if run.map.edge_between(run.position, nid) != null:
+		route_target_id = ""
+		route_preview_path.clear()
+		_handle_node_clicked(nid)
+		return
+	# Distant known cell (or diagonal) -> show route & step count without moving or spending actions
+	var r_info := run.preview_route_to(nid)
+	if r_info.ok:
+		route_target_id = nid
+		route_preview_path.assign(r_info.path)
+		var dest_node = run.map.get_node(nid)
+		var steps := int(r_info.steps)
+		var cur_cell: Vector2i = run.map.cell_of(run.position)
+		var diff: Vector2i = (cell - cur_cell).abs()
+		var diag_note := "不支持斜走，" if (diff.x == 1 and diff.y == 1) else ""
+		if run.dice_rolled:
+			if r_info.can_reach_this_turn:
+				log_label.text = "路线预览 → %s（%s）：%s需 %d 步，抵达后余 %d 步（请逐格点击相邻格前行）。" % [dest_node.name, clbl, diag_note, steps, int(r_info.remaining)]
+			else:
+				log_label.text = "路线预览 → %s（%s）：%s需 %d 步，当前仅剩 %d 步移动力（请逐格前行）。" % [dest_node.name, clbl, diag_note, steps, run.actions_left]
+		else:
+			log_label.text = "路线预览 → %s（%s）：%s需 %d 步，请先掷出行动骰再逐格前行。" % [dest_node.name, clbl, diag_note, steps]
+	else:
+		route_target_id = ""
+		route_preview_path.clear()
+		log_label.text = run.cell_move_error(cell)
+	_refresh_inspection_card()
+	_sync_grid_node_positions()
+	map_canvas.queue_redraw()
+
 func _handle_node_clicked(node_id: String) -> void:
 	if is_rolling_dice or is_instance_valid(battle) or _any_modal_open():
 		return
@@ -1810,6 +2366,11 @@ func _handle_node_clicked(node_id: String) -> void:
 			run.enter_node()
 			_refresh_ui()
 			_open_modal("shop")
+			return
+		if n and n.kind == ForestMapGraph.NodeKind.DESTINY_GATE and not run.finished:
+			run.enter_node()
+			_refresh_ui()
+			_open_modal("destiny_gate")
 			return
 		if n and n.kind == ForestMapGraph.NodeKind.EXIT and run.floor_cleared:
 			_show_next_floor_modal()
@@ -1826,6 +2387,8 @@ func _handle_node_clicked(node_id: String) -> void:
 
 	var success := run.move(node_id)
 	if success:
+		route_target_id = ""
+		route_preview_path.clear()
 		_refresh_ui()
 		if run.in_battle:
 			_start_battle(run.current_encounter)
@@ -1836,10 +2399,18 @@ func _handle_node_clicked(node_id: String) -> void:
 
 func _open_modal(kind: String) -> void:
 	modal_panel.visible = true
+	modal_panel.offset_left = -360 if kind == "destiny_gate" else -320
+	modal_panel.offset_right = 360 if kind == "destiny_gate" else 320
+	modal_panel.offset_top = -245 if kind == "destiny_gate" else -230
+	modal_panel.offset_bottom = 245 if kind == "destiny_gate" else 230
 	modal_btn_1.visible = true
 	modal_btn_2.visible = true
 	modal_btn_3.visible = false
 	shop_cards_section.visible = false
+	if is_instance_valid(shop_revive_section):
+		shop_revive_section.visible = false
+	if is_instance_valid(destiny_gate_section):
+		destiny_gate_section.visible = false
 	modal_shop_lineup_btn.visible = false
 	modal_leave_btn.visible = true
 	modal_btn_1.disabled = false
@@ -1893,6 +2464,29 @@ func _open_modal(kind: String) -> void:
 			var too_small := run.deck.size() <= CardPool.MIN_DECK_SIZE
 			shop_remove_card_btn.text = "✂ 精简牌库（本商店已使用）" if rem_used else ("✂ 精简牌库 · 移除 1 张符卡（%d cost · 当前 %d 张）" % [CardPool.REMOVE_CARD_COST, run.deck.size()])
 			shop_remove_card_btn.disabled = rem_used or too_small or run.carried_cost < CardPool.REMOVE_CARD_COST
+
+			# Teammate Revival Section (shown when teammates are knocked out)
+			for b in shop_revive_buttons:
+				if is_instance_valid(b):
+					b.queue_free()
+			shop_revive_buttons.clear()
+			var dead_slots := run.get_dead_hero_slots()
+			if dead_slots.is_empty():
+				shop_revive_section.visible = false
+			else:
+				shop_revive_section.visible = true
+				var rev_cost := run.get_revive_cost()
+				for slot_idx in dead_slots:
+					var h_name: String = run.party_names[slot_idx] if slot_idx < run.party_names.size() else "队员"
+					var rev_hp := maxi(1, int(round(float(run.party_max_hp[slot_idx]) * 0.40)))
+					var rev_btn := Button.new()
+					rev_btn.text = "⚚ 回魂仪式 · 复活【%s】（%d cost · 恢复至 %d 生命）" % [h_name, rev_cost, rev_hp]
+					rev_btn.add_theme_color_override("font_color", Color("ffd166"))
+					rev_btn.disabled = run.carried_cost < rev_cost
+					rev_btn.pressed.connect(_on_shop_revive_pressed.bind(slot_idx))
+					shop_revive_section.add_child(rev_btn)
+					shop_revive_buttons.append(rev_btn)
+
 			modal_shop_lineup_btn.visible = true
 			modal_leave_btn.text = "离开摊位（稍后仍可返回）"
 		"shrine":
@@ -1912,14 +2506,18 @@ func _open_modal(kind: String) -> void:
 			modal_btn_3.disabled = run.carried_cost < 4
 			modal_leave_btn.text = "离开锻台"
 		"gamble":
-			modal_title.text = "🎲 旅人骰局"
-			modal_desc.text = "笑容神秘的流浪旅人正在摇晃骨骰，邀你小试手气。"
-			modal_btn_1.text = "下注一试（4 cost）：50% 获得 10 cost，30% 赢下特制铅币"
+			modal_title.text = "🎲 迷雾庄台 · 命运博弈"
+			modal_desc.text = "神秘游民摇晃着雕花骨骰，桌面上堆满古老金币与筹码，邀你入局。"
+			modal_btn_1.text = "小注怡情（4 cost）：50% 赢 10 cost，30% 赢特制铅币"
 			modal_btn_1.disabled = run.carried_cost < 4
-			modal_btn_2.text = "拒绝诱惑直接离开"
-			modal_leave_btn.visible = false
+			modal_btn_2.text = "豪掷千金（10 cost）：40% 爆赚 28 cost，30% 赢稀有遗物/高级道具，30% 反噬"
+			modal_btn_2.disabled = run.carried_cost < 10
+			modal_btn_3.visible = true
+			modal_btn_3.text = "血色轮盘（以血为注 · 0 cost）：全员扣除 20% 生命，50% 赢遗物与 12 cost"
+			modal_leave_btn.visible = true
+			modal_leave_btn.text = "理智收手，离开庄台"
 		"event":
-			modal_title.text = "？ 林间遗迹"
+			modal_title.text = "？ 林间异象与古代遗迹"
 			match run.event_variant:
 				0:
 					modal_desc.text = "发现一处爬满藤蔓的古代石穴，隐约传来微弱的能量共鸣。"
@@ -1929,12 +2527,128 @@ func _open_modal(kind: String) -> void:
 					modal_desc.text = "树根深处传来微弱呼救声，似乎是落入捕兽陷阱的游侠。"
 					modal_btn_1.text = "上前营救：可能获赠 8 cost 与烟雾弹，但也可能是陷阱"
 					modal_btn_2.text = "谨慎绕行：不冒任何风险离开"
-				_:
+				2:
 					modal_desc.text = "一块半掩埋在青苔中的残破石碑，铭刻着林野古道的密道地图。"
 					modal_btn_1.text = "消耗 3 cost 仔细拓印：获得 3 片情报碎片"
 					modal_btn_1.disabled = run.carried_cost < 3
 					modal_btn_2.text = "置之不理"
-			modal_leave_btn.visible = false
+				3:
+					modal_desc.text = "林雾深处显现出一座静谧的古泉水池，池水微泛金光，水底沉睡着无数岁月前的投赠物。"
+					modal_btn_1.text = "投币许愿（5 cost）：45% 捞起古代遗物，35% 全体恢复 14 生命，20% 命运 +3"
+					modal_btn_1.disabled = run.carried_cost < 5
+					modal_btn_2.text = "强捞池底余烬：掠夺 12 cost，但惊动守卫（警戒 +2，疲劳 +1）"
+				4:
+					modal_desc.text = "一具半掩在断壁残垣中的黑色精钢宝箱，锁孔周围雕刻着剧毒暗弩的威慑符文。"
+					modal_btn_1.text = "暴力强拆：50% 爆出 18 cost 与高级道具，50% 机关爆炸全员受 6 毒矢伤害"
+					modal_btn_2.text = "巧手破译（4 cost）：稳妥开箱，获得 8 cost 与 1 件战术道具"
+					modal_btn_2.disabled = run.carried_cost < 4
+				_:
+					modal_desc.text = "一位身披残破星纹斗篷的白发狂乱先知盘坐于枯树桩上，双目盲白却直视你的灵魂。"
+					modal_btn_1.text = "献祭鲜血求得启示：全员失去 3 生命，命运 +3，本回合步数 +1"
+					modal_btn_2.text = "购买澄明秘药（4 cost）：疲劳完全消除，获得【澄明甘露】"
+					modal_btn_2.disabled = run.carried_cost < 4
+			modal_leave_btn.visible = true
+			modal_leave_btn.text = "不作交互直接离开"
+		"destiny_gate":
+			var cur_pct: int = run.get_clash_heads_percent()
+			var next_pct: int = run.get_next_destiny_heads_percent()
+			var upg_cost: int = run.get_destiny_upgrade_cost()
+			var is_max: bool = run.is_destiny_max_tier()
+			var claimed: bool = run.is_destiny_gate_claimed(run.position)
+			var claimable: int = run.get_destiny_gate_claimable_amount(run.position)
+			var is_full: bool = run.destiny >= ForestRun.DESTINY_MAX
+			destiny_expected_next_tier = -1 if is_max else (run.destiny_tier + 1)
+
+			modal_title.text = "❖ 命运石之门  ·  全队拼点强化"
+			if is_max:
+				modal_desc.text = "当前命运 %d/%d ｜ 我方拼点正面率 %d%%（已满级，自然拼点硬币必出正面）。" % [run.destiny, ForestRun.DESTINY_MAX, cur_pct]
+			else:
+				modal_desc.text = "当前命运 %d/%d ｜ 我方拼点正面率 %d%% → 下一档 %d%%（花费 %d 命运）。可先领取再升级，或连续升档。" % [run.destiny, ForestRun.DESTINY_MAX, cur_pct, next_pct, upg_cost]
+
+			# Hide default stacked choice buttons visually since destiny_gate_section provides the rich two-column UI,
+			# while keeping modal_btn_1/modal_btn_2 state synced for keyboard/test compatibility.
+			modal_btn_1.visible = false
+			modal_btn_2.visible = false
+			if is_instance_valid(destiny_gate_section):
+				destiny_gate_section.visible = true
+				var bal_txt := "◆ 命运 %d/%d" % [run.destiny, ForestRun.DESTINY_MAX]
+				destiny_modal_balance_a.text = bal_txt
+				destiny_modal_balance_b.text = bal_txt
+				destiny_preview_rate_lbl.text = "%d%%" % cur_pct
+				if claimed:
+					destiny_claim_title_lbl.text = "领取命运 +2"
+					destiny_claim_sub_lbl.text = "本座命运石之门已领取"
+					destiny_claim_btn.text = "已领取"
+					destiny_claim_btn.disabled = true
+					destiny_claim_btn.add_theme_stylebox_override("disabled", MapVisuals.make_box(Color("dfd4bd"), Color("9e8a6b"), 1, 8, 8, 4))
+				elif is_full:
+					destiny_claim_title_lbl.text = "领取命运 +2"
+					destiny_claim_sub_lbl.text = "命运已满（10/10），请先强化全队腾出空间"
+					destiny_claim_btn.text = "已满额"
+					destiny_claim_btn.disabled = true
+					destiny_claim_btn.add_theme_stylebox_override("disabled", MapVisuals.make_box(Color("dfd4bd"), Color("9e8a6b"), 1, 8, 8, 4))
+				elif claimable == 1:
+					destiny_claim_title_lbl.text = "领取命运 +1"
+					destiny_claim_sub_lbl.text = "只剩 1 个空位，本次只会获得 1 点（或先强化再领 +2）"
+					destiny_claim_btn.text = "领取 +1"
+					destiny_claim_btn.disabled = false
+					destiny_claim_btn.add_theme_stylebox_override("normal", MapVisuals.make_box(Color("8a5e1d"), MapVisuals.SUN_GOLD, 2, 8, 8, 4))
+				else:
+					destiny_claim_title_lbl.text = "领取命运 +2"
+					destiny_claim_sub_lbl.text = "每座门可领取一次"
+					destiny_claim_btn.text = "领取 +2"
+					destiny_claim_btn.disabled = false
+					destiny_claim_btn.add_theme_stylebox_override("normal", MapVisuals.make_box(Color("8a5e1d"), MapVisuals.SUN_GOLD, 2, 8, 8, 4))
+
+				if is_max:
+					destiny_upgrade_rate_lbl.text = "100%（已满级）"
+					destiny_upgrade_btn.text = "已满级"
+					destiny_upgrade_btn.disabled = true
+					destiny_upgrade_btn.remove_theme_stylebox_override("normal")
+				else:
+					destiny_upgrade_rate_lbl.text = "%d%% → %d%%" % [cur_pct, next_pct]
+					destiny_upgrade_btn.text = "花费 %d 命运" % upg_cost
+					destiny_upgrade_btn.disabled = run.destiny < upg_cost
+					if not destiny_upgrade_btn.disabled:
+						destiny_upgrade_btn.add_theme_stylebox_override("normal", MapVisuals.make_box(Color("c99634"), MapVisuals.SUN_GOLD, 2, 8, 10, 6))
+						destiny_upgrade_btn.add_theme_color_override("font_color", MapVisuals.INK_DARK)
+					else:
+						destiny_upgrade_btn.remove_theme_stylebox_override("normal")
+						destiny_upgrade_btn.add_theme_color_override("font_color", Color("8f7d64"))
+
+			modal_btn_1.text = destiny_claim_btn.text if is_instance_valid(destiny_claim_btn) else "领取命运"
+			modal_btn_1.disabled = destiny_claim_btn.disabled if is_instance_valid(destiny_claim_btn) else true
+			modal_btn_2.text = ("已满级" if is_max else ("强化全队 %d%% → %d%%（花费 %d 命运）" % [cur_pct, next_pct, upg_cost]))
+			modal_btn_2.disabled = destiny_upgrade_btn.disabled if is_instance_valid(destiny_upgrade_btn) else true
+			modal_leave_btn.text = "离开命运石之门（稍后仍可返回）"
+
+func _on_destiny_claim_pressed() -> void:
+	if run == null or run.pending != "destiny_gate":
+		return
+	var res := run.claim_destiny_gate()
+	if is_instance_valid(destiny_gate_feedback):
+		if res.get("ok", false):
+			destiny_gate_feedback.text = "已领取 +%d 命运（当前 %d/%d）。" % [int(res.get("gained", 0)), run.destiny, ForestRun.DESTINY_MAX]
+			destiny_gate_feedback.add_theme_color_override("font_color", MapVisuals.EMERALD_LIGHT)
+		else:
+			destiny_gate_feedback.text = String(res.get("reason", "当前无法领取命运。"))
+			destiny_gate_feedback.add_theme_color_override("font_color", Color("ff8c7a"))
+	_open_modal("destiny_gate")
+	_refresh_ui()
+
+func _on_destiny_upgrade_pressed() -> void:
+	if run == null or run.pending != "destiny_gate":
+		return
+	var res := run.upgrade_destiny_tier(destiny_expected_next_tier)
+	if is_instance_valid(destiny_gate_feedback):
+		if res.get("ok", false):
+			destiny_gate_feedback.text = "强化成功！我方拼点正面率 %d%% → %d%%（消耗 %d 命运）。" % [int(res.get("prev_percent", 0)), int(res.get("percent", 0)), int(res.get("cost", 0))]
+			destiny_gate_feedback.add_theme_color_override("font_color", MapVisuals.SUN_GOLD)
+		else:
+			destiny_gate_feedback.text = String(res.get("reason", "当前无法强化全队。"))
+			destiny_gate_feedback.add_theme_color_override("font_color", Color("ff8c7a"))
+	_open_modal("destiny_gate")
+	_refresh_ui()
 
 func _on_modal_choice(choice_idx: int) -> void:
 	if run == null:
@@ -1942,6 +2656,12 @@ func _on_modal_choice(choice_idx: int) -> void:
 	if run.pending == "forge" and choice_idx == 2:
 		modal_panel.hide()
 		_open_forge_enchant_modal()
+		return
+	if run.pending == "destiny_gate":
+		if choice_idx == 0:
+			_on_destiny_claim_pressed()
+		elif choice_idx == 1:
+			_on_destiny_upgrade_pressed()
 		return
 	var ok := run.apply_choice(choice_idx)
 	if ok:
@@ -1956,6 +2676,10 @@ func _on_modal_leave() -> void:
 		return
 	if run.pending == "shop":
 		run.leave_shop()
+	elif run.pending == "destiny_gate":
+		run.leave_destiny_gate()
+		if is_instance_valid(destiny_gate_feedback):
+			destiny_gate_feedback.text = ""
 	else:
 		run.pending = ""
 		run.cleared[run.position] = true
@@ -1988,6 +2712,8 @@ func _on_end_turn_pressed() -> void:
 	if run == null or is_rolling_dice or is_instance_valid(battle) or _any_modal_open():
 		return
 	run.end_turn()
+	route_target_id = ""
+	route_preview_path.clear()
 	_refresh_ui()
 	if run.in_battle:
 		_start_battle(run.current_encounter)
@@ -2037,18 +2763,29 @@ func _refresh_dice_ui() -> void:
 		dice_tray_canvas.queue_redraw()
 
 func _refresh_inspection_card() -> void:
+	if run != null and run.map != null and run.map.is_grid and hovered_cell.x >= 0 and run.map.is_obstacle(hovered_cell) and run.known_cells.has(hovered_cell):
+		if is_instance_valid(inspect_title_label):
+			var obs_is_trees: bool = String(run.map.obstacle_kind(hovered_cell)) == "trees"
+			inspect_title_label.text = "%s · %s" % [ForestMapGraph.cell_label(hovered_cell), "密林障碍" if obs_is_trees else "深水河道"]
+			inspect_kind_label.text = "不可通行地形"
+			inspect_status_label.text = "• 需绕行相邻可通行方格"
+			inspect_status_label.add_theme_color_override("font_color", Color("9c3c31"))
+			inspect_desc_label.text = "茂密的焦木树林阻挡去路，无法直接穿过。" if obs_is_trees else "湍急的林间河道阻断通行，需沿桥梁或浅滩绕行。"
+		return
 	var n := _inspected_node()
 	if n == null or not is_instance_valid(inspect_title_label):
 		return
-	inspect_title_label.text = n.name
+	inspect_title_label.text = ("%s · %s" % [ForestMapGraph.cell_label(n.cell), n.name]) if (run.map.is_grid and n.cell.x >= 0) else n.name
 	var tag := ForestMapGraph.kind_title(n.kind)
-	if run.cleared.has(n.id):
+	if run.cleared.has(n.id) and n.kind != ForestMapGraph.NodeKind.PASSAGE and n.kind != ForestMapGraph.NodeKind.SPAWN:
 		tag += " · 已探索"
 	inspect_kind_label.text = tag
 
 	if n.id == run.position:
 		if n.kind == ForestMapGraph.NodeKind.SHOP and not run.finished:
 			inspect_status_label.text = "📍 当前所在（点击节点可再次进入商店）"
+		elif n.kind == ForestMapGraph.NodeKind.DESTINY_GATE and not run.finished:
+			inspect_status_label.text = "📍 当前所在（点击节点可再次进入命运石之门）"
 		elif n.kind == ForestMapGraph.NodeKind.EXIT and run.floor_cleared:
 			inspect_status_label.text = "📍 当前所在（点击节点可深入下一层）"
 		else:
@@ -2061,6 +2798,18 @@ func _refresh_inspection_card() -> void:
 			var step_cost: int = edge.action_cost if edge != null else 1
 			inspect_status_label.text = "✦ 可直接前往（消耗 %d 步）" % step_cost
 			inspect_status_label.add_theme_color_override("font_color", Color("2c7a3b"))
+		elif run.map.is_grid:
+			var r_info := run.preview_route_to(n.id)
+			if r_info.ok and int(r_info.steps) >= 2:
+				if run.dice_rolled and r_info.can_reach_this_turn:
+					inspect_status_label.text = "🧭 路线：%d 步（抵达后余 %d 步，逐格前行）" % [int(r_info.steps), int(r_info.remaining)]
+					inspect_status_label.add_theme_color_override("font_color", Color("2c7a3b"))
+				else:
+					inspect_status_label.text = "🧭 路线：%d 步（%s）" % [int(r_info.steps), "本回合移动力不足" if run.dice_rolled else "请先掷骰"]
+					inspect_status_label.add_theme_color_override("font_color", Color("8a5e1d"))
+			else:
+				inspect_status_label.text = "• %s" % err
+				inspect_status_label.add_theme_color_override("font_color", Color("9c3c31"))
 		else:
 			inspect_status_label.text = "• %s" % err
 			inspect_status_label.add_theme_color_override("font_color", Color("9c3c31"))
@@ -2086,6 +2835,13 @@ func _refresh_ui() -> void:
 	alert_label.add_theme_color_override("font_color", Color("ff6b5e") if run.alert >= 4 else Color("dfd2b5"))
 
 	intel_label.text = "📜 %d 情报" % run.intel_fragments
+	var heads_pct: int = run.get_clash_heads_percent()
+	if is_instance_valid(destiny_label):
+		destiny_label.text = "◆ 命运 %d/%d · 正面率 %d%%" % [run.destiny, ForestRun.DESTINY_MAX, heads_pct]
+	if is_instance_valid(destiny_pill):
+		destiny_pill.tooltip_text = "全队共享命运点数（上限 %d 点，跨层保留）。\n当前我方拼点硬币自然正面率：%d%%\n在【命运石之门】可领取命运并强化全队正面率（45%% → 60%% → 75%% → 90%% → 100%%）。" % [ForestRun.DESTINY_MAX, heads_pct]
+	if is_instance_valid(destiny_side_label):
+		destiny_side_label.text = "◆ 命运 %d/%d  ·  我方拼点正面率 %d%%" % [run.destiny, ForestRun.DESTINY_MAX, heads_pct]
 	core_badge.visible = run.ember_core
 
 	log_label.text = run.message
@@ -2135,6 +2891,7 @@ func _refresh_ui() -> void:
 		journal_label.text = "\n".join(lines)
 
 	_refresh_inspection_card()
+	_sync_grid_node_positions()
 	map_canvas.queue_redraw()
 
 func _start_battle(encounter: int) -> void:
@@ -2144,6 +2901,7 @@ func _start_battle(encounter: int) -> void:
 	battle.deck = run.deck.duplicate() if not run.deck.is_empty() else null
 	if run.in_battle:
 		battle.exploration_run = run
+		battle.battle_finished.connect(_on_exploration_battle_finished)
 	add_child(battle)
 	if battle.exploration_run == null:
 		battle.battle.cost = carried_cost
@@ -2155,6 +2913,10 @@ func _start_battle(encounter: int) -> void:
 			control.hide()
 	return_button.visible = false
 	move_child(return_button, get_child_count() - 1)
+
+func _on_exploration_battle_finished() -> void:
+	if run.is_final_boss_battle() and battle.battle.outcome == "victory":
+		_return_from_battle.call_deferred()
 
 func _return_from_battle() -> void:
 	if not is_instance_valid(battle) or battle.busy or battle.battle.outcome.is_empty():
@@ -2178,7 +2940,9 @@ func _return_from_battle() -> void:
 		carried_cost = run.carried_cost
 		carried_hp.assign(run.party_hp)
 		_refresh_ui()
-		if run.pending == "card_reward" and not run.pending_card_rewards.is_empty():
+		if run.won_expedition:
+			_show_expedition_victory()
+		elif run.pending == "card_reward" and not run.pending_card_rewards.is_empty():
 			_open_card_reward_modal()
 		elif run.floor_cleared:
 			_show_next_floor_modal()

@@ -6,6 +6,8 @@ const Reimu = preload("res://scripts/characters/hakurei_reimu.gd")
 const ZiXi = preload("res://scripts/characters/zixi.gd")
 const ZiXingYC = preload("res://scripts/characters/zixingyc.gd")
 const Marisa = preload("res://scripts/characters/kirisame_marisa.gd")
+const Pufufu = preload("res://scripts/characters/pufufu.gd")
+const ZiWu = preload("res://scripts/characters/ziwu.gd")
 
 const MAX_SLOT_GROUPS := 3
 const ACTIONS_PER_GROUP := 2
@@ -16,7 +18,17 @@ const GUARD_AMOUNT := 9
 const BREAKER_HP_LOSS := 2
 const UNOPPOSED_BONUS := 3
 const DEFAULT_DRAW_COUNT := 6
-const ENCOUNTER_NAMES := ["裂影斥候 / 守墓盾卫", "缚咒祭司 / 鸣钟行刑者", "高血量沙包"]
+const DEFAULT_CLASH_HEADS_CHANCE := 0.65
+const ENCOUNTER_NAMES := [
+	"裂影斥候 / 守墓盾卫",
+	"缚咒祭司 / 鸣钟行刑者",
+	"高血量沙包",
+	"迷雾潜伏犬 / 腐殖毒蛛",
+	"鸦天狗斥候 / 狂暴黑熊",
+	"烬心巨像 · 赫斯提斯",
+	"幽魂刺客 / 蚀骨巫师",
+	"荒原掠夺者 / 狂暴飞龙"
+]
 const TRAINING_ENCOUNTER := 2
 const TRAINING_HP := 99999
 const SKILLS := {
@@ -26,6 +38,9 @@ const SKILLS := {
 	"steady": {"name": "定锋", "cost": 2, "base": 7, "power": 1, "coins": 2, "kind": "attack", "tag": "稳势", "description": "稳定威力 · 两枚硬币", "flavor": "让摇摆的，只剩敌人。"},
 	"guard": {"name": "守夜", "cost": 1, "base": 0, "power": 0, "coins": 0, "kind": "guard", "tag": "防御", "description": "获得 9 护盾 · 持续本回合", "flavor": "总有人，要守住最后一盏灯。"},
 	"nova": {"name": "破晓", "cost": 4, "base": 6, "power": 4, "coins": 3, "kind": "ultimate", "tag": "大招", "description": "三枚硬币 · 爆发", "flavor": "以余火，换黎明。"},
+	"shadow_strike": {"name": "暗影斩", "cost": 2, "base": 6, "power": 3, "coins": 2, "kind": "attack", "tag": "突袭", "description": "刺客高速突袭 · 双币", "flavor": "自暗影中浮现的致命锋芒。"},
+	"frost_curse": {"name": "霜蚀咒", "cost": 3, "base": 4, "power": 4, "coins": 2, "kind": "attack", "tag": "巫术", "description": "霜蚀降速 · 拼赢施加迟缓", "flavor": "寒霜浸透骨髓。"},
+	"wyvern_breath": {"name": "龙炎喷吐", "cost": 4, "base": 7, "power": 3, "coins": 3, "kind": "ultimate", "tag": "龙炎", "description": "烈焰暴烈席卷 · 三币", "flavor": "暴烈狂焰从天而降。"},
 	"observe": {"name": "观察", "cost": 2, "base": 5, "power": 2, "coins": 2, "kind": "attack", "tag": "灰烬专属", "owner": 0, "description": "行动结束获得 1 层准备", "flavor": "等待破绽。"},
 	"probe": {"name": "试探", "cost": 1, "base": 5, "power": 2, "coins": 2, "kind": "attack", "tag": "灰烬专属", "owner": 0, "description": "拼点获胜获得 1 层准备", "flavor": "试出敌人的节奏。"},
 	"exploit": {"name": "捕捉破绽", "cost": 3, "base": 6, "power": 3, "coins": 2, "kind": "attack", "tag": "灰烬专属", "owner": 0, "description": "拼点时消耗准备，拼点威力 +4", "flavor": "此刻，就是破绽。"},
@@ -58,6 +73,20 @@ const SKILLS := {
 	"marisa_laser": Marisa.MARISA_LASER,
 	"marisa_orrery": Marisa.MARISA_ORRERY,
 	"marisa_spark": Marisa.MARISA_SPARK,
+	"pufufu_fuzz_friction": Pufufu.FUZZ_FRICTION_CARD,
+	"pufufu_soft_guard": Pufufu.SOFT_GUARD_CARD,
+	"pufufu_static_fuzz": Pufufu.STATIC_FUZZ_CARD,
+	"pufufu_fuzz_heal": Pufufu.FUZZ_HEAL_CARD,
+	"pufufu_fuzz_combo": Pufufu.FUZZ_COMBO_CARD,
+	"pufufu_fuzz_bless": Pufufu.FUZZ_BLESS_CARD,
+	"pufufu_fuzz_barrier": Pufufu.FUZZ_BARRIER_CARD,
+	"pufufu_warm_echo": Pufufu.WARM_ECHO_CARD,
+	"pufufu_thick_wall": Pufufu.THICK_WALL_CARD,
+	"pufufu_fluff_hug": Pufufu.FLUFF_HUG_CARD,
+	"ziwu_cold_edge": ZiWu.COLD_EDGE_CARD,
+	"ziwu_backstab": ZiWu.BACKSTAB_CARD,
+	"ziwu_lone_intercept": ZiWu.LONE_INTERCEPT_CARD,
+	"ziwu_meridian_slash": ZiWu.MERIDIAN_SLASH_CARD,
 	"training_tap": {"name": "练习迎击", "cost": 0, "base": 1, "power": 0, "coins": 1, "kind": "attack", "no_damage": true},
 }
 
@@ -80,12 +109,20 @@ var touhou_team := false
 var sakuya_slot := -1
 var reimu_slot := -1
 var marisa_slot := -1
+var pufufu_slot := -1
+var ziwu_slot := -1
 var enemy_cost := START_COST
 var configured_hand: Array[String] = []
 var extra_income := 0
 var active_relics: Array[String] = []
 var active_items: Array[String] = []
+var active_synergies: Array[Dictionary] = []
+var synergy_enabled := false
+var round_clash_bonus := 0
 var guaranteed_heads := false
+var ally_clash_heads_chance: float = DEFAULT_CLASH_HEADS_CHANCE
+var enemy_damage_percent := 100
+var custom_coin_rolls: Array[float] = []
 var stagger_enabled := false
 var overwhelm_enabled := false
 var flex_attack_in_ultimate := false
@@ -144,14 +181,63 @@ func use_item(item_key: String) -> Dictionary:
 			var healed := mini(12, int(hero.max_hp) - int(hero.hp))
 			hero.hp += healed
 			return {"ok": true, "message": "使用了野战膏药：%s 恢复 %d 生命。" % [hero.name, healed]}
+		"whetstone":
+			round_clash_bonus += 2
+			return {"ok": true, "message": "使用了淬火磨刀石：本回合全队所有技能拼点基础威力 +2！"}
+		"echo_pendulum":
+			cost += 3
+			for h in heroes:
+				if h.hp > 0:
+					h.shield += 4
+			return {"ok": true, "message": "使用了回响灵摆：获得 3 cost，全体存活队员 +4 护盾！"}
+		"phoenix_feather":
+			for h in heroes:
+				if h.hp > 0:
+					var healed := mini(10, int(h.max_hp) - int(h.hp))
+					h.hp += healed
+					h.shield += 6
+			return {"ok": true, "message": "使用了凤凰尾羽：全体存活队员恢复最多 10 生命，并获得 6 护盾！"}
+		"shatter_bomb":
+			for e in enemies:
+				if e.hp > 0:
+					e.shield = maxi(0, int(e.shield) - 12)
+			round_clash_bonus += 1
+			return {"ok": true, "message": "使用了破甲炸弹：击碎敌方全体最多 12 点护盾，本回合拼点威力 +1！"}
+		"clarity_elixir":
+			cost += 4
+			return {"ok": true, "message": "使用了澄明甘露：获得 4 cost，灵台空明！"}
+		"gambler_die":
+			var d := (randi() % 6) + 1
+			if d <= 3:
+				for h in heroes:
+					if h.hp > 0:
+						h.shield += 7
+				return {"ok": true, "message": "掷出命运秘骰【%d 点】：全体存活队员获得 7 护盾！" % d}
+			elif d <= 5:
+				cost += 5
+				return {"ok": true, "message": "掷出命运秘骰【%d 点】：获得 5 cost！" % d}
+			else:
+				guaranteed_heads = true
+				return {"ok": true, "message": "掷出命运秘骰【%d 点 · 大吉】：本回合全队硬币必出正面！" % d}
 	return {"ok": true, "message": "道具使用成功"}
 
-enum { ASH_ID, BLADE_ID, WEAVER_ID, SAKUYA_ID, REIMU_ID, ZIXI_ID, ZIXINGYC_ID, MARISA_ID }
+enum { ASH_ID, BLADE_ID, WEAVER_ID, SAKUYA_ID, REIMU_ID, ZIXI_ID, ZIXINGYC_ID, MARISA_ID, PUFUFU_ID, ZIWU_ID }
 const DEFAULT_LINEUP := [ASH_ID, BLADE_ID, WEAVER_ID]
 const TOUHOU_LINEUP := [MARISA_ID, SAKUYA_ID, REIMU_ID]
 const ZIXI_LINEUP := [ASH_ID, ZIXI_ID, WEAVER_ID]
 const ZIXINGYC_LINEUP := [ASH_ID, ZIXINGYC_ID, WEAVER_ID]
+const PUFUFU_LINEUP := [ASH_ID, PUFUFU_ID, WEAVER_ID]
+const ZIWU_LINEUP := [ASH_ID, ZIWU_ID, WEAVER_ID]
 const BASE_CARDS := ["cleave", "ember", "needle", "steady", "guard", "nova", "observe", "all_in", "cover", "probe", "exploit", "follow", "steady_edge", "shatter", "light_guard", "support_strike"]
+
+static func _prepare_carried_shield(unit: Dictionary, turn: int) -> void:
+	# 跨回合护盾：到期回合号小于当前回合的丢弃，其余加回即时护盾池
+	unit.shield = 0
+	for expiry in unit.shield_until.keys():
+		if int(expiry) < turn:
+			unit.shield_until.erase(expiry)
+		else:
+			unit.shield += int(unit.shield_until[expiry])
 
 static func _init_unit_stagger_state(unit: Dictionary) -> Dictionary:
 	if not unit.has("is_staggered"):
@@ -170,10 +256,13 @@ static func create_roster() -> Array[Dictionary]:
 		{"name": "长锋", "role": "破阵者", "hp": 42, "max_hp": 42, "shield": 0, "acted": false, "speed_min": 5, "speed_max": 8},
 		{"name": "织火", "role": "援护者", "hp": 46, "max_hp": 46, "shield": 0, "acted": false, "speed_min": 2, "speed_max": 5},
 		Sakuya.create_unit(), Reimu.create_unit(), ZiXi.create_unit(), ZiXingYC.create_unit(),
-		Marisa.create_unit(),
+		Marisa.create_unit(), Pufufu.create_unit(), ZiWu.create_unit(),
 	]
 	for id in roster.size():
 		roster[id].character_id = id
+		# 所有队员都带跨回合护盾字典，这样任何角色都能给队友挂上跨回合护盾
+		if not roster[id].has("shield_until"):
+			roster[id].shield_until = {}
 		_init_unit_stagger_state(roster[id])
 	return roster
 
@@ -188,32 +277,60 @@ static func card_owner(key: String) -> int:
 		return ZIXINGYC_ID
 	if key in Marisa.CARDS:
 		return MARISA_ID
+	if key in Pufufu.CARDS:
+		return PUFUFU_ID
+	if key in ZiWu.CARDS:
+		return ZIWU_ID
 	return int(SKILLS[key].get("owner", -1))
 
 static func available_cards(members: Array) -> Array:
-	var cards := BASE_CARDS + Sakuya.CARDS + Reimu.CARDS + ZiXi.CARDS + ZiXingYC.CARDS + Marisa.CARDS
+	var cards := BASE_CARDS + Sakuya.CARDS + Reimu.CARDS + ZiXi.CARDS + ZiXingYC.CARDS + Marisa.CARDS + Pufufu.CARDS + ZiWu.CARDS
 	return cards.filter(func(key: String) -> bool: return card_owner(key) < 0 or members.has(card_owner(key)))
 
 
-func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = false, use_zixi_team: bool = false, lineup: Array = [], deck: Variant = null, use_zixingyc_team: bool = false, relics: Array = [], items: Array = [], p_evolution_config: Dictionary = {}) -> void:
+func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = false, use_zixi_team: bool = false, lineup: Array = [], deck: Variant = null, use_zixingyc_team: bool = false, relics: Array = [], items: Array = [], p_evolution_config: Dictionary = {}, use_pufufu_team: bool = false, use_ziwu_team: bool = false) -> void:
 	rng.seed = seed_value
 	evolution_config = p_evolution_config.duplicate(true)
+	enemy_damage_percent = maxi(100, int(evolution_config.get("enemy_damage_percent", 100)))
 	stagger_enabled = bool(evolution_config.get("enabled", false)) or bool(evolution_config.get("stagger", false))
 	overwhelm_enabled = bool(evolution_config.get("enabled", false)) or bool(evolution_config.get("overwhelm", false))
 	flex_attack_in_ultimate = bool(evolution_config.get("flex_attack_in_ultimate", false))
 	unopposed_bonus_enabled = bool(evolution_config.get("unopposed_bonus", false))
 	deck_cycle_enabled = bool(evolution_config.get("deck_cycle", false))
+	synergy_enabled = bool(evolution_config.get("synergy_enabled", false))
 	hand_draw_count = maxi(1, int(evolution_config.get("draw_count", DEFAULT_DRAW_COUNT)))
+	custom_coin_rolls.clear()
+	if evolution_config.has("ally_clash_heads_chance"):
+		ally_clash_heads_chance = clampf(float(evolution_config.get("ally_clash_heads_chance", DEFAULT_CLASH_HEADS_CHANCE)), 0.0, 1.0)
+	elif evolution_config.has("clash_heads_chance"):
+		ally_clash_heads_chance = clampf(float(evolution_config.get("clash_heads_chance", DEFAULT_CLASH_HEADS_CHANCE)), 0.0, 1.0)
+	else:
+		ally_clash_heads_chance = DEFAULT_CLASH_HEADS_CHANCE
 	deck_rng.seed = seed_value ^ 0x4445434B
 	_unopposed_strike_bonus = 0
-	var members: Array = lineup if not lineup.is_empty() else (ZIXINGYC_LINEUP if use_zixingyc_team else (ZIXI_LINEUP if use_zixi_team else (TOUHOU_LINEUP if use_touhou_team else DEFAULT_LINEUP)))
+	round_clash_bonus = 0
+	var members: Array = lineup if not lineup.is_empty() else (ZIWU_LINEUP if use_ziwu_team else (PUFUFU_LINEUP if use_pufufu_team else (ZIXINGYC_LINEUP if use_zixingyc_team else (ZIXI_LINEUP if use_zixi_team else (TOUHOU_LINEUP if use_touhou_team else DEFAULT_LINEUP)))))
 	var roster := create_roster()
 	heroes.clear()
 	for id in members:
 		heroes.append(roster[id])
+	var init_hp: Array = evolution_config.get("party_hp", [])
+	var init_max_hp: Array = evolution_config.get("party_max_hp", [])
+	for i in heroes.size():
+		if i < init_max_hp.size():
+			heroes[i].max_hp = int(init_max_hp[i])
+		if i < init_hp.size():
+			heroes[i].hp = int(init_hp[i])
 	sakuya_slot = members.find(SAKUYA_ID)
 	reimu_slot = members.find(REIMU_ID)
 	marisa_slot = members.find(MARISA_ID)
+	pufufu_slot = members.find(PUFUFU_ID)
+	ziwu_slot = members.find(ZIWU_ID)
+	active_synergies.clear()
+	if synergy_enabled:
+		var syn_script = load("res://scripts/team_synergy.gd")
+		if syn_script != null:
+			active_synergies = syn_script.evaluate(members)
 	touhou_team = sakuya_slot >= 0 and reimu_slot >= 0
 	enemy_cost = START_COST
 	active_relics.assign(relics)
@@ -277,7 +394,20 @@ func start(seed_value: int = 73129, encounter: int = 0, use_touhou_team: bool = 
 		enemies.assign([
 			{"name": "烬心巨像 · 赫斯提斯", "kind": "colossus", "hp": 210, "max_hp": 210, "shield": 0, "spent": false, "speed_min": 3, "speed_max": 6}
 		])
+	elif encounter == 6:
+		enemies.assign([
+			{"name": "幽魂刺客", "kind": "phantom", "hp": 58, "max_hp": 58, "shield": 0, "spent": false, "speed_min": 6, "speed_max": 9},
+			{"name": "蚀骨巫师", "kind": "lich", "hp": 72, "max_hp": 72, "shield": 0, "spent": false, "speed_min": 2, "speed_max": 5}
+		])
+	elif encounter == 7:
+		enemies.assign([
+			{"name": "荒原掠夺者", "kind": "marauder", "hp": 82, "max_hp": 82, "shield": 0, "spent": false, "speed_min": 4, "speed_max": 7},
+			{"name": "狂暴飞龙", "kind": "wyvern", "hp": 135, "max_hp": 135, "shield": 0, "spent": false, "speed_min": 3, "speed_max": 6}
+		])
+	var enemy_health_percent := maxi(100, int(evolution_config.get("enemy_health_percent", 100)))
 	for e in enemies:
+		e.max_hp = ceili(float(int(e.max_hp) * enemy_health_percent) / 100.0)
+		e.hp = e.max_hp
 		_init_unit_stagger_state(e)
 	cost = START_COST
 	extra_income = 0
@@ -360,11 +490,21 @@ func _prepare_round() -> void:
 			_add_short_team_slots(stopped)
 		for u in units.size():
 			if units[u].has("shield_until"):
-				ZiXi.prepare_round(units[u], turn)
+				if units[u].has("metaphysics"):
+					ZiXi.prepare_round(units[u], turn)
+				elif units[u].has("fluff"):
+					Pufufu.prepare_round(units[u], turn)
+				elif units[u].has("insulation"):
+					var ziwu_ctx := ZiWu.round_context(units, u)
+					ZiWu.prepare_round(units[u], turn, int(ziwu_ctx.missing_allies), bool(ziwu_ctx.is_solo))
+				else:
+					_prepare_carried_shield(units[u], turn)
 			else:
 				units[u].shield = 0
-			if side == 0 and turn == 1 and has_relic("warden_bell"):
+			if side == 0 and turn == 1 and units[u].hp > 0 and has_relic("warden_bell"):
 				units[u].shield += 5
+			if side == 0 and turn == 1 and units[u].hp > 0 and has_relic("dawn_amber"):
+				units[u].shield += 6
 			if units[u].has("memory_log"):
 				ZiXingYC.prepare_round(units[u])
 			if side == 0:
@@ -391,11 +531,77 @@ func _prepare_round() -> void:
 							slot.key = "needle"
 						elif category == 0 and units[u].kind == "elite":
 							slot.key = "cleave"
+						elif category == 0 and units[u].kind == "phantom":
+							slot.key = "shadow_strike"
+						elif category == 0 and units[u].kind == "lich":
+							slot.key = "frost_curse"
+						elif category == 0 and units[u].kind == "marauder":
+							slot.key = "cleave"
+						elif category == 0 and units[u].kind == "wyvern":
+							slot.key = "wyvern_breath"
+						elif category == 1 and units[u].kind == "wyvern":
+							slot.key = "ember"
+						elif category == 1 and units[u].kind == "lich":
+							slot.key = "guard"
 						slot.target = _living_target((turn + u + category - 1) % heroes.size()) if category != 2 else u
 				slots.append(slot)
 
+	round_clash_bonus = 0
+	if turn == 1 and synergy_enabled and not active_synergies.is_empty():
+		_apply_team_synergies_turn_1()
+	if deck_cycle_enabled and ziwu_slot >= 0 and ziwu_slot < heroes.size() and heroes[ziwu_slot].hp > 0:
+		var extra_draw := int(heroes[ziwu_slot].get("extra_cards", 0))
+		if extra_draw > 0:
+			_draw_cards(extra_draw)
+
+func _has_synergy(syn_id: String) -> bool:
+	for s in active_synergies:
+		if String(s.get("id", "")) == syn_id:
+			return true
+	return false
+
+func _apply_team_synergies_turn_1() -> void:
+	for s in active_synergies:
+		match String(s.get("id", "")):
+			"lone_wolf":
+				for h in heroes:
+					if h.hp > 0:
+						h.shield += 6
+			"ember_watch":
+				for h in heroes:
+					if h.hp > 0:
+						h.shield += 4
+						if bool(s.get("full", false)) and int(h.get("character_id", -1)) == ASH_ID:
+							h.preparation = maxi(int(h.get("preparation", 0)), 1)
+			"gensokyo_barrier":
+				cost += 2
+			"rational_deduction":
+				for h in heroes:
+					if h.has("metaphysics"):
+						ZiXi.gain_metaphysics(h, 1)
+					if h.has("memory_log"):
+						ZiXingYC.write_memory(h, ZiXingYC.OBSERVATION)
+			"fluff_bastion":
+				for h in heroes:
+					if h.hp > 0:
+						h.shield += 3
+						if h.has("fluff"):
+							Pufufu.gain_fluff(h, 1, false, turn)
+			"insulated_edge":
+				for h in heroes:
+					if h.has("insulation"):
+						ZiWu.gain_insulation(h, 1, false)
+			"cross_resonance":
+				cost += 1
+				for h in heroes:
+					if h.hp > 0:
+						h.shield += 2
+
 func _make_slot(id: int, unit: int, category: int, actor: Dictionary, allied: bool) -> Dictionary:
-	var speed := rng.randi_range(actor.speed_min, actor.speed_max)
+	var min_spd := int(actor.speed_min)
+	if allied and synergy_enabled and _has_synergy("gensokyo_barrier"):
+		min_spd = mini(int(actor.speed_max), min_spd + 1)
+	var speed := rng.randi_range(min_spd, actor.speed_max)
 	if sakuya_slot >= 0:
 		speed = maxi(1, speed + Sakuya.speed_modifier(heroes[sakuya_slot], allied, int(unit == sakuya_slot)))
 	return {"id": id, "unit": unit, "category": category, "speed": speed, "active": false, "card": -1, "target": -1, "key": "", "done": false}
@@ -459,7 +665,7 @@ func snapshot() -> Dictionary:
 		for slot in public_enemies:
 			slot.erase("key")
 			slot.erase("card")
-	return {"heroes": heroes.duplicate(true), "enemies": enemies.duplicate(true), "hand": hand.duplicate(), "hand_instances": hand_instances.duplicate(true), "hero_slots": hero_slots.duplicate(true), "enemy_slots": public_enemies, "cost": cost, "reserved": reserved_cost() if phase == "response" else 0, "turn": turn, "plays": plays, "outcome": outcome, "phase": phase, "touhou_team": touhou_team, "extra_income": extra_income, "stagger_enabled": stagger_enabled, "overwhelm_enabled": overwhelm_enabled, "deck_cycle_enabled": deck_cycle_enabled, "hand_draw_count": hand_draw_count, "draw_count": draw_pile.size(), "discard_count": discard_pile.size(), "draw_pile": draw_pile.duplicate(true), "discard_pile": discard_pile.duplicate(true)}
+	return {"heroes": heroes.duplicate(true), "enemies": enemies.duplicate(true), "hand": hand.duplicate(), "hand_instances": hand_instances.duplicate(true), "hero_slots": hero_slots.duplicate(true), "enemy_slots": public_enemies, "cost": cost, "reserved": reserved_cost() if phase == "response" else 0, "turn": turn, "plays": plays, "outcome": outcome, "phase": phase, "touhou_team": touhou_team, "extra_income": extra_income, "ally_clash_heads_chance": ally_clash_heads_chance, "stagger_enabled": stagger_enabled, "overwhelm_enabled": overwhelm_enabled, "deck_cycle_enabled": deck_cycle_enabled, "hand_draw_count": hand_draw_count, "draw_count": draw_pile.size(), "discard_count": discard_pile.size(), "draw_pile": draw_pile.duplicate(true), "discard_pile": discard_pile.duplicate(true)}
 
 func category_for(key: String) -> int:
 	return 2 if SKILLS[key].kind == "guard" else (1 if SKILLS[key].kind == "ultimate" else 0)
@@ -518,6 +724,9 @@ func can_assign(card: int, slot_id: int, target: int, enhanced: bool = false) ->
 	var owner := card_owner(key)
 	if owner >= 0 and owner != heroes[slot.unit].character_id:
 		return "这张牌只能由%s使用" % create_roster()[owner].name
+	var need_fluff := int(skill.get("requires_fluff", 0))
+	if need_fluff > 0 and int(heroes[slot.unit].get("fluff", 0)) < need_fluff:
+		return "需要至少 %d 层蓬松" % need_fluff
 	if not slot_accepts_category(slot, key):
 		return "卡牌类别与行动格不符"
 	if key == "the_world" and heroes[slot.unit].world_used:
@@ -528,6 +737,10 @@ func can_assign(card: int, slot_id: int, target: int, enhanced: bool = false) ->
 		var ending_error := ZiXingYC.ending_error(heroes[slot.unit])
 		if not ending_error.is_empty():
 			return ending_error
+	if key == ZiWu.MERIDIAN_SLASH:
+		var ziwu_ult_err := ZiWu.ultimate_error(heroes[slot.unit], ZiWu.living_teammates(heroes, slot.unit))
+		if not ziwu_ult_err.is_empty():
+			return ziwu_ult_err
 	var count := 0
 	for other in hero_slots:
 		if other.id == slot_id or not other.active:
@@ -560,10 +773,41 @@ func can_assign(card: int, slot_id: int, target: int, enhanced: bool = false) ->
 		if skill.get("requires_clash", false) and not can_clash(slot, enemy_slots[target]):
 			return "这张牌需要与敌方拼点"
 	if enhanced:
-		if not heroes[slot.unit].has("metaphysics") or not skill.has("enhance_name"):
+		if not skill.has("enhance_name"):
 			return "这张牌不能强化"
-		return ZiXi.enhancement_error(heroes[slot.unit], slot_id)
+		return enhancement_error(heroes[slot.unit], slot_id, key)
 	return ""
+
+
+## 强化校验按角色分发：ZiXi 消耗超形上学，pufufu 消耗蓬松，ZiWu 消耗绝缘。
+func enhancement_error(hero: Dictionary, slot_id: int, key: String) -> String:
+	if int(hero.get("character_id", -1)) == PUFUFU_ID:
+		return Pufufu.enhancement_error(hero, slot_id, key)
+	if int(hero.get("character_id", -1)) == ZIWU_ID:
+		return ZiWu.enhancement_error(hero, slot_id, key)
+	if not hero.has("metaphysics"):
+		return "这张牌不能强化"
+	return ZiXi.enhancement_error(hero, slot_id)
+
+
+## 预约强化：立刻扣除该角色的强化资源。
+func reserve_enhancement(hero: Dictionary, slot_id: int) -> void:
+	if int(hero.get("character_id", -1)) == PUFUFU_ID:
+		Pufufu.reserve_enhancement(hero, slot_id)
+	elif int(hero.get("character_id", -1)) == ZIWU_ID:
+		ZiWu.reserve_enhancement(hero, slot_id)
+	else:
+		ZiXi.reserve_enhancement(hero, slot_id)
+
+
+## 撤销强化：把资源还回去。
+func unreserve_enhancement(hero: Dictionary, slot_id: int) -> void:
+	if int(hero.get("character_id", -1)) == PUFUFU_ID:
+		Pufufu.unreserve_enhancement(hero, slot_id)
+	elif int(hero.get("character_id", -1)) == ZIWU_ID:
+		ZiWu.unreserve_enhancement(hero, slot_id)
+	else:
+		ZiXi.unreserve_enhancement(hero, slot_id)
 
 func assign(card: int, slot_id: int, target: int, enhanced: bool = false) -> String:
 	var error := can_assign(card, slot_id, target, enhanced)
@@ -571,10 +815,10 @@ func assign(card: int, slot_id: int, target: int, enhanced: bool = false) -> Str
 		return error
 	var slot: Dictionary = hero_slots[slot_id]
 	if slot.get("enhanced", false):
-		ZiXi.unreserve_enhancement(heroes[slot.unit], slot_id)
+		unreserve_enhancement(heroes[slot.unit], slot_id)
 		slot.erase("enhanced")
 	if enhanced:
-		ZiXi.reserve_enhancement(heroes[slot.unit], slot_id)
+		reserve_enhancement(heroes[slot.unit], slot_id)
 		slot.enhanced = true
 	slot.active = true
 	slot.card = card
@@ -588,7 +832,7 @@ func cancel(slot_id: int) -> void:
 		return
 	var slot: Dictionary = hero_slots[slot_id]
 	if slot.get("enhanced", false):
-		ZiXi.unreserve_enhancement(heroes[slot.unit], slot_id)
+		unreserve_enhancement(heroes[slot.unit], slot_id)
 		slot.erase("enhanced")
 	hero_slots[slot_id].active = false
 	hero_slots[slot_id].card = -1
@@ -680,6 +924,8 @@ func next_round() -> void:
 		return
 	turn += 1
 	var income: int = 10 if has_relic("everburning_tinder") else BASE_INCOME
+	if synergy_enabled and _has_synergy("lone_wolf"):
+		income += 2
 	cost += income
 	if touhou_team:
 		enemy_cost += BASE_INCOME
@@ -702,6 +948,10 @@ func next_round() -> void:
 func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 	var skill: Dictionary = SKILLS[slot.key]
 	var units: Array[Dictionary] = heroes if allied else enemies
+	if allied and units[slot.unit].character_id == PUFUFU_ID:
+		# pufufu 的牌永远打得出来：没拼到点就按「拼输」结算，不会取消行动
+		_resolve_pufufu_solo(events, slot)
+		return
 	if allied and (skill.has("enhance_name") or (units[slot.unit].character_id == ZIXINGYC_ID and skill.get("requires_clash", false))):
 		_emit(events, {"type": "cancelled", "reason": "%s需要拼点，行动取消" % skill.name})
 		return
@@ -726,12 +976,25 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 					guard_amount = 10
 				"beast":
 					guard_amount = 8
+				"phantom":
+					guard_amount = 7
+				"lich":
+					guard_amount = 11
+				"marauder":
+					guard_amount = 10
+				"wyvern":
+					guard_amount = 16
 		units[slot.unit].shield += guard_amount
 		if not allied and units[slot.unit].kind == "priest":
 			for i in enemies.size():
 				if i != slot.unit and enemies[i].hp > 0:
 					enemies[i].shield += 6
 			_emit(events, {"type": "ability", "message": "缚咒祭司：为其他存活敌人提供 6 护盾"})
+		elif not allied and units[slot.unit].kind == "lich":
+			for i in enemies.size():
+				if i != slot.unit and enemies[i].hp > 0:
+					enemies[i].shield += 5
+			_emit(events, {"type": "ability", "message": "蚀骨巫师：为其他存活敌人凝聚 5 点寒霜护盾"})
 		if allied and units[slot.unit].character_id == WEAVER_ID and heroes.size() > 1:
 			var support_shield := ally_guard_amount(slot.key)
 			for i in heroes.size():
@@ -756,8 +1019,9 @@ func _solo(events: Array[Dictionary], slot: Dictionary, allied: bool) -> void:
 	if allied:
 		var hero := heroes[slot.unit]
 		if unopposed_bonus_enabled and not skill.get("no_damage", false):
-			_unopposed_strike_bonus = UNOPPOSED_BONUS
-			_emit(events, {"type": "unopposed", "hero": slot.unit, "target": target, "bonus": UNOPPOSED_BONUS, "message": "%s 发动单方面夹击！伤害 +%d" % [hero.name, UNOPPOSED_BONUS]})
+			var ubonus := 5 if has_relic("broken_crest") else UNOPPOSED_BONUS
+			_unopposed_strike_bonus = ubonus
+			_emit(events, {"type": "unopposed", "hero": slot.unit, "target": target, "bonus": ubonus, "message": "%s 发动单方面夹击！伤害 +%d" % [hero.name, ubonus]})
 		if hero.has("memory_log") and skill.has("damage_base"):
 			_zixingyc_strike(events, slot, target, int(skill.coins), {})
 		elif marisa_slot >= 0 and slot.unit == marisa_slot:
@@ -793,6 +1057,9 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 	if enchant_clash > 0:
 		left_skill.base += enchant_clash
 		_emit(events, {"type": "ability", "message": "符卡附魔【破势】：拼点基础威力 +%d" % enchant_clash})
+	if round_clash_bonus > 0:
+		left_skill.base += round_clash_bonus
+		_emit(events, {"type": "ability", "message": "淬火磨刀石：本回合拼点基础威力 +%d" % round_clash_bonus})
 	if h.key == "exploit" and bonus > 0:
 		hero.preparation = 0
 		_emit(events, {"type": "ability", "message": "灰烬 · 捕捉破绽：消耗准备，本次拼点威力 +%d" % bonus})
@@ -805,6 +1072,14 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 		zixi_clash = ZiXi.begin_clash(heroes[h.unit], h, left_skill)
 		left_skill.base += int(zixi_clash.bonus)
 		right_base -= int(zixi_clash.causality)
+	var pufufu_clash := {}
+	if heroes[h.unit].has("fluff"):
+		pufufu_clash = Pufufu.begin_clash(heroes[h.unit], h, left_skill)
+		left_skill.base += int(pufufu_clash.get("bonus", 0))
+	var ziwu_clash := {}
+	if heroes[h.unit].has("insulation"):
+		ziwu_clash = ZiWu.begin_clash(heroes[h.unit], h, left_skill, enemies[e.unit])
+		left_skill.base += int(ziwu_clash.get("bonus", 0))
 	if sakuya_slot >= 0:
 		left_skill.base += Sakuya.stopwatch_bonus(heroes[sakuya_slot], h.get("speed", 0), e.get("speed", 0))
 	if reimu_slot >= 0:
@@ -845,10 +1120,14 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 				_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
 			if not zixi_clash.is_empty():
 				_finish_zixi_clash(events, h, -1, zixi_clash)
+			if not pufufu_clash.is_empty():
+				_finish_pufufu_clash(events, h, -1, pufufu_clash)
+			if not ziwu_clash.is_empty():
+				_finish_ziwu_clash(events, h, e.unit, -1, ziwu_clash)
 			if h.key == ZiXingYC.ATTENTION:
 				_zixingyc_archive(events, hero, left_skill.archive_corpus)
 			return
-		var left := _roll(left_skill.base, left_skill.power, lc, 0.65)
+		var left := _roll(left_skill.base, left_skill.power, lc, ally_clash_heads_chance)
 		if zixi_clash.get("tail_available", false):
 			var old_heads := int(left.heads)
 			left.heads = ZiXi.convert_tail(zixi_clash, old_heads, lc)
@@ -911,6 +1190,10 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 						_deal_hit(events, true, h.unit, target, int(zxy_win.ending), 1, 1)
 		if not zixi_clash.is_empty():
 			_emit_metaphysics(events, ZiXi.win_clash(hero, h.key, margin, turn))
+		if not ziwu_clash.is_empty():
+			var ziwu_gain := ZiWu.win_clash(hero, h.key, bool(h.get("enhanced", false)), turn)
+			if ziwu_gain > 0:
+				_emit(events, {"type": "ability", "message": "ZiWu · 独行拼胜：绝缘 +%d（%d/%d）" % [ziwu_gain, int(hero.insulation), ZiWu.INSULATION_MAX]})
 		if h.unit == reimu_slot:
 			for message in Reimu.release_on_win(hero, enemies, h.key, e.unit, turn):
 				_emit(events, {"type": "ability", "message": message})
@@ -932,6 +1215,10 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 			_emit(events, {"type": "reward", "amount": 1, "hero": h.unit})
 		if marisa_slot >= 0 and h.unit == marisa_slot:
 			_attack_marisa(events, h, e.unit, lc, true)
+		elif hero.character_id == PUFUFU_ID:
+			_attack_pufufu(events, h, e.unit, lc)
+		elif hero.character_id == ZIWU_ID:
+			_attack_ziwu(events, h, e.unit, lc, ziwu_clash)
 		elif left_skill.has("damage_base"):
 			if not zxy_clash.is_empty():
 				_zixingyc_strike(events, h, e.unit, lc, zxy_clash)
@@ -992,6 +1279,7 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 		if not right_skill.get("no_damage", false):
 			_attack(events, false, e.unit, h.unit, right_skill.base, right_skill.power, rc, 0.5, "", scale)
 		if can_overwhelm and heroes[h.unit].hp > 0 and overwhelm_amount > 0:
+			overwhelm_amount = _scale_enemy_hit(overwhelm_amount)
 			var target_dict: Dictionary = heroes[h.unit]
 			var blocked := mini(int(target_dict.shield), overwhelm_amount)
 			target_dict.shield -= blocked
@@ -1015,6 +1303,10 @@ func _clash(events: Array[Dictionary], h: Dictionary, e: Dictionary) -> void:
 			_zixingyc_archive(events, hero, left_skill.archive_corpus)
 	if not zixi_clash.is_empty() and heroes[h.unit].hp > 0:
 		_finish_zixi_clash(events, h, 0 if lc > 0 else 1, zixi_clash, margin)
+	if not pufufu_clash.is_empty() and heroes[h.unit].hp > 0:
+		_finish_pufufu_clash(events, h, 0 if lc > 0 else 1, pufufu_clash)
+	if not ziwu_clash.is_empty() and heroes[h.unit].hp > 0:
+		_finish_ziwu_clash(events, h, e.unit, 0 if lc > 0 else 1, ziwu_clash)
 	if h.key == "observe" and hero.hp > 0:
 		hero.preparation = 1
 		_emit(events, {"type": "ability", "message": "灰烬 · 观察：获得 1 层准备"})
@@ -1123,14 +1415,30 @@ func _detonate_dream(events: Array[Dictionary]) -> void:
 	hero.dream_orbs = 0
 	_emit(events, {"type": "ability", "message": "博丽灵梦因梦想天生退场"})
 
+func _next_coin_rand() -> float:
+	if not custom_coin_rolls.is_empty():
+		return float(custom_coin_rolls.pop_front())
+	return rng.randf()
+
+static func is_natural_coin_heads(chance: float, roll_val: float) -> bool:
+	if chance >= 1.0:
+		return true
+	if chance <= 0.0:
+		return false
+	return roll_val < chance
+
 func _roll(base: int, power: int, coins: int, chance: float) -> Dictionary:
 	var heads := 0
 	var forced := guaranteed_heads
 	if forced:
 		guaranteed_heads = false
 	for i in coins:
-		if forced or rng.randf() < chance:
+		if forced:
 			heads += 1
+		else:
+			var r := _next_coin_rand()
+			if is_natural_coin_heads(chance, r):
+				heads += 1
 	var actual_power := power + (1 if has_relic("mercury_die") else 0)
 	return {"value": maxi(0, base + actual_power * heads), "heads": heads}
 
@@ -1204,12 +1512,178 @@ func _attack_marisa(events: Array[Dictionary], slot: Dictionary, target: int, co
 		var sp := Marisa.add_spark(hero, hit_targets.size())
 		_emit(events, {"type": "ability", "message": "非指向性激光命中 %d 人：火花 %d / 10" % [hit_targets.size(), sp]})
 
-func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int, hit: int, index: int, total: int) -> int:
+## pufufu 无人与她拼点时（速度不够、目标槽是防御格等）按「拼输」结算，行动不取消。
+func _resolve_pufufu_solo(events: Array[Dictionary], slot: Dictionary) -> void:
+	var hero := heroes[slot.unit]
+	if hero.hp <= 0:
+		_emit(events, {"type": "cancelled", "reason": "pufufu已退场，行动取消"})
+		return
+	var skill: Dictionary = SKILLS[slot.key]
+	_emit(events, {"type": "paid", "hero": slot.unit, "skill": skill.name, "paid": 0})
+	var slot_target := int(slot.get("target", -1))
+	if slot_target >= 0 and slot_target < enemy_slots.size():
+		var enemy := int(enemy_slots[slot_target].unit)
+		if enemies[enemy].hp > 0:
+			var enemy_pre_hp: int = enemies[enemy].hp
+			_attack_pufufu(events, slot, enemy, int(skill.coins))
+			_check_stagger_after_action(events, enemies[enemy], false, enemy_pre_hp)
+	_apply_pufufu_result(events, slot, 1, bool(slot.get("enhanced", false)))
+
+
+## pufufu 的伤害用 damage_base + 每枚正面 damage_power，威力低但能稳定蹭到。
+func _attack_pufufu(events: Array[Dictionary], slot: Dictionary, target: int, coins: int) -> int:
+	var skill: Dictionary = SKILLS[slot.key]
+	if skill.get("no_damage", false):
+		return 0
+	var damage: Array[int] = []
+	for i in maxi(1, coins):
+		var roll := _roll(0, 0, 1, 0.65)
+		damage.append(int(roll.heads) * int(skill.get("damage_power", 0)))
+	damage[0] += int(skill.get("damage_base", 0))
+	var total := 0
+	for i in damage.size():
+		if enemies[target].hp <= 0:
+			break
+		total += _deal_hit(events, true, slot.unit, target, damage[i], i + 1, damage.size())
+	return total
+
+
+## 把 pufufu 卡牌结算出来的护盾 / 治疗 / 蓬松 / 掉血真正落到场上。
+func _apply_pufufu_result(events: Array[Dictionary], slot: Dictionary, result: int, enhanced: bool) -> void:
+	var hero := heroes[slot.unit]
+	var effects := Pufufu.resolve_card(hero, String(slot.key), result, turn, enhanced)
+	var self_shield := int(effects.self_shield)
+	if self_shield > 0:
+		Pufufu.add_shield(hero, self_shield, int(effects.self_shield_expiry))
+		_emit(events, {"type": "guard", "hero": slot.unit, "amount": self_shield})
+	var ally_shield := int(effects.ally_shield)
+	if ally_shield > 0:
+		var ally := _lowest_hp_ally()
+		if ally >= 0:
+			Pufufu.add_shield(heroes[ally], ally_shield, int(effects.ally_shield_expiry))
+			_emit(events, {"type": "ability", "message": "pufufu · 蓬松护佑：%s 获得 %d 点护盾" % [heroes[ally].name, ally_shield]})
+	var team_shield := int(effects.team_shield)
+	if team_shield > 0:
+		for i in heroes.size():
+			if heroes[i].hp > 0:
+				Pufufu.add_shield(heroes[i], team_shield, int(effects.team_shield_expiry))
+		_emit(events, {"type": "ability", "message": "pufufu · 全体友军获得 %d 点护盾" % team_shield})
+	var single_heal := int(effects.single_heal)
+	if single_heal > 0:
+		var healed_target := _healing_target()
+		if healed_target >= 0:
+			var healed := _heal_unit(healed_target, single_heal)
+			if healed > 0:
+				_emit(events, {"type": "ability", "message": "pufufu · 绒毛治愈：%s 恢复 %d 点生命" % [heroes[healed_target].name, healed]})
+	var team_heal := int(effects.team_heal)
+	if team_heal > 0:
+		for i in heroes.size():
+			if heroes[i].hp > 0:
+				_heal_unit(i, team_heal)
+		_emit(events, {"type": "ability", "message": "pufufu · 全体友军恢复 %d 点生命" % team_heal})
+	var extra_damage := int(effects.extra_damage)
+	if extra_damage > 0:
+		var slot_target := int(slot.get("target", -1))
+		if slot_target >= 0 and slot_target < enemy_slots.size():
+			var enemy := int(enemy_slots[slot_target].unit)
+			if enemies[enemy].hp > 0:
+				_deal_hit(events, true, slot.unit, enemy, extra_damage, 1, 1)
+	var self_damage := int(effects.self_damage)
+	if self_damage > 0:
+		hero.hp = maxi(0, int(hero.hp) - self_damage)
+		_emit(events, {"type": "ability", "message": "pufufu · 拼点失利：自身损失 %d 点生命" % self_damage})
+	var fluff_gain := int(effects.fluff_gain)
+	if fluff_gain > 0:
+		Pufufu.gain_fluff(hero, fluff_gain, false, turn)
+		_emit(events, {"type": "ability", "message": "pufufu · 蓬松 +%d（%d/%d）" % [fluff_gain, int(hero.fluff), Pufufu.FLUFF_MAX]})
+	elif fluff_gain < 0:
+		hero.fluff = maxi(0, int(hero.fluff) + fluff_gain)
+
+
+func _finish_pufufu_clash(events: Array[Dictionary], slot: Dictionary, result: int, clash: Dictionary) -> void:
+	_apply_pufufu_result(events, slot, result, bool(clash.get("enhanced", false)))
+
+
+## pufufu 被动①【弹力绒盾】+ 被动②【暖绒共鸣】：每次受到敌方攻击都触发。
+func _pufufu_on_hit(events: Array[Dictionary], enemy_index: int, hero_index: int) -> void:
+	var hero := heroes[hero_index]
+	var result := Pufufu.on_take_hit(hero, turn)
+	var gained := int(result.fluff_gained)
+	if gained > 0:
+		_emit(events, {"type": "ability", "message": "pufufu · 弹力绒盾：获得 %d 层蓬松（%d/%d）" % [gained, int(hero.fluff), Pufufu.FLUFF_MAX]})
+	var reflect := int(result.reflect_damage)
+	if reflect > 0 and enemy_index >= 0 and enemy_index < enemies.size() and enemies[enemy_index].hp > 0:
+		_emit(events, {"type": "ability", "message": "pufufu · 弹力绒盾：反弹 %d 点伤害给%s" % [reflect, enemies[enemy_index].get("name", "")]})
+		_deal_hit(events, true, hero_index, enemy_index, reflect, 1, 1, true)
+	var heal := int(result.ally_heal)
+	if heal > 0:
+		var healed_target := _healing_target()
+		if healed_target >= 0:
+			var healed := _heal_unit(healed_target, heal)
+			if healed > 0:
+				_emit(events, {"type": "ability", "message": "pufufu · 暖绒共鸣：%s 恢复 %d 点生命" % [heroes[healed_target].name, healed]})
+
+
+## 给一名我方单位回血，返回实际恢复量。
+func _heal_unit(index: int, amount: int) -> int:
+	var hero := heroes[index]
+	var healed := mini(amount, int(hero.max_hp) - int(hero.hp))
+	if healed > 0:
+		hero.hp += healed
+	return healed
+
+
+## 血量最低的存活队友（满血也算），用于给队友挂护盾。
+func _lowest_hp_ally() -> int:
+	var target := -1
+	for i in heroes.size():
+		if heroes[i].hp <= 0:
+			continue
+		if target < 0 or int(heroes[i].hp) < int(heroes[target].hp):
+			target = i
+	return target
+
+
+func _attack_ziwu(events: Array[Dictionary], slot: Dictionary, target: int, coins: int, clash: Dictionary) -> int:
+	var heads_list: Array[int] = []
+	for i in maxi(1, coins):
+		var roll := _roll(0, 0, 1, 0.65)
+		heads_list.append(int(roll.heads))
+	var damage := ZiWu.strike_damage(String(slot.key), heads_list, clash)
+	var total := 0
+	for i in damage.size():
+		if enemies[target].hp <= 0:
+			break
+		total += _deal_hit(events, true, slot.unit, target, int(damage[i]), i + 1, damage.size())
+	return total
+
+func _finish_ziwu_clash(events: Array[Dictionary], slot: Dictionary, enemy_unit: int, result: int, clash: Dictionary) -> void:
+	var hero := heroes[slot.unit]
+	var done := ZiWu.finish_clash(hero, String(slot.key), result, clash, turn)
+	var extra := int(done.get("extra_damage", 0))
+	if extra > 0 and enemy_unit >= 0 and enemy_unit < enemies.size() and enemies[enemy_unit].hp > 0:
+		_emit(events, {"type": "ability", "message": "ZiWu · 绝影追加：额外造成 %d 点伤害" % extra})
+		_deal_hit(events, true, slot.unit, enemy_unit, extra, 1, 1)
+	var self_dmg := int(done.get("self_damage", 0))
+	if self_dmg > 0:
+		_emit(events, {"type": "ability", "message": "ZiWu · 子午绝灭斩反噬：自身损失 %d 点生命" % self_dmg})
+
+func _scale_enemy_hit(hit: int) -> int:
+	return ceili(float(hit * enemy_damage_percent) / 100.0)
+
+func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int, hit: int, index: int, total: int, plain: bool = false) -> int:
+	if not allied:
+		hit = _scale_enemy_hit(hit)
 	var victim := (enemies if allied else heroes)[target]
+	if not allied and index == 1 and victim.has("insulation"):
+		var vuln := ZiWu.vulnerable_damage(victim, turn)
+		if vuln > 0:
+			hit += vuln
+			_emit(events, {"type": "ability", "message": "ZiWu · 冷刃破绽：首段受击伤害 +%d" % vuln})
 	if not allied and target == marisa_slot and victim.get("orrery_active", false):
 		hit = maxi(0, hit - 5)
 	var unopposed_extra := 0
-	if allied and _unopposed_strike_bonus > 0:
+	if allied and not plain and _unopposed_strike_bonus > 0:
 		unopposed_extra = _unopposed_strike_bonus
 		hit += unopposed_extra
 		_unopposed_strike_bonus = 0
@@ -1223,11 +1697,11 @@ func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int
 	victim.shield -= blocked
 	var damage := maxi(0, hit - blocked)
 	victim.hp = maxi(0, int(victim.hp) - damage)
-	if allied and has_relic("piercing_cone") and blocked > 0 and victim.hp > 0:
+	if allied and not plain and has_relic("piercing_cone") and blocked > 0 and victim.hp > 0:
 		var pierce: int = mini(3, int(victim.hp))
 		victim.hp = maxi(0, int(victim.hp) - pierce)
 		_emit(events, {"type": "ability", "message": "穿刺圆锥：穿透护盾直接造成 %d 点伤害" % pierce})
-	if allied and damage > 0 and victim.hp == 0 and has_relic("leech_shard"):
+	if allied and not plain and damage > 0 and victim.hp == 0 and has_relic("leech_shard"):
 		for h in heroes:
 			if h.hp > 0:
 				h.hp = mini(int(h.max_hp), int(h.hp) + 3)
@@ -1244,6 +1718,8 @@ func _deal_hit(events: Array[Dictionary], allied: bool, source: int, target: int
 	if unopposed_extra > 0:
 		strike_evt["unopposed_bonus"] = unopposed_extra
 	_emit(events, strike_evt)
+	if not allied and pufufu_slot >= 0 and target == pufufu_slot and int(victim.hp) > 0:
+		_pufufu_on_hit(events, source, target)
 	return damage
 
 func _check_stagger_after_action(events: Array[Dictionary], unit: Dictionary, allied: bool, pre_hp: int) -> bool:
@@ -1287,7 +1763,7 @@ func _extinguish_remaining_slots(events: Array[Dictionary], unit: Dictionary, al
 			if allied:
 				cost += refund
 				if slot.get("enhanced", false):
-					ZiXi.unreserve_enhancement(heroes[slot.unit], slot.id)
+					unreserve_enhancement(heroes[slot.unit], slot.id)
 					slot.erase("enhanced")
 				_emit(events, {
 					"type": "cancelled",

@@ -1,0 +1,422 @@
+[
+  {
+    "file": "sfx_ui_hover_a.wav",
+    "id": "ui_hover",
+    "name": "界面悬停",
+    "variant": "a",
+    "seed": 11,
+    "duration": 0.075,
+    "peak": 0.625,
+    "rms_db": -20.5
+  },
+  {
+    "file": "sfx_ui_hover_b.wav",
+    "id": "ui_hover",
+    "name": "界面悬停",
+    "variant": "b",
+    "seed": 12,
+    "duration": 0.08,
+    "peak": 0.841,
+    "rms_db": -22.1
+  },
+  {
+    "file": "sfx_ui_hover_c.wav",
+    "id": "ui_hover",
+    "name": "界面悬停",
+    "variant": "c",
+    "seed": 13,
+    "duration": 0.07,
+    "peak": 0.761,
+    "rms_db": -21.0
+  },
+  {
+    "file": "sfx_ui_click_a.wav",
+    "id": "ui_click",
+    "name": "按钮点击",
+    "variant": "a",
+    "seed": 21,
+    "duration": 0.114,
+    "peak": 0.21,
+    "rms_db": -20.1
+  },
+  {
+    "file": "sfx_ui_click_b.wav",
+    "id": "ui_click",
+    "name": "按钮点击",
+    "variant": "b",
+    "seed": 22,
+    "duration": 0.124,
+    "peak": 0.243,
+    "rms_db": -20.4
+  },
+  {
+    "file": "sfx_ui_click_c.wav",
+    "id": "ui_click",
+    "name": "按钮点击",
+    "variant": "c",
+    "seed": 23,
+    "duration": 0.133,
+    "peak": 0.23,
+    "rms_db": -20.7
+  },
+  {
+    "file": "sfx_ui_select_card_a.wav",
+    "id": "ui_select_card",
+    "name": "选中卡牌",
+    "variant": "a",
+    "seed": 31,
+    "duration": 0.38,
+    "peak": 0.344,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_ui_select_card_b.wav",
+    "id": "ui_select_card",
+    "name": "选中卡牌",
+    "variant": "b",
+    "seed": 32,
+    "duration": 0.33,
+    "peak": 0.383,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_ui_select_card_c.wav",
+    "id": "ui_select_card",
+    "name": "选中卡牌",
+    "variant": "c",
+    "seed": 33,
+    "duration": 0.348,
+    "peak": 0.321,
+    "rms_db": -20.1
+  },
+  {
+    "file": "sfx_ui_error_a.wav",
+    "id": "ui_error",
+    "name": "无效操作提示",
+    "variant": "a",
+    "seed": 41,
+    "duration": 0.162,
+    "peak": 0.227,
+    "rms_db": -20.2
+  },
+  {
+    "file": "sfx_ui_error_b.wav",
+    "id": "ui_error",
+    "name": "无效操作提示",
+    "variant": "b",
+    "seed": 42,
+    "duration": 0.26,
+    "peak": 0.318,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_ui_error_c.wav",
+    "id": "ui_error",
+    "name": "无效操作提示",
+    "variant": "c",
+    "seed": 43,
+    "duration": 0.24,
+    "peak": 0.284,
+    "rms_db": -20.1
+  },
+  {
+    "file": "sfx_clash_metal_a.wav",
+    "id": "clash_metal",
+    "name": "拼点碰撞（金属交击）",
+    "variant": "a",
+    "seed": 51,
+    "duration": 1.122,
+    "peak": 0.419,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_clash_metal_b.wav",
+    "id": "clash_metal",
+    "name": "拼点碰撞（金属交击）",
+    "variant": "b",
+    "seed": 52,
+    "duration": 0.92,
+    "peak": 0.362,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_clash_metal_c.wav",
+    "id": "clash_metal",
+    "name": "拼点碰撞（金属交击）",
+    "variant": "c",
+    "seed": 53,
+    "duration": 0.924,
+    "peak": 0.358,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_clash_coin_break_a.wav",
+    "id": "clash_coin_break",
+    "name": "硬币破碎",
+    "variant": "a",
+    "seed": 61,
+    "duration": 0.846,
+    "peak": 0.798,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_clash_coin_break_b.wav",
+    "id": "clash_coin_break",
+    "name": "硬币破碎",
+    "variant": "b",
+    "seed": 62,
+    "duration": 0.63,
+    "peak": 0.841,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_clash_coin_break_c.wav",
+    "id": "clash_coin_break",
+    "name": "硬币破碎",
+    "variant": "c",
+    "seed": 63,
+    "duration": 0.845,
+    "peak": 0.804,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_hit_flesh_a.wav",
+    "id": "hit_flesh",
+    "name": "命中受击（肉体打击）",
+    "variant": "a",
+    "seed": 71,
+    "duration": 0.649,
+    "peak": 0.349,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_hit_flesh_b.wav",
+    "id": "hit_flesh",
+    "name": "命中受击（肉体打击）",
+    "variant": "b",
+    "seed": 72,
+    "duration": 0.47,
+    "peak": 0.335,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_hit_flesh_c.wav",
+    "id": "hit_flesh",
+    "name": "命中受击（肉体打击）",
+    "variant": "c",
+    "seed": 73,
+    "duration": 0.509,
+    "peak": 0.32,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_hit_slash_a.wav",
+    "id": "hit_slash",
+    "name": "斩击（刀锋呼啸）",
+    "variant": "a",
+    "seed": 81,
+    "duration": 0.6,
+    "peak": 0.69,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_hit_slash_b.wav",
+    "id": "hit_slash",
+    "name": "斩击（刀锋呼啸）",
+    "variant": "b",
+    "seed": 82,
+    "duration": 0.569,
+    "peak": 0.841,
+    "rms_db": -22.2
+  },
+  {
+    "file": "sfx_hit_slash_c.wav",
+    "id": "hit_slash",
+    "name": "斩击（刀锋呼啸）",
+    "variant": "c",
+    "seed": 83,
+    "duration": 0.404,
+    "peak": 0.585,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_guard_block_a.wav",
+    "id": "guard_block",
+    "name": "格挡 / 迎击",
+    "variant": "a",
+    "seed": 91,
+    "duration": 0.489,
+    "peak": 0.267,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_guard_block_b.wav",
+    "id": "guard_block",
+    "name": "格挡 / 迎击",
+    "variant": "b",
+    "seed": 92,
+    "duration": 0.712,
+    "peak": 0.429,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_guard_block_c.wav",
+    "id": "guard_block",
+    "name": "格挡 / 迎击",
+    "variant": "c",
+    "seed": 93,
+    "duration": 0.515,
+    "peak": 0.384,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_skill_cast_a.wav",
+    "id": "skill_cast",
+    "name": "技能发动（能量上涌）",
+    "variant": "a",
+    "seed": 101,
+    "duration": 0.947,
+    "peak": 0.422,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_skill_cast_b.wav",
+    "id": "skill_cast",
+    "name": "技能发动（能量上涌）",
+    "variant": "b",
+    "seed": 102,
+    "duration": 0.95,
+    "peak": 0.301,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_skill_cast_c.wav",
+    "id": "skill_cast",
+    "name": "技能发动（能量上涌）",
+    "variant": "c",
+    "seed": 103,
+    "duration": 0.946,
+    "peak": 0.544,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_card_draw_a.wav",
+    "id": "card_draw",
+    "name": "抽牌 / 摸牌",
+    "variant": "a",
+    "seed": 111,
+    "duration": 0.598,
+    "peak": 0.483,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_card_draw_b.wav",
+    "id": "card_draw",
+    "name": "抽牌 / 摸牌",
+    "variant": "b",
+    "seed": 112,
+    "duration": 0.6,
+    "peak": 0.424,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_card_draw_c.wav",
+    "id": "card_draw",
+    "name": "抽牌 / 摸牌",
+    "variant": "c",
+    "seed": 113,
+    "duration": 1.2,
+    "peak": 0.419,
+    "rms_db": -20.1
+  },
+  {
+    "file": "sfx_card_place_a.wav",
+    "id": "card_place",
+    "name": "打出 / 放下卡牌",
+    "variant": "a",
+    "seed": 121,
+    "duration": 0.689,
+    "peak": 0.627,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_card_place_b.wav",
+    "id": "card_place",
+    "name": "打出 / 放下卡牌",
+    "variant": "b",
+    "seed": 122,
+    "duration": 0.88,
+    "peak": 0.227,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_card_place_c.wav",
+    "id": "card_place",
+    "name": "打出 / 放下卡牌",
+    "variant": "c",
+    "seed": 123,
+    "duration": 0.6,
+    "peak": 0.44,
+    "rms_db": -20.1
+  },
+  {
+    "file": "sfx_victory_a.wav",
+    "id": "victory",
+    "name": "胜利",
+    "variant": "a",
+    "seed": 131,
+    "duration": 1.53,
+    "peak": 0.631,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_victory_b.wav",
+    "id": "victory",
+    "name": "胜利",
+    "variant": "b",
+    "seed": 132,
+    "duration": 1.56,
+    "peak": 0.588,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_victory_c.wav",
+    "id": "victory",
+    "name": "胜利",
+    "variant": "c",
+    "seed": 133,
+    "duration": 0.694,
+    "peak": 0.435,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_defeat_a.wav",
+    "id": "defeat",
+    "name": "失败",
+    "variant": "a",
+    "seed": 141,
+    "duration": 2.0,
+    "peak": 0.486,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_defeat_b.wav",
+    "id": "defeat",
+    "name": "失败",
+    "variant": "b",
+    "seed": 142,
+    "duration": 1.5,
+    "peak": 0.46,
+    "rms_db": -20.0
+  },
+  {
+    "file": "sfx_defeat_c.wav",
+    "id": "defeat",
+    "name": "失败",
+    "variant": "c",
+    "seed": 143,
+    "duration": 1.66,
+    "peak": 0.336,
+    "rms_db": -20.0
+  }
+]

@@ -25,6 +25,12 @@ const CARD_ORDER := [
 	"zixingyc_attention", "zixingyc_residual", "zixingyc_paradox", "zixingyc_yesterday", "zixingyc_ending",
 	# 雾雨魔理沙
 	"marisa_stars", "marisa_orrery", "marisa_laser", "marisa_spark",
+	# pufufu
+	"pufufu_fuzz_friction", "pufufu_soft_guard", "pufufu_static_fuzz", "pufufu_fuzz_heal",
+	"pufufu_fuzz_combo", "pufufu_fuzz_bless", "pufufu_fuzz_barrier", "pufufu_warm_echo",
+	"pufufu_thick_wall", "pufufu_fluff_hug",
+	# ZiWu
+	"ziwu_cold_edge", "ziwu_backstab", "ziwu_lone_intercept", "ziwu_meridian_slash",
 	# 通用
 	"needle", "ember", "steady", "cleave", "risk", "guard", "nova"
 ]
@@ -190,6 +196,10 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 			role_summary.text = Rules.ZiXingYC.summary(hero)
 		Rules.MARISA_ID:
 			role_summary.text = "火花 %d/10 · 敌方 cost 偷取与星辰轰炸" % int(hero.get("spark", 0))
+		Rules.PUFUFU_ID:
+			role_summary.text = Rules.Pufufu.summary(hero)
+		Rules.ZIWU_ID:
+			role_summary.text = Rules.ZiWu.summary(hero)
 	var cycle_on: bool = state.get("deck_cycle_enabled", false)
 	all_playable_button.visible = cycle_on
 	if not cycle_on:
@@ -199,13 +209,32 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 	if not show_all_playable and (not has_personal or not has_shared):
 		show_shared = has_shared and not has_personal
 	var is_zixi := hero.has("metaphysics")
-	enhance_toggle.visible = is_zixi and (show_all_playable or not show_shared)
+	var is_pufufu := int(hero.get("character_id", -1)) == Rules.PUFUFU_ID
+	var is_ziwu := int(hero.get("character_id", -1)) == Rules.ZIWU_ID
+	enhance_toggle.visible = (is_zixi or is_pufufu or is_ziwu) and (show_all_playable or not show_shared)
+	enhance_toggle.text = "强化 · 3 层" if is_zixi else ("强化 · 2 层蓬松" if is_pufufu else "强化 · 2 层绝缘")
 	var enhancement_error := ""
 	if is_zixi:
 		role_summary.text = "超形上学 %d/%d   ·   因果律 %d/%d" % [hero.metaphysics, Rules.ZiXi.METAPHYSICS_MAX, hero.causality, Rules.ZiXi.CAUSALITY_MAX]
 		enhancement_error = Rules.ZiXi.enhancement_error(hero, slot_id)
 		enhance_toggle.disabled = not planning or selection < 0 or hero.hp <= 0 or not enhancement_error.is_empty()
 		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else "消耗 3 层超形上学。本回合可强化一张，结算后因果律 +1，拼胜分差至少 5 时 +2。"
+		enhance_toggle.set_pressed_no_signal(enhance)
+	elif is_pufufu:
+		var selected_key := ""
+		if selection >= 0 and selection < state.hand.size():
+			selected_key = String(state.hand[selection])
+		enhancement_error = Rules.Pufufu.enhancement_error(hero, slot_id, selected_key)
+		enhance_toggle.disabled = not planning or selection < 0 or hero.hp <= 0 or not enhancement_error.is_empty()
+		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else "消耗 2 层蓬松。强化【厚实壁垒】额外获得 8 点护盾，且本回合受击反伤翻倍。"
+		enhance_toggle.set_pressed_no_signal(enhance)
+	elif is_ziwu:
+		var selected_key := ""
+		if selection >= 0 and selection < state.hand.size():
+			selected_key = String(state.hand[selection])
+		enhancement_error = Rules.ZiWu.enhancement_error(hero, slot_id, selected_key)
+		enhance_toggle.disabled = not planning or selection < 0 or hero.hp <= 0 or not enhancement_error.is_empty()
+		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else "消耗 2 层绝缘。强化【孤影截杀】本次拼点 +4，拼赢后下次拼点 +3。"
 		enhance_toggle.set_pressed_no_signal(enhance)
 	role_summary.add_theme_color_override("font_color", ROLE_COLORS[unit])
 	detail.add_theme_color_override("font_color", Color("d7e0e1"))
@@ -240,6 +269,10 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 			else:
 				var occupied: Dictionary = state.hero_slots[hero.enhanced_slot]
 				card.can_enhance = Rules.SKILLS[occupied.key].kind == card.skill.kind
+		elif is_pufufu and card.skill.has("enhance_name") and planning and hero.hp > 0:
+			card.can_enhance = hero.enhanced_slot < 0 and int(hero.get("fluff", 0)) >= Rules.Pufufu.ENHANCE_COST
+		elif is_ziwu and card.skill.has("enhance_name") and planning and hero.hp > 0:
+			card.can_enhance = hero.enhanced_slot < 0 and int(hero.get("insulation", 0)) >= Rules.ZiWu.ENHANCE_COST
 		card.queue_redraw()
 	all_playable_button.text = "本轮可用 %d" % (personal_count + shared_count)
 	all_playable_button.disabled = not planning or (personal_count + shared_count) == 0

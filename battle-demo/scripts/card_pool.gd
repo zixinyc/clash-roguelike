@@ -32,6 +32,8 @@ const HERO_STARTER_CARD := {
 	DemoBattleRules.ZIXI_ID: "zixi_central_limit",
 	DemoBattleRules.ZIXINGYC_ID: "zixingyc_attention",
 	DemoBattleRules.MARISA_ID: "marisa_stars",
+	DemoBattleRules.PUFUFU_ID: "pufufu_soft_guard",
+	DemoBattleRules.ZIWU_ID: "ziwu_cold_edge",
 }
 
 const HERO_STARTER_CARDS := {
@@ -43,6 +45,8 @@ const HERO_STARTER_CARDS := {
 	DemoBattleRules.ZIXI_ID: ["zixi_central_limit", "zixi_convergence"],
 	DemoBattleRules.ZIXINGYC_ID: ["zixingyc_attention", "zixingyc_residual"],
 	DemoBattleRules.MARISA_ID: ["marisa_stars", "marisa_laser"],
+	DemoBattleRules.PUFUFU_ID: ["pufufu_soft_guard", "pufufu_fuzz_friction"],
+	DemoBattleRules.ZIWU_ID: ["ziwu_cold_edge", "ziwu_backstab"],
 }
 
 const CARD_RARITY := {
@@ -93,6 +97,22 @@ const CARD_RARITY := {
 	"marisa_orrery": RARITY_UNCOMMON,
 	"marisa_laser": RARITY_UNCOMMON,
 	"marisa_spark": RARITY_RARE,
+	# pufufu
+	"pufufu_fuzz_friction": RARITY_COMMON,
+	"pufufu_soft_guard": RARITY_COMMON,
+	"pufufu_static_fuzz": RARITY_COMMON,
+	"pufufu_fuzz_heal": RARITY_COMMON,
+	"pufufu_fuzz_combo": RARITY_UNCOMMON,
+	"pufufu_fuzz_bless": RARITY_UNCOMMON,
+	"pufufu_fuzz_barrier": RARITY_UNCOMMON,
+	"pufufu_warm_echo": RARITY_RARE,
+	"pufufu_thick_wall": RARITY_RARE,
+	"pufufu_fluff_hug": RARITY_RARE,
+	# ZiWu
+	"ziwu_cold_edge": RARITY_COMMON,
+	"ziwu_backstab": RARITY_UNCOMMON,
+	"ziwu_lone_intercept": RARITY_UNCOMMON,
+	"ziwu_meridian_slash": RARITY_RARE,
 }
 
 static func rarity_of(key: String) -> String:

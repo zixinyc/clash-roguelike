@@ -118,7 +118,9 @@ func _test_cross_floor_persistence() -> void:
 	var uid0: String = String(run.card_instances[0].uid)
 
 	var map2 = ForestRandomGenerator.generate(504)
-	run.advance_to_next_floor(map2, 504)
+	run.pending = ""
+	run.floor_cleared = true
+	check(run.advance_to_next_floor(map2, 504, "ferocious"), "Advance after closing the forge and choosing a modifier")
 	check(run.floor_level == 2, "Floor level advanced to 2")
 	check(run.card_instances.size() == 10, "Card instances preserved across floors")
 	check(run.card_instances[0].uid == uid0, "Instance UID preserved across floors")

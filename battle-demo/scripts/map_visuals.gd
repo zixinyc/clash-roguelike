@@ -71,6 +71,30 @@ static func make_box(fill: Color, border: Color, width: int = 1, radius: int = 8
 	box.content_margin_bottom = pad_y
 	return box
 
+## Tidy 公共视觉主题构造器：统一所有页面为「胡桃木 + 黄铜金 + 羊皮纸」正式版美术体系
+static func create_ember_theme(base_font_size: int = 14) -> Theme:
+	var font := SystemFont.new()
+	font.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", "sans-serif"])
+	var skin := Theme.new()
+	skin.default_font = font
+	skin.default_font_size = base_font_size
+	skin.set_stylebox("normal", "Button", make_box(Color("453423"), WALNUT_BORDER, 1, 6, 10, 6))
+	skin.set_stylebox("hover", "Button", make_box(Color("59432c"), SUN_GOLD, 1, 6, 10, 6))
+	skin.set_stylebox("pressed", "Button", make_box(Color("695034"), SUN_GOLD, 2, 6, 10, 6))
+	skin.set_stylebox("disabled", "Button", make_box(Color("2d2218"), Color("54422c"), 1, 6, 10, 6))
+	skin.set_color("font_color", "Button", CREAM_TEXT)
+	skin.set_color("font_hover_color", "Button", Color("fff8e6"))
+	skin.set_color("font_pressed_color", "Button", SUN_GOLD)
+	skin.set_color("font_disabled_color", "Button", Color("8f7d64"))
+	skin.set_stylebox("normal", "LineEdit", make_box(Color("2a1f16"), WALNUT_BORDER, 1, 6, 10, 6))
+	skin.set_stylebox("focus", "LineEdit", make_box(Color("34261b"), SUN_GOLD, 2, 6, 10, 6))
+	skin.set_color("font_color", "LineEdit", CREAM_TEXT)
+	skin.set_color("font_placeholder_color", "LineEdit", Color("9c8a70"))
+	skin.set_color("font_color", "CheckBox", CREAM_TEXT)
+	skin.set_color("font_hover_color", "CheckBox", Color("fff8e6"))
+	skin.set_color("font_pressed_color", "CheckBox", SUN_GOLD)
+	return skin
+
 static func optional_node_texture(kind: int) -> Texture2D:
 	if _icon_cache.has(kind):
 		return _icon_cache[kind]
@@ -308,13 +332,13 @@ static func draw_map_node(canvas: Control, n: ForestMapGraph.MapNode, run: RefCo
 		return
 
 	var fill_col := PARCHMENT if is_visible else Color("cfc7b2")
-	if is_cleared and not is_current and n.kind != ForestMapGraph.NodeKind.SHOP:
+	if is_cleared and not is_current and n.kind != ForestMapGraph.NodeKind.SHOP and n.kind != ForestMapGraph.NodeKind.DESTINY_GATE:
 		fill_col = Color("d8d1be")
 	if is_current:
 		fill_col = Color("fff7e0")
 
 	var rim_col := accent if is_visible else accent.darkened(0.32)
-	if is_cleared and not is_current and n.kind != ForestMapGraph.NodeKind.SHOP:
+	if is_cleared and not is_current and n.kind != ForestMapGraph.NodeKind.SHOP and n.kind != ForestMapGraph.NodeKind.DESTINY_GATE:
 		rim_col = rim_col.lerp(Color("7b7462"), 0.55)
 
 	# Walnut outer shadow rim -> colored ring -> parchment medallion body
@@ -483,6 +507,20 @@ static func draw_node_emblem(canvas: Control, kind: int, c: Vector2, r: float, c
 			canvas.draw_arc(c + Vector2(0, -r * 0.28), r * 0.36, PI * 0.9, TAU + PI * 0.35, 16, col, 2.6, true)
 			canvas.draw_line(c + Vector2(r * 0.14, 0.0), c + Vector2(0, r * 0.28), col, 2.6, true)
 			canvas.draw_circle(c + Vector2(0, r * 0.62), 2.2, col)
+		ForestMapGraph.NodeKind.DESTINY_GATE:
+			# Twin rune stone gate pillars + arched lintel + glowing 4-point destiny diamond star
+			canvas.draw_line(c + Vector2(-r * 0.62, -r * 0.35), c + Vector2(-r * 0.62, r * 0.72), col, 2.8, true)
+			canvas.draw_line(c + Vector2(r * 0.62, -r * 0.35), c + Vector2(r * 0.62, r * 0.72), col, 2.8, true)
+			canvas.draw_arc(c + Vector2(0, -r * 0.22), r * 0.62, PI, TAU, 16, col, 2.6, true)
+			canvas.draw_line(c + Vector2(-r * 0.80, r * 0.72), c + Vector2(r * 0.80, r * 0.72), col, 2.2, true)
+			var star := PackedVector2Array([
+				c + Vector2(0, -r * 0.36),
+				c + Vector2(r * 0.30, r * 0.08),
+				c + Vector2(0, r * 0.52),
+				c + Vector2(-r * 0.30, r * 0.08)
+			])
+			canvas.draw_colored_polygon(star, SUN_GOLD)
+			canvas.draw_polyline(star + PackedVector2Array([star[0]]), col, 1.4, true)
 		_:
 			# Stone steps (PASSAGE)
 			for s in 3:
@@ -640,3 +678,309 @@ static func _draw_pill_label(canvas: Control, font: Font, center: Vector2, text:
 	canvas.draw_rect(rect, bg, true)
 	canvas.draw_rect(rect, border, false, 1.3)
 	canvas.draw_string(font, Vector2(rect.position.x + 7.0, rect.position.y + ph - 5.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, text_col)
+
+# ==============================================================================
+# 9×7 废林方格地图表现层工具（对齐《废林方格地图调研与首层方案》及视觉预览）
+# ==============================================================================
+
+static func compute_grid_layout(rect: Rect2, grid_size: Vector2i) -> Dictionary:
+	var pad_l := 34.0
+	var pad_r := 18.0
+	var pad_t := 58.0
+	var pad_b := 36.0
+	var avail_w := maxf(120.0, rect.size.x - pad_l - pad_r)
+	var avail_h := maxf(120.0, rect.size.y - pad_t - pad_b)
+	var gap := 4.0
+	var cols := maxi(1, grid_size.x)
+	var rows := maxi(1, grid_size.y)
+	var cw := floorf((avail_w - gap * float(cols - 1)) / float(cols))
+	var ch := floorf((avail_h - gap * float(rows - 1)) / float(rows))
+	var side := maxf(24.0, minf(cw, ch))
+	var total_w := side * float(cols) + gap * float(cols - 1)
+	var total_h := side * float(rows) + gap * float(rows - 1)
+	var ox := rect.position.x + pad_l + (avail_w - total_w) * 0.5
+	var oy := rect.position.y + pad_t + (avail_h - total_h) * 0.5
+	return {
+		"origin": Vector2(ox, oy),
+		"cell_size": Vector2(side, side),
+		"gap": gap,
+		"board_rect": Rect2(ox - 8.0, oy - 8.0, total_w + 16.0, total_h + 16.0)
+	}
+
+static func grid_cell_rect(layout: Dictionary, cell: Vector2i) -> Rect2:
+	var origin: Vector2 = layout.origin
+	var cs: Vector2 = layout.cell_size
+	var gap: float = layout.gap
+	return Rect2(origin.x + float(cell.x) * (cs.x + gap), origin.y + float(cell.y) * (cs.y + gap), cs.x, cs.y)
+
+static func grid_cell_center(layout: Dictionary, cell: Vector2i) -> Vector2:
+	return grid_cell_rect(layout, cell).get_center()
+
+static func grid_cell_at_point(layout: Dictionary, point: Vector2, grid_size: Vector2i) -> Vector2i:
+	var origin: Vector2 = layout.origin
+	var cs: Vector2 = layout.cell_size
+	var gap: float = layout.gap
+	var rel := point - origin
+	if rel.x < 0.0 or rel.y < 0.0:
+		return Vector2i(-1, -1)
+	var step_x := cs.x + gap
+	var step_y := cs.y + gap
+	var cx := int(floor(rel.x / step_x))
+	var cy := int(floor(rel.y / step_y))
+	if cx < 0 or cy < 0 or cx >= grid_size.x or cy >= grid_size.y:
+		return Vector2i(-1, -1)
+	var local_x := rel.x - float(cx) * step_x
+	var local_y := rel.y - float(cy) * step_y
+	if local_x > cs.x or local_y > cs.y:
+		return Vector2i(-1, -1)
+	return Vector2i(cx, cy)
+
+static func _grid_short_label(n: ForestMapGraph.MapNode) -> String:
+	match n.kind:
+		ForestMapGraph.NodeKind.SPAWN: return "猎林入口"
+		ForestMapGraph.NodeKind.BATTLE: return "普通遭遇"
+		ForestMapGraph.NodeKind.ELITE: return "精英伏击"
+		ForestMapGraph.NodeKind.SUPPLY: return "补给"
+		ForestMapGraph.NodeKind.EVENT: return "随机事件"
+		ForestMapGraph.NodeKind.HIDEOUT: return "隐蔽树洞"
+		ForestMapGraph.NodeKind.LOOKOUT: return "瞭望高台"
+		ForestMapGraph.NodeKind.DANGER: return "险地"
+		ForestMapGraph.NodeKind.CENTER: return "烬心祭坛"
+		ForestMapGraph.NodeKind.CAMP: return "旧猎人营火"
+		ForestMapGraph.NodeKind.SHOP: return "战前行商"
+		ForestMapGraph.NodeKind.SHRINE: return "御灵神龛"
+		ForestMapGraph.NodeKind.FORGE: return "余烬锻台"
+		ForestMapGraph.NodeKind.GAMBLE: return "迷雾博弈"
+		ForestMapGraph.NodeKind.EXIT: return "归途石门"
+		ForestMapGraph.NodeKind.DESTINY_GATE: return "命运石之门"
+		_: return ""
+
+static func _draw_tree_obstacle(canvas: Control, r: Rect2, is_visible: bool) -> void:
+	var c := r.get_center()
+	var s := minf(r.size.x, r.size.y) * 0.24
+	var col := Color("7ca872") if is_visible else Color("526d4d")
+	for off in [Vector2(-s * 0.72, -s * 0.18), Vector2(s * 0.72, s * 0.25)]:
+		var p: Vector2 = c + off
+		var top_tri := PackedVector2Array([p + Vector2(0, -s * 0.95), p + Vector2(s * 0.58, -s * 0.05), p + Vector2(-s * 0.58, -s * 0.05)])
+		var bot_tri := PackedVector2Array([p + Vector2(0, -s * 0.40), p + Vector2(s * 0.72, s * 0.52), p + Vector2(-s * 0.72, s * 0.52)])
+		canvas.draw_colored_polygon(top_tri, col)
+		canvas.draw_colored_polygon(bot_tri, col)
+		canvas.draw_line(p + Vector2(0, s * 0.52), p + Vector2(0, s * 0.85), col.darkened(0.25), 2.0, true)
+
+static func _draw_water_obstacle(canvas: Control, r: Rect2, is_visible: bool) -> void:
+	var c := r.get_center()
+	var s := minf(r.size.x, r.size.y) * 0.26
+	var col := Color("84c6d9") if is_visible else Color("507b8a")
+	for row_off in [-s * 0.26, s * 0.26]:
+		var roff := float(row_off)
+		var pts := PackedVector2Array()
+		for i in 9:
+			var t := float(i) / 8.0
+			var x := c.x - s + t * (s * 2.0)
+			var y := c.y + roff + sin(t * TAU * 1.2) * (s * 0.16)
+			pts.append(Vector2(x, y))
+		canvas.draw_polyline(pts, col, 2.2, true)
+
+static func draw_grid_map(canvas: Control, run: RefCounted, rect: Rect2, hovered_cell: Vector2i, route_path: Array, pulse_time: float, font: Font) -> void:
+	var map := run.map as ForestMapGraph
+	if map == null or not map.is_grid:
+		return
+	var layout := compute_grid_layout(rect, map.grid_size)
+	var board_rect: Rect2 = layout.board_rect
+
+	# Soft dark walnut vignette frame around the 9×7 board so grid cells read clearly over sunlit terrain
+	canvas.draw_rect(rect, Color(0.09, 0.08, 0.05, 0.44), true)
+	canvas.draw_rect(board_rect, Color(WALNUT_DEEP, 0.52), true)
+	canvas.draw_rect(board_rect, Color(WALNUT_BORDER, 0.80), false, 1.8)
+
+	var side: float = layout.cell_size.x
+	var coord_col := Color("cfc1a3")
+	var label_fs := 10 if side < 64.0 else 11
+
+	# Column headers A..I
+	for x in map.grid_size.x:
+		var ch := String.chr(65 + x)
+		var cr := grid_cell_rect(layout, Vector2i(x, 0))
+		var sz := font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, 12)
+		canvas.draw_string(font, Vector2(cr.get_center().x - sz.x * 0.5, board_rect.position.y - 4.0), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, coord_col)
+
+	# Row headers 1..7
+	for y in map.grid_size.y:
+		var num := str(y + 1)
+		var cr := grid_cell_rect(layout, Vector2i(0, y))
+		var sz := font.get_string_size(num, HORIZONTAL_ALIGNMENT_LEFT, -1, 12)
+		canvas.draw_string(font, Vector2(board_rect.position.x - sz.x - 8.0, cr.get_center().y + 4.0), num, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, coord_col)
+
+	# Draw every cell
+	for y in map.grid_size.y:
+		for x in map.grid_size.x:
+			var cell := Vector2i(x, y)
+			var cr := grid_cell_rect(layout, cell)
+			var nid := map.node_id_at(cell)
+			var node: ForestMapGraph.MapNode = map.get_node(nid) if not nid.is_empty() else null
+			var is_obs := map.is_obstacle(cell)
+			var is_known: bool = run.known_cells.has(cell) or (not nid.is_empty() and run.known.has(nid))
+			var is_visible: bool = run.visible_cells.has(cell) or (not nid.is_empty() and run.visible.has(nid))
+			var is_current: bool = not nid.is_empty() and nid == run.position
+			var is_reachable: bool = not nid.is_empty() and run.can_move(nid)
+			var is_cleared: bool = not nid.is_empty() and run.cleared.has(nid)
+			var is_hovered: bool = cell == hovered_cell
+
+			if not is_known:
+				# Unexplored dark fog tile
+				canvas.draw_rect(cr, Color(0.11, 0.13, 0.12, 0.88), true)
+				canvas.draw_rect(cr, Color(0.32, 0.34, 0.29, 0.40) if not is_hovered else Color(CREAM_TEXT, 0.55), false, 1.2)
+				var hseed := float((x * 31 + y * 17) % 13)
+				canvas.draw_circle(cr.position + Vector2(cr.size.x * 0.28 + hseed * 0.6, cr.size.y * 0.32), 1.1, Color(0.65, 0.68, 0.60, 0.18))
+				canvas.draw_circle(cr.position + Vector2(cr.size.x * 0.70 - hseed * 0.5, cr.size.y * 0.68), 1.0, Color(0.65, 0.68, 0.60, 0.15))
+				continue
+
+			if is_obs:
+				var okind := map.obstacle_kind(cell)
+				if okind == "water":
+					canvas.draw_rect(cr, Color(0.12, 0.26, 0.34, 0.82) if is_visible else Color(0.09, 0.19, 0.26, 0.88), true)
+					canvas.draw_rect(cr, Color("4d8fa8") if is_visible else Color("345a6b"), false, 1.5 if not is_hovered else 2.0)
+					_draw_water_obstacle(canvas, cr, is_visible)
+				else:
+					canvas.draw_rect(cr, Color(0.14, 0.25, 0.15, 0.80) if is_visible else Color(0.10, 0.18, 0.11, 0.88), true)
+					canvas.draw_rect(cr, Color("4d7548") if is_visible else Color("344d31"), false, 1.5 if not is_hovered else 2.0)
+					_draw_tree_obstacle(canvas, cr, is_visible)
+				continue
+
+			# Walkable known cell
+			var fill := Color(0.36, 0.33, 0.22, 0.36) if is_visible else Color(0.17, 0.16, 0.13, 0.72)
+			var border_col := Color(BRASS_GOLD, 0.58) if is_visible else Color(WALNUT_BORDER, 0.38)
+			var border_w := 1.2
+
+			if node != null and node.kind != ForestMapGraph.NodeKind.PASSAGE:
+				var kc := ForestMapGraph.kind_color(node.kind)
+				fill = fill.lerp(Color(kc.r, kc.g, kc.b, 0.42 if is_visible else 0.26), 0.50)
+				border_col = kc.lightened(0.12) if is_visible else kc.darkened(0.30)
+				border_w = 1.6
+
+			if is_reachable:
+				var glow := 0.20 + 0.08 * sin(pulse_time * 4.6)
+				fill = fill.lerp(Color(SUN_GOLD.r, SUN_GOLD.g, SUN_GOLD.b, 0.45), glow + 0.18)
+				border_col = SUN_GOLD
+				border_w = 2.2
+			if is_current:
+				fill = Color(SUN_GOLD.r, SUN_GOLD.g, SUN_GOLD.b, 0.34)
+				border_col = SUN_GOLD
+				border_w = 2.8
+			elif is_hovered:
+				border_col = CREAM_TEXT
+				border_w = 2.2
+
+			canvas.draw_rect(cr, fill, true)
+			canvas.draw_rect(cr, border_col, false, border_w)
+
+			# Reachable subtle golden corner dot (matching preview)
+			if is_reachable:
+				canvas.draw_circle(cr.position + Vector2(cr.size.x - 7.0, cr.size.y - 7.0), 2.8, SUN_GOLD)
+
+			var center := cr.get_center()
+			if is_current:
+				var icon_r := side * 0.24
+				var icon_c := center + Vector2(0, -side * 0.08)
+				canvas.draw_circle(icon_c, icon_r + 3.0, Color(SUN_GOLD, 0.26))
+				canvas.draw_circle(icon_c, icon_r, WALNUT_DEEP)
+				canvas.draw_arc(icon_c, icon_r, 0, TAU, 24, SUN_GOLD, 2.0, true)
+				# Bold directional arrow chevron inside party token
+				var tri := PackedVector2Array([
+					icon_c + Vector2(0, -icon_r * 0.62),
+					icon_c + Vector2(icon_r * 0.46, icon_r * 0.48),
+					icon_c + Vector2(0, icon_r * 0.18),
+					icon_c + Vector2(-icon_r * 0.46, icon_r * 0.48)
+				])
+				canvas.draw_colored_polygon(tri, CREAM_TEXT)
+				var ptxt := "小队"
+				var psz := font.get_string_size(ptxt, HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs)
+				canvas.draw_string(font, Vector2(center.x - psz.x * 0.5, cr.end.y - 6.0), ptxt, HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs, CREAM_TEXT)
+			elif node != null and node.kind != ForestMapGraph.NodeKind.PASSAGE:
+				var icon_r := side * 0.22
+				var icon_c := center + Vector2(0, -side * 0.10)
+				var accent := ForestMapGraph.kind_color(node.kind)
+				var disc_border := accent.lightened(0.15) if is_visible else accent.darkened(0.32)
+				canvas.draw_circle(icon_c, icon_r, Color(WALNUT_DEEP, 0.90 if is_visible else 0.72))
+				canvas.draw_arc(icon_c, icon_r, 0, TAU, 22, disc_border, 1.6, true)
+				var emblem_col := CREAM_TEXT if is_visible else Color("bdb39d")
+				if node.kind == ForestMapGraph.NodeKind.DESTINY_GATE:
+					emblem_col = SUN_GOLD if is_visible else Color("b5954b")
+				draw_node_emblem(canvas, node.kind, icon_c, icon_r * 0.68, emblem_col, false)
+				var short_lbl := _grid_short_label(node)
+				if not short_lbl.is_empty():
+					var lsz := font.get_string_size(short_lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs)
+					var lcol := CREAM_TEXT if is_visible else Color("bfb6a2")
+					canvas.draw_string(font, Vector2(center.x - lsz.x * 0.5, cr.end.y - 6.0), short_lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, label_fs, lcol)
+
+			# Cleared green stamp badge on resolved landmark cells
+			if is_cleared and node != null and node.kind != ForestMapGraph.NodeKind.PASSAGE and node.kind != ForestMapGraph.NodeKind.SPAWN and node.kind != ForestMapGraph.NodeKind.SHOP and node.kind != ForestMapGraph.NodeKind.DESTINY_GATE:
+				var st := cr.position + Vector2(cr.size.x - 9.0, 9.0)
+				canvas.draw_circle(st, 6.5, WALNUT_DEEP)
+				canvas.draw_circle(st, 5.2, Color("4fa362"))
+				canvas.draw_polyline(PackedVector2Array([
+					st + Vector2(-2.6, 0.2),
+					st + Vector2(-0.5, 2.2),
+					st + Vector2(2.8, -2.2)
+				]), CREAM_TEXT, 1.5, true)
+
+	# Route preview dashed line when pointing at or clicking a distant known cell
+	if route_path.size() >= 2:
+		var pts := PackedVector2Array()
+		for nid in route_path:
+			var c: Vector2i = map.cell_of(String(nid))
+			if c.x >= 0:
+				pts.append(grid_cell_center(layout, c))
+		if pts.size() >= 2:
+			var dest_id := String(route_path[route_path.size() - 1])
+			var dest_node := map.get_node(dest_id)
+			var is_combat_dest := dest_node != null and dest_node.kind in [ForestMapGraph.NodeKind.BATTLE, ForestMapGraph.NodeKind.ELITE, ForestMapGraph.NodeKind.CENTER, ForestMapGraph.NodeKind.EXIT]
+			var route_col := Color("f08e67") if is_combat_dest else SUN_GOLD
+			canvas.draw_polyline(pts, Color(WALNUT_DEEP, 0.85), 5.8, true)
+			_draw_dashed_polyline(canvas, pts, route_col, 3.0, 8.0, 6.0)
+			for i in range(1, pts.size()):
+				canvas.draw_circle(pts[i], 3.4, route_col)
+			var steps := route_path.size() - 1
+			var badge_txt := ""
+			if run.dice_rolled:
+				var rem: int = int(run.actions_left) - steps
+				badge_txt = "%d步 · 余%d步" % [steps, rem] if rem >= 0 else "%d步 · 移动力不足" % steps
+			else:
+				badge_txt = "需 %d 步" % steps
+			_draw_pill_label(canvas, font, pts[pts.size() - 1] + Vector2(0, -side * 0.42), badge_txt, 11, Color(WALNUT_DEEP, 0.94), route_col, CREAM_TEXT)
+
+	# Patrol tracks / signals on known cells
+	for sig in run.signals:
+		var snid: String = sig.get("node", "")
+		if not run.known.has(snid):
+			continue
+		var sc := map.cell_of(snid)
+		if sc.x < 0:
+			continue
+		var sp := grid_cell_center(layout, sc)
+		if String(sig.get("kind", "")) == "track":
+			var bp := sp + Vector2(side * 0.28, -side * 0.28)
+			canvas.draw_circle(bp, 7.0, Color(WALNUT_DEEP, 0.90))
+			canvas.draw_arc(bp, 7.0, 0, TAU, 14, Color("e8833a"), 1.3, true)
+
+	# Patrol beast ONLY shown when inside current visibility (run.is_patrol_visible())
+	if run.is_patrol_visible():
+		var pc := map.cell_of(run.patrol_node)
+		if pc.x >= 0:
+			draw_patrol_beast(canvas, grid_cell_center(layout, pc), pulse_time, font)
+
+	# Compact legend strip at bottom of grid board
+	var leg_y := board_rect.end.y + 18.0
+	var leg_x := board_rect.position.x + 6.0
+	var legend_items := [
+		{"col": Color(SUN_GOLD, 0.72), "border": SUN_GOLD, "txt": "可走 (相邻1步)"},
+		{"col": Color(0.24, 0.23, 0.18, 0.85), "border": WALNUT_BORDER, "txt": "已知地形"},
+		{"col": Color(0.11, 0.13, 0.12, 0.92), "border": Color("4a4f44"), "txt": "迷雾未探"},
+		{"col": Color(0.14, 0.26, 0.15, 0.90), "border": Color("4d7548"), "txt": "障碍不可通"}
+	]
+	for item in legend_items:
+		var sw := Rect2(leg_x, leg_y - 9.0, 11.0, 11.0)
+		canvas.draw_rect(sw, item.col, true)
+		canvas.draw_rect(sw, item.border, false, 1.2)
+		canvas.draw_string(font, Vector2(leg_x + 16.0, leg_y), item.txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("dfd2b5"))
+		leg_x += font.get_string_size(item.txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 32.0

@@ -44,6 +44,7 @@ var selected_hero := 0
 var selected_enemy := 0
 var busy := false
 var time := 0.0
+var next_idle_redraw := 0.0
 var motions: Array[Vector2] = [Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO]
 var flashes: Array[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
 var impact := 0.0
@@ -95,20 +96,24 @@ func reset_visuals() -> void:
 	impact = 0.0
 	sparks = 0.0
 	holding_impact = false
+	queue_redraw()
 
 func _process(delta: float) -> void:
-	time += delta
-	if holding_impact:
-		queue_redraw()
+	if not is_visible_in_tree():
 		return
-	impact = maxf(0.0, impact - delta * 3.5)
-	sparks = maxf(0.0, sparks - delta * 2.0)
-	for i in flashes.size():
-		flashes[i] = maxf(0.0, flashes[i] - delta * 3.5)
-	for item in floaters:
-		item.age += delta
-	floaters = floaters.filter(func(item: Dictionary) -> bool: return item.age < 1.5)
-	queue_redraw()
+	time += delta
+	if not holding_impact:
+		impact = maxf(0.0, impact - delta * 3.5)
+		sparks = maxf(0.0, sparks - delta * 2.0)
+		for i in flashes.size():
+			flashes[i] = maxf(0.0, flashes[i] - delta * 3.5)
+		if not floaters.is_empty():
+			for item in floaters:
+				item.age += delta
+			floaters = floaters.filter(func(item: Dictionary) -> bool: return item.age < 1.5)
+	if busy or holding_impact or dragging >= 0 or time >= next_idle_redraw:
+		next_idle_redraw = time + 1.0 / 24.0
+		queue_redraw()
 
 func _actor_position(id: int) -> Vector2:
 	var count: int = state.get("heroes", []).size()
@@ -130,6 +135,7 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion:
 		pointer = event.position * BASE / size
+		queue_redraw()
 		tooltip_text = ""
 		hovered_slot_side = -1
 		hovered_slot_id = -1
@@ -149,6 +155,7 @@ func _gui_input(event: InputEvent) -> void:
 	if not event is InputEventMouseButton:
 		return
 	var point: Vector2 = event.position * BASE / size
+	queue_redraw()
 
 	# Right click on an active hero slot -> quick cancel
 	if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
@@ -515,6 +522,10 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 			"warden": accent = Color("d0c8b8")
 			"priest": accent = Color("88d6cb")
 			"elite": accent = Color("e09e54")
+			"phantom": accent = Color("a48fd6")
+			"lich": accent = Color("76b5c5")
+			"marauder": accent = Color("d9534f")
+			"wyvern": accent = Color("e67e22")
 	var alpha := 1.0 if alive else 0.24
 	var acted: bool = unit.acted if allied else unit.spent
 	if acted and alive and not busy:

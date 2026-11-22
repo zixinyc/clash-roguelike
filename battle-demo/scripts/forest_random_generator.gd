@@ -16,197 +16,278 @@ const SUFFIXES := {
 	ForestMapGraph.NodeKind.LOOKOUT: "断枝高台",
 	ForestMapGraph.NodeKind.DANGER: "毒沼险地",
 	ForestMapGraph.NodeKind.CENTER: "烬心祭坛",
-	ForestMapGraph.NodeKind.PASSAGE: "古道石阶",
+	ForestMapGraph.NodeKind.PASSAGE: "林间空地",
 	ForestMapGraph.NodeKind.CAMP: "猎人余火",
 	ForestMapGraph.NodeKind.SHOP: "行商营地",
 	ForestMapGraph.NodeKind.SHRINE: "御灵神龛",
 	ForestMapGraph.NodeKind.FORGE: "余烬锻台",
 	ForestMapGraph.NodeKind.GAMBLE: "迷雾庄台",
 	ForestMapGraph.NodeKind.EXIT: "归途石门",
+	ForestMapGraph.NodeKind.DESTINY_GATE: "命运石之门",
 }
 
 static func generate_map(seed_val: int = -1) -> ForestMapGraph:
 	return generate(seed_val)
 
-static func generate(seed_val: int = -1) -> ForestMapGraph:
+## 手工布置的第 1 层 9×7 废林方格地图（列 A~I = 0..8，行 1~7 = 0..6）
+## 精简挡路障碍（仅保留 4 处非阻断地形点缀），将原挡路格替换为有用节点与可自由行动的空节点。
+static func generate_floor1_grid(seed_val: int = 73129) -> ForestMapGraph:
+	var graph := ForestMapGraph.new()
+	graph.seed_value = seed_val if seed_val >= 0 else 73129
+	graph.is_grid = true
+	graph.grid_size = Vector2i(9, 7)
+
+	# 仅保留少量不封路的地形障碍点缀（trees / water），其余全为可通行方格
+	var tree_cells: Array[Vector2i] = [
+		Vector2i(0, 0), # A1 边缘古木
+		Vector2i(1, 1), # B2 哨塔侧树影
+		Vector2i(5, 2), # F3 哨卡北侧林木
+	]
+	var water_cells: Array[Vector2i] = [
+		Vector2i(4, 4), # E5 浅潭（E6/E7 均可绕行通过）
+	]
+	for tc in tree_cells:
+		graph.set_obstacle(tc, "trees")
+	for wc in water_cells:
+		graph.set_obstacle(wc, "water")
+
+	# 特殊地点配置（其余非障碍格默认注册为 PASSAGE 空节点，踩上后仍可继续行动）
+	var specials := {
+		Vector2i(1, 3): {"kind": ForestMapGraph.NodeKind.SPAWN, "name": "猎林入口"},
+		Vector2i(0, 3): {"kind": ForestMapGraph.NodeKind.SUPPLY, "name": "入口补给"},
+		Vector2i(1, 2): {"kind": ForestMapGraph.NodeKind.LOOKOUT, "name": "断枝高台"},
+		Vector2i(2, 1): {"kind": ForestMapGraph.NodeKind.DESTINY_GATE, "name": "命运石之门"},
+		Vector2i(4, 0): {"kind": ForestMapGraph.NodeKind.SUPPLY, "name": "林荫行囊"},
+		Vector2i(5, 1): {"kind": ForestMapGraph.NodeKind.SUPPLY, "name": "遗落行囊"},
+		Vector2i(6, 1): {"kind": ForestMapGraph.NodeKind.GAMBLE, "name": "迷雾庄台"},
+		Vector2i(5, 3): {"kind": ForestMapGraph.NodeKind.BATTLE, "name": "林间哨卡"},
+		Vector2i(0, 5): {"kind": ForestMapGraph.NodeKind.GAMBLE, "name": "林边骰局"},
+		Vector2i(1, 5): {"kind": ForestMapGraph.NodeKind.CAMP, "name": "西林营火"},
+		Vector2i(2, 5): {"kind": ForestMapGraph.NodeKind.DANGER, "name": "荆棘险径"},
+		Vector2i(3, 5): {"kind": ForestMapGraph.NodeKind.CAMP, "name": "旧猎人营火"},
+		Vector2i(4, 6): {"kind": ForestMapGraph.NodeKind.SUPPLY, "name": "溪畔行囊"},
+		Vector2i(5, 5): {"kind": ForestMapGraph.NodeKind.SHRINE, "name": "荒野御灵社"},
+		Vector2i(6, 6): {"kind": ForestMapGraph.NodeKind.EVENT, "name": "残碑秘窟"},
+		Vector2i(7, 5): {"kind": ForestMapGraph.NodeKind.HIDEOUT, "name": "翠影树洞"},
+		Vector2i(7, 1): {"kind": ForestMapGraph.NodeKind.ELITE, "name": "追猎者驻地"},
+		Vector2i(8, 1): {"kind": ForestMapGraph.NodeKind.DESTINY_GATE, "name": "余晖命运石之门"},
+		Vector2i(8, 2): {"kind": ForestMapGraph.NodeKind.FORGE, "name": "余烬锻台"},
+		Vector2i(7, 3): {"kind": ForestMapGraph.NodeKind.CENTER, "name": "烬心祭坛"},
+		Vector2i(8, 4): {"kind": ForestMapGraph.NodeKind.SHOP, "name": "战前行商"},
+		Vector2i(8, 5): {"kind": ForestMapGraph.NodeKind.EXIT, "name": "关底守卫 · 归途石门"},
+	}
+
+	for y in graph.grid_size.y:
+		for x in graph.grid_size.x:
+			var cell := Vector2i(x, y)
+			if graph.is_obstacle(cell):
+				continue
+			var nid := ForestMapGraph.cell_label(cell)
+			var kind: int = ForestMapGraph.NodeKind.PASSAGE
+			var title := "林间空地"
+			if specials.has(cell):
+				kind = int(specials[cell].kind)
+				title = String(specials[cell].name)
+			var node := ForestMapGraph.MapNode.new(
+				nid,
+				title,
+				kind,
+				Vector2.ZERO,
+				ForestMapGraph.kind_icon(kind),
+				ForestMapGraph.kind_summary(kind),
+				cell
+			)
+			graph.register_grid_node(cell, node)
+
+	graph.connect_grid_orthogonals()
+
+	# 东侧巡逻闭环（不阻挡 B4->C4->C3->C2 到门路线，也不阻挡 C4->F4 直接接战路线）
+	graph.patrol_route = ["G5", "H5", "H6", "G6"]
+	return graph
+
+static func generate(seed_val: int = -1, floor_level: int = 2) -> ForestMapGraph:
+	return generate_grid(seed_val, floor_level)
+
+## 第 2 层及后续所有楼层统一使用 9×7 方格地图（随机种子决定地形与地点分布，保持少障碍、多有用节点、空节点自由通行）
+static func generate_grid(seed_val: int = -1, floor_level: int = 2) -> ForestMapGraph:
 	if seed_val < 0:
 		seed_val = int(Time.get_unix_time_from_system() * 1000) ^ randi()
 	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_val
-	
+	rng.seed = seed_val ^ (floor_level * 9973)
+
 	var graph := ForestMapGraph.new()
 	graph.seed_value = seed_val
-	
-	# 分层节点数量规划：7层架构 (Spawn -> 2~3 -> 3~4 -> 3~4 -> Center/Forge -> 3~4 -> 2~3 -> Exit)
-	var layer_sizes: Array[int] = [
-		1,
-		rng.randi_range(2, 3),
-		rng.randi_range(3, 4),
-		rng.randi_range(3, 4),
-		3, # 中心层：保底烬心祭坛、余烬锻台、特殊通道
-		rng.randi_range(3, 4),
-		rng.randi_range(2, 3),
-		1
+	graph.is_grid = true
+	graph.grid_size = Vector2i(9, 7)
+
+	# 1. 选定核心地标坐标（随种子变化，确保每层结构清晰：西入口 -> 早门/哨塔 -> 中段交锋 -> 东侧祭坛/行商/归途石门）
+	var spawn_cell := Vector2i(rng.randi_range(0, 1), rng.randi_range(2, 4))
+	var exit_cell := Vector2i(8, rng.randi_range(1, 5))
+	var shop_y := exit_cell.y - 1 if exit_cell.y > 0 else exit_cell.y + 1
+	var shop_cell := Vector2i(8, shop_y)
+
+	# 烬心祭坛在东侧 6~7 列
+	var center_cell := Vector2i(rng.randi_range(6, 7), rng.randi_range(2, 4))
+	if center_cell == exit_cell or center_cell == shop_cell:
+		center_cell = Vector2i(6, 3)
+
+	# 巡逻 2x2 闭环放在中东侧 (col 6..7, row 4..5 或 1..2，避开 center / spawn / early gate)
+	var patrol_top := 1 if center_cell.y >= 3 else 4
+	var p_cells: Array[Vector2i] = [
+		Vector2i(5, patrol_top),
+		Vector2i(6, patrol_top),
+		Vector2i(6, patrol_top + 1),
+		Vector2i(5, patrol_top + 1),
 	]
-	
-	var total_layers := layer_sizes.size()
-	var layers: Array[Array] = [] # 每层的节点 ID 列表
-	var node_counter := 0
-	
-	# 节点池（根据阶段动态权重）
-	var normal_pool: Array[int] = [
-		ForestMapGraph.NodeKind.BATTLE,
-		ForestMapGraph.NodeKind.SUPPLY,
-		ForestMapGraph.NodeKind.EVENT,
-		ForestMapGraph.NodeKind.HIDEOUT,
-		ForestMapGraph.NodeKind.LOOKOUT,
-		ForestMapGraph.NodeKind.DANGER,
-		ForestMapGraph.NodeKind.SHRINE
+
+	var reserved := {
+		spawn_cell: true,
+		exit_cell: true,
+		shop_cell: true,
+		center_cell: true,
+	}
+	for pc in p_cells:
+		reserved[pc] = true
+
+	# 2. 放置 4 处不封路的轻量地形障碍（树林 / 水域）
+	var candidate_obs: Array[Vector2i] = [
+		Vector2i(0, 0), Vector2i(3, 0), Vector2i(4, 3), Vector2i(4, 5),
+		Vector2i(2, 6), Vector2i(7, 0), Vector2i(8, 6), Vector2i(1, 1)
 	]
-	var late_pool: Array[int] = [
-		ForestMapGraph.NodeKind.ELITE,
-		ForestMapGraph.NodeKind.SHOP,
-		ForestMapGraph.NodeKind.FORGE,
-		ForestMapGraph.NodeKind.GAMBLE,
-		ForestMapGraph.NodeKind.CAMP,
-		ForestMapGraph.NodeKind.BATTLE
+	_shuffle_cells(candidate_obs, rng)
+	var obs_placed := 0
+	for oc in candidate_obs:
+		if obs_placed >= 4:
+			break
+		if reserved.has(oc):
+			continue
+		# 不贴着 spawn 或 exit 堵路
+		if (oc - spawn_cell).abs().x + (oc - spawn_cell).abs().y <= 1:
+			continue
+		if (oc - exit_cell).abs().x + (oc - exit_cell).abs().y <= 1:
+			continue
+		graph.set_obstacle(oc, "water" if obs_placed == 0 else "trees")
+		reserved[oc] = true
+		obs_placed += 1
+
+	# 3. 按分区放置有用节点（保底含双命运石之门 + 全功能节点 + 少量战斗点，其余全为空节点 PASSAGE）
+	var specials: Dictionary = {}
+	specials[spawn_cell] = {"kind": ForestMapGraph.NodeKind.SPAWN, "name": "层间入口"}
+	specials[exit_cell] = {"kind": ForestMapGraph.NodeKind.EXIT, "name": "关底守卫 · 归途石门"}
+	specials[shop_cell] = {"kind": ForestMapGraph.NodeKind.SHOP, "name": "战前行商"}
+	specials[center_cell] = {"kind": ForestMapGraph.NodeKind.CENTER, "name": "烬心祭坛"}
+
+	# 西区非战斗安全池（cols 0..3）：早门、瞭望台、补给、神龛、营地、树洞
+	var west_cells: Array[Vector2i] = []
+	for y in graph.grid_size.y:
+		for x in range(0, 4):
+			var c := Vector2i(x, y)
+			if not reserved.has(c) and not graph.is_obstacle(c):
+				west_cells.append(c)
+	_shuffle_cells(west_cells, rng)
+
+	# 确保首座命运石之门在西区且与入口之间可通过无战路线直达
+	var early_gate_cell := Vector2i(2, 1)
+	for wc in west_cells:
+		if absi(wc.x - spawn_cell.x) + absi(wc.y - spawn_cell.y) >= 2:
+			early_gate_cell = wc
+			break
+	specials[early_gate_cell] = {"kind": ForestMapGraph.NodeKind.DESTINY_GATE, "name": "命运石之门"}
+	reserved[early_gate_cell] = true
+	west_cells.erase(early_gate_cell)
+
+	var west_roles := [
+		{"kind": ForestMapGraph.NodeKind.LOOKOUT, "name": "断枝高台"},
+		{"kind": ForestMapGraph.NodeKind.SUPPLY, "name": "遗落行囊"},
+		{"kind": ForestMapGraph.NodeKind.SHRINE, "name": "荒野御灵社"},
+		{"kind": ForestMapGraph.NodeKind.CAMP, "name": "林间营火"},
+		{"kind": ForestMapGraph.NodeKind.HIDEOUT, "name": "翠影树洞"},
+		{"kind": ForestMapGraph.NodeKind.SUPPLY, "name": "林荫补给"},
 	]
-	
-	for l in total_layers:
-		var size: int = layer_sizes[l]
-		var layer_nodes: Array[String] = []
-		for j in size:
-			var node_id := "n_%d" % node_counter
-			node_counter += 1
-			layer_nodes.append(node_id)
-			
-			# 确定节点类型
-			var kind: int = ForestMapGraph.NodeKind.BATTLE
-			if l == 0:
-				kind = ForestMapGraph.NodeKind.SPAWN
-			elif l == total_layers - 1:
-				kind = ForestMapGraph.NodeKind.EXIT
-			elif l == 4 and j == 1:
-				kind = ForestMapGraph.NodeKind.CENTER
-			elif l == 4 and j == 0:
-				kind = ForestMapGraph.NodeKind.FORGE
-			elif l < 4:
-				kind = normal_pool[rng.randi() % normal_pool.size()]
-			else:
-				kind = late_pool[rng.randi() % late_pool.size()]
-			
-			# 计算坐标 (X 横向推进，Y 纵向均匀微扰)
-			var base_x := 0.08 + float(l) * (0.84 / float(total_layers - 1))
-			var jitter_x := rng.randf_range(-0.02, 0.02)
-			var pos_x := clampf(base_x + jitter_x, 0.05, 0.95)
-			
-			var base_y := 0.5 if size == 1 else 0.16 + float(j) * (0.68 / float(size - 1))
-			var jitter_y := 0.0 if size == 1 else rng.randf_range(-0.04, 0.04)
-			var pos_y := clampf(base_y + jitter_y, 0.10, 0.90)
-			
-			var prefix: String = PREFIXES[rng.randi() % PREFIXES.size()]
-			var suffix: String = SUFFIXES.get(kind, "旧地")
-			var title: String = prefix + suffix
-			
-			var node := ForestMapGraph.MapNode.new(node_id, title, kind, Vector2(pos_x, pos_y), ForestMapGraph.kind_icon(kind), ForestMapGraph.kind_summary(kind))
-			graph.add_node(node)
-		
-		layers.append(layer_nodes)
-	
-	# 保底必有关键功能节点修正（同步刷新图标与描述，避免图文错配）
-	_set_node_meta(graph.get_node(layers[1][0]), ForestMapGraph.NodeKind.SUPPLY, "遗落行囊")
-	_set_node_meta(graph.get_node(layers[1][1]), ForestMapGraph.NodeKind.BATTLE, "林间哨卡")
-	
-	if layers[2].size() >= 2:
-		_set_node_meta(graph.get_node(layers[2][0]), ForestMapGraph.NodeKind.LOOKOUT, "断枝高台")
-		_set_node_meta(graph.get_node(layers[2][1]), ForestMapGraph.NodeKind.SHRINE, "荒野御灵社")
-	
-	if layers[3].size() >= 2:
-		_set_node_meta(graph.get_node(layers[3][0]), ForestMapGraph.NodeKind.HIDEOUT, "翠影树洞")
-		_set_node_meta(graph.get_node(layers[3][1]), ForestMapGraph.NodeKind.DANGER, "荆棘裂谷")
-	
-	_set_node_meta(graph.get_node(layers[4][1]), ForestMapGraph.NodeKind.CENTER, "烬心祭坛")
-	
-	if layers[5].size() >= 2:
-		_set_node_meta(graph.get_node(layers[5][0]), ForestMapGraph.NodeKind.ELITE, "追猎者驻地")
-		_set_node_meta(graph.get_node(layers[5][1]), ForestMapGraph.NodeKind.EVENT, "残碑秘窟")
-	
-	if layers[6].size() >= 2:
-		_set_node_meta(graph.get_node(layers[6][0]), ForestMapGraph.NodeKind.SHOP, "战前行商")
-		_set_node_meta(graph.get_node(layers[6][1]), ForestMapGraph.NodeKind.CAMP, "战前营地")
-	elif layers[6].size() >= 1:
-		_set_node_meta(graph.get_node(layers[6][0]), ForestMapGraph.NodeKind.SHOP, "战前行商")
-		
-	var exit_node = graph.get_node(layers[layers.size() - 1][0])
-	_set_node_meta(exit_node, ForestMapGraph.NodeKind.EXIT, "关底守卫 · 归途石门")
-	
-	# 建立层间连线 (主干、支线与环路)
-	var edge_count := 0
-	for l in range(1, layers.size()):
-		var prev_layer: Array = layers[l - 1]
-		var curr_layer: Array = layers[l]
-		
-		# 1. 主干道保底
-		var main_prev: String = prev_layer[mini(1, prev_layer.size() - 1)]
-		var main_curr: String = curr_layer[mini(1, curr_layer.size() - 1)]
-		_add_edge_internal(graph, "e_%d" % edge_count, main_prev, main_curr, ForestMapGraph.RouteKind.MAIN, rng)
-		edge_count += 1
-		
-		# 2. 保证每个当前节点至少有一条来自上一层的输入
-		for node_to in curr_layer:
-			var has_in := false
-			for node_from in prev_layer:
-				if graph.find_edge(node_from, node_to) != null:
-					has_in = true
-					break
-			if not has_in:
-				var chosen_from: String = prev_layer[rng.randi() % prev_layer.size()]
-				_add_edge_internal(graph, "e_%d" % edge_count, chosen_from, node_to, ForestMapGraph.RouteKind.BRANCH, rng)
-				edge_count += 1
-		
-		# 3. 保证上一层的每个节点至少连出一条到下一层
-		for node_from in prev_layer:
-			var has_out := false
-			for node_to in curr_layer:
-				if graph.find_edge(node_from, node_to) != null:
-					has_out = true
-					break
-			if not has_out:
-				var chosen_to: String = curr_layer[rng.randi() % curr_layer.size()]
-				_add_edge_internal(graph, "e_%d" % edge_count, node_from, chosen_to, ForestMapGraph.RouteKind.BRANCH, rng)
-				edge_count += 1
-		
-		# 4. 随机增加分支与跨层环路 (增加肉鸽多选自由度)
-		for node_to in curr_layer:
-			if rng.randf() < 0.45:
-				var chosen_from: String = prev_layer[rng.randi() % prev_layer.size()]
-				if graph.find_edge(chosen_from, node_to) == null:
-					_add_edge_internal(graph, "e_%d" % edge_count, chosen_from, node_to, ForestMapGraph.RouteKind.LOOP, rng)
-					edge_count += 1
-	
-	# 建立闭环巡逻路线 (供巡逻兽群游走)
-	if layers[3].size() >= 2 and layers[4].size() >= 2:
-		var a: String = layers[3][0]
-		var b: String = layers[4][0]
-		var c: String = layers[4][mini(2, layers[4].size() - 1)]
-		var d: String = layers[3][mini(1, layers[3].size() - 1)]
-		_ensure_edge(graph, edge_count, a, b, rng); edge_count += 1
-		_ensure_edge(graph, edge_count, b, c, rng); edge_count += 1
-		_ensure_edge(graph, edge_count, c, d, rng); edge_count += 1
-		_ensure_edge(graph, edge_count, d, a, rng); edge_count += 1
-		graph.patrol_route = [a, b, c, d]
-	
-	# 建立隐秘捷径 (跨越多层，需消耗 1 点情报碎片与 2 点行动力)
-	if layers[2].size() > 0 and layers[6].size() > 0:
-		var sc_from: String = layers[2][layers[2].size() - 1]
-		var sc_to: String = layers[6][layers[6].size() - 1]
-		var sc := ForestMapGraph.MapEdge.new("shortcut_0", sc_from, sc_to, ForestMapGraph.RouteKind.SHORTCUT, 0.12)
-		sc.hidden = true
-		sc.action_cost = 2
-		sc.intel_cost = 1
-		graph.add_edge(sc)
-	
+	for role in west_roles:
+		if west_cells.is_empty():
+			break
+		var pick: Vector2i = west_cells.pop_back()
+		specials[pick] = role
+		reserved[pick] = true
+
+	# 中东区（cols 4..8）：战斗、精英、锻台、事件、博弈、险地、后门、额外补给与营地
+	var east_cells: Array[Vector2i] = []
+	for y in graph.grid_size.y:
+		for x in range(4, 9):
+			var c := Vector2i(x, y)
+			if not reserved.has(c) and not graph.is_obstacle(c):
+				east_cells.append(c)
+	_shuffle_cells(east_cells, rng)
+
+	var mid_roles := [
+		{"kind": ForestMapGraph.NodeKind.DESTINY_GATE, "name": "余晖命运石之门"},
+		{"kind": ForestMapGraph.NodeKind.FORGE, "name": "余烬锻台"},
+		{"kind": ForestMapGraph.NodeKind.BATTLE, "name": "林间哨卡"},
+		{"kind": ForestMapGraph.NodeKind.ELITE, "name": "追猎者驻地"},
+		{"kind": ForestMapGraph.NodeKind.EVENT, "name": "残碑秘窟"},
+		{"kind": ForestMapGraph.NodeKind.DANGER, "name": "荆棘裂谷"},
+		{"kind": ForestMapGraph.NodeKind.GAMBLE, "name": "迷雾庄台"},
+		{"kind": ForestMapGraph.NodeKind.SUPPLY, "name": "深林行囊"},
+		{"kind": ForestMapGraph.NodeKind.CAMP, "name": "战前营地"},
+		{"kind": ForestMapGraph.NodeKind.BATTLE, "name": "焦木伏击"},
+		{"kind": ForestMapGraph.NodeKind.SHRINE, "name": "林光神龛"},
+	]
+	for role in mid_roles:
+		if east_cells.is_empty():
+			break
+		var pick: Vector2i = east_cells.pop_back()
+		specials[pick] = role
+		reserved[pick] = true
+
+	# 4. 注册全部可通行格（非特殊点即为空节点 PASSAGE）
+	for y in graph.grid_size.y:
+		for x in graph.grid_size.x:
+			var cell := Vector2i(x, y)
+			if graph.is_obstacle(cell):
+				continue
+			var nid := ForestMapGraph.cell_label(cell)
+			var kind: int = ForestMapGraph.NodeKind.PASSAGE
+			var title := "林间空地"
+			if specials.has(cell):
+				kind = int(specials[cell].kind)
+				title = String(specials[cell].name)
+			var node := ForestMapGraph.MapNode.new(
+				nid,
+				title,
+				kind,
+				Vector2.ZERO,
+				ForestMapGraph.kind_icon(kind),
+				ForestMapGraph.kind_summary(kind),
+				cell
+			)
+			graph.register_grid_node(cell, node)
+
+	graph.connect_grid_orthogonals()
+
+	# 巡逻路线绑定到中东侧闭环
+	var patrol_ids: Array[String] = []
+	for pc in p_cells:
+		var pnid := graph.node_id_at(pc)
+		if not pnid.is_empty():
+			patrol_ids.append(pnid)
+	if patrol_ids.size() >= 2:
+		graph.patrol_route = patrol_ids
+
 	return graph
+
+static func _shuffle_cells(arr: Array[Vector2i], rng: RandomNumberGenerator) -> void:
+	for i in range(arr.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp := arr[i]
+		arr[i] = arr[j]
+		arr[j] = tmp
+
+static func _ensure_fixed_edge(g: ForestMapGraph, id: String, from_id: String, to_id: String, kind: int, bend: float) -> void:
+	if from_id == to_id or g.find_edge(from_id, to_id) != null:
+		return
+	var edge := ForestMapGraph.MapEdge.new(id, from_id, to_id, kind, bend)
+	g.add_edge(edge)
 
 static func _set_node_meta(node: ForestMapGraph.MapNode, kind: int, title: String) -> void:
 	if node == null:

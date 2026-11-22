@@ -174,7 +174,8 @@ func _test_action_dice_system() -> void:
 	# 4. Floor advance resets dice state
 	var map2 = ForestRandomGenerator.generate(151)
 	run_f.roll_action_dice(4)
-	run_f.advance_to_next_floor(map2, 151)
+	run_f.floor_cleared = true
+	check(run_f.advance_to_next_floor(map2, 151, "balanced"), "Can advance after selecting a modifier")
 	check(not run_f.dice_rolled and run_f.actions_left == 0 and run_f.action_budget == 0, "Advancing floor resets dice state")
 
 func _test_forest_run_nodes_and_patrol() -> void:
@@ -328,13 +329,17 @@ func _test_floor_progression_and_exit_boss() -> void:
 	
 	# Advance to next floor
 	var map2 = ForestRandomGenerator.generate(501)
-	run.advance_to_next_floor(map2, 501)
+	check(run.carried_cost == 65, "Boss awards 15 Cost")
+	if run.pending == "card_reward":
+		run.skip_card_reward()
+	var cost_before := int(run.carried_cost)
+	check(run.advance_to_next_floor(map2, 501, "fortified"), "Boss rewards and a modifier unlock the next floor")
 	check(run.floor_level == 2, "Floor level increased to 2")
 	check(not run.floor_cleared, "Floor 2 is not cleared upon entry")
 	check(run.position == map2.start_id, "Position reset to map2 start_id")
 	check(run.party_hp == [45, 40, 42], "Party HP preserved across floors")
 	check(run.relics.has("mercury_die"), "Relics preserved across floors")
-	check(run.carried_cost == 65, "Cost preserved (50 + 15 boss reward = 65)")
+	check(run.carried_cost == cost_before, "Cost preserved across floors")
 	check(not run.ember_core, "the next floor starts without the previous Ember Core")
 	run.position = map2.exit_id
 	run.enter_node()

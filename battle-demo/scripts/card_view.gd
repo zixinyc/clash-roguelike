@@ -20,6 +20,20 @@ const USE_HINTS := {
 	"zixingyc_paradox": "削弱目标拼点 · 整理检索",
 	"zixingyc_yesterday": "拼点防御 · 拼败减伤",
 	"zixingyc_ending": "全体轰炸 · 每场两次",
+	"pufufu_fuzz_friction": "0 费起手 · 叠 2 层蓬松",
+	"pufufu_soft_guard": "拼赢 10 盾 · 拼输 7 盾",
+	"pufufu_static_fuzz": "拼赢追加伤害 · 拼输换蓬松",
+	"pufufu_fuzz_heal": "治疗血量最低的队友",
+	"pufufu_fuzz_combo": "拼赢叠 2 层蓬松",
+	"pufufu_fuzz_bless": "给最低血队友挂跨回合护盾",
+	"pufufu_fuzz_barrier": "自身 16 点跨回合护盾",
+	"pufufu_warm_echo": "全体回血 · 消耗 1 层蓬松",
+	"pufufu_thick_wall": "跨回合厚盾 · 可强化",
+	"pufufu_fluff_hug": "消耗全部蓬松 · 全体回血加盾",
+	"ziwu_cold_edge": "双正面 +3 伤 · 拼输下回合易伤",
+	"ziwu_backstab": "残血拼点 +3 · 可处决友军获绝缘",
+	"ziwu_lone_intercept": "拼赢 +4 伤 · 耗 2 绝缘强化",
+	"ziwu_meridian_slash": "耗全部绝缘爆发 · 自损 5 HP",
 }
 
 var skill: Dictionary = {}

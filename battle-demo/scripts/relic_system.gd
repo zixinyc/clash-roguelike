@@ -87,6 +87,34 @@ const RELICS := {
 		"rarity": "uncommon",
 		"description": "林间小道移动时产生的噪音与警戒度增长速度降低 50%。",
 		"price": 10
+	},
+	"dawn_amber": {
+		"name": "晨曦琥珀",
+		"icon": "🌅",
+		"rarity": "uncommon",
+		"description": "战斗第 1 回合开始时，全队存活角色额外获得 6 点开场护盾。",
+		"price": 11
+	},
+	"broken_crest": {
+		"name": "断剑徽记",
+		"icon": "🗡️",
+		"rarity": "rare",
+		"description": "单方面攻击与队友夹击的额外伤害加成由 +3 提升至 +5。",
+		"price": 13
+	},
+	"time_hourglass": {
+		"name": "时之沙漏",
+		"icon": "⏳",
+		"rarity": "uncommon",
+		"description": "林野探索投掷 1d4 行动骰时，若基础点数为 1，自动修正为 2 步。",
+		"price": 11
+	},
+	"hakurei_amulet": {
+		"name": "博丽御守",
+		"icon": "⛩️",
+		"rarity": "common",
+		"description": "在营地休整或御灵神龛祈福时，生命恢复效果额外提升 50%。",
+		"price": 9
 	}
 }
 
@@ -117,6 +145,48 @@ const ITEMS := {
 		"icon": "🩹",
 		"description": "为受伤的存活队员中生命最低的一位恢复最多 12 生命。可在地图或战斗中使用。",
 		"price": 6,
+		"combat_only": false
+	},
+	"whetstone": {
+		"name": "淬火磨刀石",
+		"icon": "🪨",
+		"description": "本回合全队所有技能拼点基础威力 +2。",
+		"price": 6,
+		"combat_only": true
+	},
+	"echo_pendulum": {
+		"name": "回响灵摆",
+		"icon": "🔮",
+		"description": "地图中使用：疲劳 -2 且获得 3 cost；战斗中使用：立即获得 3 cost 且全队 +4 护盾。",
+		"price": 7,
+		"combat_only": false
+	},
+	"phoenix_feather": {
+		"name": "凤凰尾羽",
+		"icon": "🪶",
+		"description": "地图使用：复活 1 名阵亡队员并恢复 30% 生命值（若全员存活则为伤势最重者恢复 16 生命）；战斗中使用：全体存活队员恢复 10 生命并获得 6 护盾。",
+		"price": 8,
+		"combat_only": false
+	},
+	"shatter_bomb": {
+		"name": "破甲炸弹",
+		"icon": "💣",
+		"description": "仅限战斗使用：摧毁敌方全体最多 12 点护盾，且本回合全队拼点威力 +1。",
+		"price": 6,
+		"combat_only": true
+	},
+	"clarity_elixir": {
+		"name": "澄明甘露",
+		"icon": "💧",
+		"description": "地图使用：消除全部疲劳，并获得 4 cost；战斗中使用：立即获得 4 cost，灵台空明。",
+		"price": 6,
+		"combat_only": false
+	},
+	"gambler_die": {
+		"name": "命运秘骰",
+		"icon": "🎲",
+		"description": "投掷 1d6 秘骰。地图使用：单数 +6 cost，双数 +2 命运；战斗中使用：1~3 全队 +7 护盾，4~5 +5 cost，6 本回合全队硬币必出正面。",
+		"price": 7,
 		"combat_only": false
 	}
 }

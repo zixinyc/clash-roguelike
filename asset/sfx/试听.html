@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>《余烬交锋》战斗音效试听</title>
+<style>
+  :root{
+    --bg:#16161a; --panel:#1e1e24; --line:#33333c;
+    --text:#e6e6ec; --muted:#9a9aa6; --accent:#ffb054; --accent2:#7fd4ff;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:28px 30px 60px;
+    background:var(--bg); color:var(--text);
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+    font-size:14px; line-height:1.7;
+  }
+  h1{font-size:20px; margin:0 0 6px; letter-spacing:.5px}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:20px}
+  .note{
+    background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:6px; padding:12px 16px; margin-bottom:22px; color:var(--muted); font-size:13px;
+  }
+  .note em{color:var(--accent2); font-style:normal}
+  h2{
+    font-size:15px; margin:26px 0 10px; padding-bottom:6px;
+    border-bottom:1px solid var(--line); color:var(--accent);
+  }
+  .row{
+    display:flex; align-items:center; gap:14px;
+    padding:9px 12px; border-radius:6px; background:var(--panel);
+    margin-bottom:6px; border:1px solid transparent;
+  }
+  .row:hover{border-color:var(--line)}
+  .name{width:180px; flex:none}
+  .file{width:200px; flex:none; color:var(--muted); font-family:Consolas,monospace; font-size:12px}
+  .dur{width:56px; flex:none; color:var(--muted); font-size:12px}
+  .lvl{width:64px; flex:none; color:var(--muted); font-size:12px}
+  audio{flex:1; height:32px}
+  .tip{color:var(--muted); font-size:12px; margin:16px 0 0}
+  img.sheet{width:100%; border:1px solid var(--line); border-radius:6px; margin-top:10px}
+</style>
+</head>
+<body>
+
+<h1>《余烬交锋》战斗音效试听</h1>
+<div class="sub">14 类 × 3 个变体，共 42 个 · 44100Hz / 16bit / 单声道 WAV</div>
+
+<div class="note">
+  用浏览器直接打开这个文件就能听。点播放会停掉上一个音，同一时刻只会有一个在响。
+  每类三个变体（a / b / c），游戏里随机取用可以避免重复听感。
+  全部音效的响度已经统一过（<em>RMS −20 dB</em>，峰值不超 −1.5 dB），
+  放在一起不会一个盖过一个。波形图在页面最下面。
+</div>
+
+<div id="list"></div>
+
+<div class="tip">
+  建议重点听三组：
+  「拼点碰撞」和「命中受击」的区别（前者是金属，后者是闷响）；
+  「格挡」比「碰撞」更沉一点；
+  「破币」是稀疏的多声咔哒，和其他音效的质感完全不同。
+</div>
+
+<h2>波形表</h2>
+<img class="sheet" src="_wave_sheet.png" alt="音效波形表">
+
+<script>
+const GROUPS = [
+  { title: "界面", items: [
+    ["界面悬停", "sfx_ui_hover", 0.07],
+    ["按钮点击", "sfx_ui_click", 0.12],
+    ["选中卡牌", "sfx_ui_select_card", 0.35],
+    ["无效操作提示", "sfx_ui_error", 0.22]
+  ]},
+  { title: "拼点", items: [
+    ["拼点碰撞（金属交击）", "sfx_clash_metal", 0.99],
+    ["硬币破碎", "sfx_clash_coin_break", 0.78]
+  ]},
+  { title: "受击", items: [
+    ["命中受击（肉体打击）", "sfx_hit_flesh", 0.54],
+    ["斩击（刀锋呼啸）", "sfx_hit_slash", 0.52],
+    ["格挡 / 迎击", "sfx_guard_block", 0.57]
+  ]},
+  { title: "卡牌", items: [
+    ["抽牌 / 摸牌", "sfx_card_draw", 0.80],
+    ["打出 / 放下卡牌", "sfx_card_place", 0.72]
+  ]},
+  { title: "技能与结算", items: [
+    ["技能发动（能量上涌）", "sfx_skill_cast", 0.95],
+    ["胜利", "sfx_victory", 1.26],
+    ["失败", "sfx_defeat", 1.72]
+  ]}
+];
+
+const list = document.getElementById("list");
+let current = null;
+
+for (const g of GROUPS) {
+  const h = document.createElement("h2");
+  h.textContent = g.title;
+  list.appendChild(h);
+  for (const [cn, id, dur] of g.items) {
+    for (const v of ["a", "b", "c"]) {
+      const row = document.createElement("div");
+      row.className = "row";
+
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = cn;
+
+      const file = document.createElement("div");
+      file.className = "file";
+      file.textContent = `${id}_${v}.wav`;
+
+      const d = document.createElement("div");
+      d.className = "dur";
+      d.textContent = dur.toFixed(2) + "s";
+
+      const lvl = document.createElement("div");
+      lvl.className = "lvl";
+      lvl.textContent = "变体 " + v;
+
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.preload = "none";
+      audio.src = `${id}_${v}.wav`;
+      audio.addEventListener("play", () => {
+        if (current && current !== audio) current.pause();
+        current = audio;
+      });
+
+      row.append(name, file, d, lvl, audio);
+      list.appendChild(row);
+    }
+  }
+}
+</script>
+</body>
+</html>

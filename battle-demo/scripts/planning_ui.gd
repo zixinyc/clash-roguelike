@@ -1,10 +1,12 @@
 extends Control
 
 signal setup_requested
+signal battle_finished
 var lineup: Array = []
 var deck: Variant = null
 var exploration_run: RefCounted
 var use_deck_cycle := false
+var use_team_synergy := false
 var setup_button: Button
 
 const Rules = preload("res://scripts/battle_rules.gd")
@@ -37,12 +39,15 @@ var zixi_button: Button
 var zixi_team := false
 var zixingyc_button: Button
 var zixingyc_team := false
+var pufufu_button: Button
+var pufufu_team := false
 var enhance_selected := false
 var busy := false
 var speed := 1.0
 var last_second := -1
 var ally_status: Label
 var enemy_status: Label
+var clash_rate_label: Label
 var guide: Label
 var item_button: Button
 var item_popup: PanelContainer
@@ -98,8 +103,10 @@ func _ready() -> void:
 	top.add_child(zixi_button)
 	zixingyc_button = button("ZiXingYC", _switch_zixingyc)
 	top.add_child(zixingyc_button)
+	pufufu_button = button("pufufu", _switch_pufufu)
+	top.add_child(pufufu_button)
 	if not lineup.is_empty():
-		for control in [encounter_button, team_button, zixi_button, zixingyc_button]:
+		for control in [encounter_button, team_button, zixi_button, zixingyc_button, pufufu_button]:
 			control.hide()
 		setup_button = button("阵容与卡组", func() -> void: setup_requested.emit())
 		top.add_child(setup_button)
@@ -114,6 +121,22 @@ func _ready() -> void:
 	statuses.add_theme_constant_override("separation", 12)
 	column.add_child(statuses)
 	ally_status = _status_panel(statuses, Color("80d6df"))
+	var rate_panel := PanelContainer.new()
+	var rate_style := StyleBoxFlat.new()
+	rate_style.bg_color = Color("2b2116")
+	rate_style.border_color = Color("d6a447")
+	rate_style.set_border_width_all(1)
+	rate_style.set_corner_radius_all(5)
+	rate_style.content_margin_left = 12
+	rate_style.content_margin_right = 12
+	rate_style.content_margin_top = 8
+	rate_style.content_margin_bottom = 8
+	rate_panel.add_theme_stylebox_override("panel", rate_style)
+	statuses.add_child(rate_panel)
+	clash_rate_label = label("我方拼点正面率 65%", 18)
+	clash_rate_label.add_theme_color_override("font_color", Color("f5c963"))
+	clash_rate_label.tooltip_text = "全队所有参与真实拼点的技能自然硬币正面率（敌方固定 50%）"
+	rate_panel.add_child(clash_rate_label)
 	enemy_status = _status_panel(statuses, Color("ee9b8b"))
 	stage = Stage.new()
 	stage.custom_minimum_size.y = 280
@@ -225,6 +248,7 @@ func _switch_team() -> void:
 	touhou_team = not touhou_team
 	zixi_team = false
 	zixingyc_team = false
+	pufufu_team = false
 	new_battle()
 
 func _switch_zixi() -> void:
@@ -233,6 +257,7 @@ func _switch_zixi() -> void:
 	zixi_team = not zixi_team
 	touhou_team = false
 	zixingyc_team = false
+	pufufu_team = false
 	new_battle()
 
 func _switch_zixingyc() -> void:
@@ -241,6 +266,16 @@ func _switch_zixingyc() -> void:
 	zixingyc_team = not zixingyc_team
 	touhou_team = false
 	zixi_team = false
+	pufufu_team = false
+	new_battle()
+
+func _switch_pufufu() -> void:
+	if busy:
+		return
+	pufufu_team = not pufufu_team
+	touhou_team = false
+	zixi_team = false
+	zixingyc_team = false
 	new_battle()
 
 func _build_pile_popup(top: HBoxContainer) -> void:
@@ -428,19 +463,26 @@ func new_battle() -> void:
 	if is_instance_valid(pile_popup):
 		pile_popup.hide()
 	var enable_cycle: bool = use_deck_cycle or exploration_run != null
+	var ally_heads_rate: float = exploration_run.get_clash_heads_rate() if (exploration_run != null and exploration_run.has_method("get_clash_heads_rate")) else Rules.DEFAULT_CLASH_HEADS_CHANCE
 	var stage3_combat_cfg := {
 		"flex_attack_in_ultimate": true,
 		"unopposed_bonus": true,
 		"deck_cycle": enable_cycle,
+		"synergy_enabled": use_team_synergy or exploration_run != null,
 		"draw_count": Rules.DEFAULT_DRAW_COUNT,
+		"ally_clash_heads_chance": ally_heads_rate,
 		"card_instances": exploration_run.card_instances.duplicate(true) if exploration_run != null else [],
 		"deck_enchants": exploration_run.deck_enchants.duplicate() if exploration_run != null else {},
+		"party_hp": exploration_run.party_hp.duplicate() if exploration_run != null else [],
+		"party_max_hp": exploration_run.party_max_hp.duplicate() if exploration_run != null else [],
 	}
 	if exploration_run == null:
-		battle.start(73129, encounter, touhou_team, zixi_team, lineup, deck, zixingyc_team, [], [], stage3_combat_cfg)
+		battle.start(73129, encounter, touhou_team, zixi_team, lineup, deck, zixingyc_team, [], [], stage3_combat_cfg, pufufu_team)
 	else:
+		stage3_combat_cfg.merge(exploration_run.get_enemy_modifier_config())
 		battle.start(randi(), encounter, false, false, lineup, deck, false, exploration_run.relics, exploration_run.items, stage3_combat_cfg)
-		battle.cost = exploration_run.carried_cost
+		var synergy_bonus_cost := maxi(0, battle.cost - Rules.START_COST)
+		battle.cost = exploration_run.carried_cost + synergy_bonus_cost
 		for i in battle.heroes.size():
 			battle.heroes[i].hp = exploration_run.party_hp[i]
 			battle.heroes[i].max_hp = exploration_run.party_max_hp[i]
@@ -452,10 +494,11 @@ func new_battle() -> void:
 	team_button.text = "原阵容" if touhou_team else "测试阵容"
 	zixi_button.text = "原阵容" if zixi_team else "ZiXi"
 	zixingyc_button.text = "原阵容" if zixingyc_team else "ZiXingYC"
+	pufufu_button.text = "原阵容" if pufufu_team else "pufufu"
 	stage.reset_visuals()
 	selected_card = -1
 	enhance_selected = false
-	selected_slot = 3 if (zixi_team or zixingyc_team) and lineup.is_empty() else 0
+	selected_slot = 3 if (zixi_team or zixingyc_team or pufufu_team) and lineup.is_empty() else 0
 	selected_target = 0
 	if zixi_team or zixingyc_team:
 		for slot in battle.enemy_slots:
@@ -624,6 +667,7 @@ func _refresh(state: Dictionary) -> void:
 	team_button.disabled = busy
 	zixi_button.disabled = busy
 	zixingyc_button.disabled = busy
+	pufufu_button.disabled = busy
 	item_button.text = "道具 %d" % battle.active_items.size()
 	item_button.disabled = busy or state.phase != "response"
 	item_button.add_theme_color_override("font_color", Color("a7e1e2") if not battle.active_items.is_empty() else Color("d3e0e4"))
@@ -642,6 +686,10 @@ func _refresh(state: Dictionary) -> void:
 	for slot in state.hero_slots:
 		if slot.active:
 			count += 1
+	var heads_pct := int(round(float(state.get("ally_clash_heads_chance", battle.ally_clash_heads_chance)) * 100.0))
+	if is_instance_valid(clash_rate_label):
+		clash_rate_label.text = "◆ 我方拼点正面率 %d%%" % heads_pct
+		clash_rate_label.add_theme_color_override("font_color", Color("7bf1a8") if heads_pct >= 90 else (Color("f5c963") if heads_pct >= 60 else Color("f2a272")))
 	ally_status.text = "我方  ·  规划中    已安排 %d 次行动" % count
 	enemy_status.text = "敌方  ·  已锁定    目标公开 / 技能隐藏"
 	if selected_card >= 0 and selected_card < battle.hand.size():
@@ -994,6 +1042,7 @@ func _resolve() -> void:
 		clock_label.text = "战斗结束"
 		log_label.text = "胜利" if battle.outcome == "victory" else "失败"
 		sound.play_sound(battle.outcome)
+		battle_finished.emit()
 
 func _input(event: InputEvent) -> void:
 	if is_instance_valid(pile_popup) and pile_popup.visible:
