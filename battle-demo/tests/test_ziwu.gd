@@ -46,7 +46,7 @@ func test_unit_and_cards() -> void:
 	check(h.speed_min == 6 and h.speed_max == 10, "速度 6~10")
 	check(h.insulation == 0 and h.round_clash_gain == 0 and h.enhanced_slot == -1, "初始状态清零")
 	check(h.killed_allies.is_empty() and h.ally_cost_refunded == false, "友军击倒记录初始为空")
-	check(ZiWu.CARDS.size() == 4, "四张符卡")
+	check(ZiWu.CARDS.size() == 9, "九张符卡")
 	check(ZiWu.card(ZiWu.COLD_EDGE).name == "冷刃试锋", "冷刃试锋牌面")
 	check(ZiWu.card(ZiWu.BACKSTAB).name == "断缘处决", "断缘处决牌面")
 	check(ZiWu.card(ZiWu.LONE_INTERCEPT).name == "孤影截杀", "孤影截杀牌面")

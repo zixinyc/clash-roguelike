@@ -595,7 +595,7 @@ func _test_balance_and_late_game_smoothness() -> void:
 		n100.win_rate * 100, n100.clash_win_rate * 100, n100.avg_hp
 	])
 	check(n45.win_rate >= 0.50, "Pre-gate 45%% normal battle remains playable (win_rate=%.0f%%)" % (n45.win_rate * 100))
-	check(n90.clash_win_rate > n45.clash_win_rate + 0.20, "90%% tier dramatically improves clash win rate over 45%%")
+	check(1.0 - n90.clash_win_rate < (1.0 - n45.clash_win_rate) * 0.5, "90%% tier more than halves the clash loss rate compared with 45%%")
 	check(n100.avg_hp > n45.avg_hp, "100%% tier preserves more party HP than 45%% in normal battle")
 
 	# Elite (Encounter 1) comparison

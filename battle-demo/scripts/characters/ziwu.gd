@@ -82,7 +82,42 @@ const COLD_EDGE := "ziwu_cold_edge"
 const BACKSTAB := "ziwu_backstab"
 const LONE_INTERCEPT := "ziwu_lone_intercept"
 const MERIDIAN_SLASH := "ziwu_meridian_slash"
-const CARDS := [COLD_EDGE, BACKSTAB, LONE_INTERCEPT, MERIDIAN_SLASH]
+const AFTERIMAGE := "ziwu_afterimage"
+const BLOOD_PACT := "ziwu_blood_pact"
+const LONE_BREAK := "ziwu_lone_break"
+const SHADOW_CHASE := "ziwu_shadow_chase"
+const FROST_TURN := "ziwu_frost_turn"
+const EXPANSION_CARDS := [AFTERIMAGE, BLOOD_PACT, LONE_BREAK, SHADOW_CHASE, FROST_TURN]
+const CARDS := [COLD_EDGE, BACKSTAB, LONE_INTERCEPT, MERIDIAN_SLASH] + EXPANSION_CARDS
+
+const AFTERIMAGE_CARD := {
+	"name": "残影步", "cost": 0, "base": 14, "power": 3, "coins": 1,
+	"kind": "attack", "requires_clash": true, "damage_base": 4, "damage_power": 4, "shielded_momentum": true,
+	"description": "满伤 8。独行时拼点 +2。拼赢获得 1 层绝缘并返还 1 Cost，每回合限一次。",
+}
+const BLOOD_PACT_CARD := {
+	"name": "血契借刃", "cost": 2, "base": 16, "power": 3, "coins": 2,
+	"kind": "attack", "requires_clash": true, "can_target_ally": true,
+	"damage_base": 6, "damage_power": 6, "shielded_momentum": true,
+	"description": "对敌满伤 18。对友无需拼点，造成 6 点普通伤害，自身获得 6 护盾和 1 层绝缘。击倒友军时触发断缘祭刃。",
+}
+const LONE_BREAK_CARD := {
+	"name": "独行破阵", "cost": 3, "base": 18, "power": 4, "coins": 2,
+	"kind": "attack", "requires_clash": true, "damage_base": 10, "damage_power": 6, "shielded_momentum": true,
+	"enhance_name": "独行破阵·强化", "enhance_bonus": 3, "enhance_cost": 1,
+	"description": "满伤 22。独行拼胜额外造成 6 点伤害，并获得 5 点护盾。",
+	"enhance_description": "消耗 1 层绝缘，本次拼点 +3，拼赢使目标下回合拼点 −2。",
+}
+const SHADOW_CHASE_CARD := {
+	"name": "影袭追命", "cost": 3, "base": 17, "power": 5, "coins": 2,
+	"kind": "attack", "requires_clash": true, "damage_base": 9, "damage_power": 6, "shielded_momentum": true,
+	"description": "满伤 21。目标生命 ≤50% 时额外造成 6 点伤害；本回合已有单位阵亡时费用 −1、拼点 +2。",
+}
+const FROST_TURN_CARD := {
+	"name": "霜隙回身", "cost": 2, "base": 13, "power": 3, "coins": 2,
+	"kind": "attack", "requires_clash": true, "damage_base": 5, "damage_power": 3, "shielded_momentum": true,
+	"description": "满伤 11。拼胜获得 4 点护盾，独行时改为 7 点，持续至下回合结束。",
+}
 
 const COLD_EDGE_CARD := {
 	"name": "冷刃试锋", "cost": 1, "base": 15, "power": 3, "coins": 2,
@@ -124,6 +159,7 @@ static func create_unit() -> Dictionary:
 		"missing_allies": 0, "is_solo": false, "extra_cards": 0,
 		"ally_cost_refunded": false, "killed_allies": {},
 		"vuln_round": 0, "no_insulation_round": 0,
+		"afterimage_paid": false,
 	}
 
 static func card(key: String) -> Dictionary:
@@ -136,6 +172,16 @@ static func card(key: String) -> Dictionary:
 			return LONE_INTERCEPT_CARD
 		MERIDIAN_SLASH:
 			return MERIDIAN_SLASH_CARD
+		AFTERIMAGE:
+			return AFTERIMAGE_CARD
+		BLOOD_PACT:
+			return BLOOD_PACT_CARD
+		LONE_BREAK:
+			return LONE_BREAK_CARD
+		SHADOW_CHASE:
+			return SHADOW_CHASE_CARD
+		FROST_TURN:
+			return FROST_TURN_CARD
 	return {}
 
 static func card_name(key: String) -> String:
@@ -170,6 +216,7 @@ static func prepare_round(hero: Dictionary, turn: int, missing_allies_count: int
 	hero.round_clash_gain = 0
 	hero.enhanced_slot = -1
 	hero.ally_cost_refunded = false
+	hero.afterimage_paid = false
 	hero.missing_allies = missing_allies_count
 	hero.is_solo = solo
 	hero.extra_cards = 1 if solo else 0
@@ -185,21 +232,24 @@ static func prepare_round(hero: Dictionary, turn: int, missing_allies_count: int
 # ------------------------------------------------------------
 
 static func enhancement_error(hero: Dictionary, slot_id: int, key: String) -> String:
-	if key != LONE_INTERCEPT:
+	if key not in [LONE_INTERCEPT, LONE_BREAK]:
 		return "该技能不可强化"
 	if hero.enhanced_slot == slot_id:
-		return ""
+		var replace_price := int(card(key).get("enhance_cost", ENHANCE_COST))
+		return "强化需要 %d 层绝缘" % replace_price if int(hero.insulation) + int(hero.get("enhancement_paid", ENHANCE_COST)) < replace_price else ""
 	if hero.enhanced_slot >= 0:
 		return "本回合已安排一次强化"
-	return "强化需要 2 层绝缘" if int(hero.insulation) < ENHANCE_COST else ""
+	var price := int(card(key).get("enhance_cost", ENHANCE_COST))
+	return "强化需要 %d 层绝缘" % price if int(hero.insulation) < price else ""
 
-static func reserve_enhancement(hero: Dictionary, slot_id: int) -> void:
-	hero.insulation -= ENHANCE_COST
+static func reserve_enhancement(hero: Dictionary, slot_id: int, key: String = LONE_INTERCEPT) -> void:
+	hero.enhancement_paid = int(card(key).get("enhance_cost", ENHANCE_COST))
+	hero.insulation -= int(hero.enhancement_paid)
 	hero.enhanced_slot = slot_id
 
 static func unreserve_enhancement(hero: Dictionary, slot_id: int) -> void:
 	if hero.enhanced_slot == slot_id:
-		hero.insulation = mini(INSULATION_MAX, int(hero.insulation) + ENHANCE_COST)
+		hero.insulation = mini(INSULATION_MAX, int(hero.insulation) + int(hero.get("enhancement_paid", ENHANCE_COST)))
 		hero.enhanced_slot = -1
 
 # ------------------------------------------------------------
@@ -221,7 +271,7 @@ static func ultimate_error(hero: Dictionary, alive_allies: int) -> String:
 # ------------------------------------------------------------
 
 # 拼点开始：每少 1 名友军拼点 +2、伤害 +3；每层绝缘拼点 +1、伤害 +2。
-static func begin_clash(hero: Dictionary, slot: Dictionary, skill: Dictionary, target: Dictionary = {}) -> Dictionary:
+static func begin_clash(hero: Dictionary, slot: Dictionary, skill: Dictionary, target: Dictionary = {}, round_death: bool = false) -> Dictionary:
 	var enhanced: bool = slot.get("enhanced", false)
 	var bonus := int(hero.missing_allies) * MISSING_CLASH_BONUS + int(hero.insulation) * INSULATION_CLASH_BONUS
 	for effect in hero.next_clash.values():
@@ -229,6 +279,10 @@ static func begin_clash(hero: Dictionary, slot: Dictionary, skill: Dictionary, t
 	hero.next_clash.clear()
 	if enhanced:
 		bonus += int(skill.get("enhance_bonus", 0))
+	if slot.key == AFTERIMAGE and hero.is_solo:
+		bonus += 2
+	if slot.key == SHADOW_CHASE and round_death:
+		bonus += 2
 	if slot.key == BACKSTAB and not target.is_empty():
 		if float(target.get("hp", 1)) <= float(target.get("max_hp", 1)) * 0.5:
 			bonus += 3
@@ -237,6 +291,7 @@ static func begin_clash(hero: Dictionary, slot: Dictionary, skill: Dictionary, t
 		"bonus": bonus,
 		"insulation_snapshot": int(hero.insulation),
 		"damage_bonus": int(hero.missing_allies) * MISSING_DAMAGE_BONUS + int(hero.insulation) * INSULATION_DAMAGE_BONUS,
+		"target_low": not target.is_empty() and int(target.hp) * 2 <= int(target.max_hp),
 	}
 
 # 拼赢：绝影突袭预备下次拼点；单走时通过拼点产绝缘（每回合最多 1 层）。
@@ -251,6 +306,29 @@ static func win_clash(hero: Dictionary, key: String, enhanced: bool, turn: int) 
 static func finish_clash(hero: Dictionary, key: String, result: int, clash: Dictionary, turn: int) -> Dictionary:
 	var extra_damage := 0
 	var self_damage := 0
+	var shield := 0
+	var cost_refund := 0
+	var insulation_gained := 0
+	var weaken := 0
+
+	if result == 0:
+		if key == AFTERIMAGE and not hero.afterimage_paid:
+			hero.afterimage_paid = true
+			cost_refund = 1
+			if not insulation_blocked(hero, turn):
+				insulation_gained = gain_insulation(hero, 1, bool(hero.is_solo))
+		elif key == LONE_BREAK:
+			if hero.is_solo:
+				extra_damage = 6
+				shield = 5
+				add_shield(hero, shield, turn)
+			if clash.get("enhanced", false):
+				weaken = 2
+		elif key == SHADOW_CHASE and clash.get("target_low", false):
+			extra_damage = 6
+		elif key == FROST_TURN:
+			shield = 7 if hero.is_solo else 4
+			add_shield(hero, shield, turn + 1)
 
 	if key == COLD_EDGE and result == 1:
 		hero.vuln_round = turn + 1
@@ -270,6 +348,8 @@ static func finish_clash(hero: Dictionary, key: String, result: int, clash: Dict
 	return {
 		"extra_damage": extra_damage,
 		"self_damage": self_damage,
+		"shield": shield, "cost_refund": cost_refund,
+		"insulation_gained": insulation_gained, "weaken": weaken,
 	}
 
 # 绝缘层数。from_clash 为真时受每回合 1 层的拼点额度限制。
@@ -305,6 +385,8 @@ static func strike_damage(key: String, heads_list: Array, clash: Dictionary = {}
 	if info.is_empty():
 		return []
 	var coins := int(info.get("coins", 0))
+	if key in EXPANSION_CARDS:
+		coins = mini(coins, heads_list.size())
 	var power := int(info.get("damage_power", 0))
 	var damage: Array[int] = []
 	for i in coins:

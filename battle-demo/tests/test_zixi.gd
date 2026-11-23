@@ -45,7 +45,7 @@ func hits_to(events: Array[Dictionary], target: int) -> int:
 	var result := 0
 	for event in events:
 		if event.type == "strike" and event.allied and event.target == target:
-			result += event.damage
+			result += int(event.damage) - int(event.get("momentum_damage", 0))
 	return result
 
 func clashes(events: Array[Dictionary]) -> Array[Dictionary]:
@@ -81,7 +81,7 @@ func test_gain() -> void:
 		check(hero.metaphysics == mini(6, (round_index + 1) * 3), "winning two clashes gains at most three stacks per round and six total")
 		if round_index == 0:
 			var rolls := clashes(events)
-			check(rolls[2].left == 16 and hero.next_clash.is_empty(), "center's +1 is used by the next clash only")
+			check(rolls[2].left - rolls[2].snapshot.round_momentum == 16 and hero.next_clash.is_empty(), "center's +1 is used by the next clash only")
 		battle.next_round()
 		check(hero.round_gain == 0, "the gain budget resets each round")
 	hero.causality = 3

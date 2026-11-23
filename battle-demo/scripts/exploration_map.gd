@@ -145,6 +145,7 @@ var forge_rune_buttons: Array[Button] = []
 
 # Item Detail Modal
 var item_detail_panel: PanelContainer
+var item_detail_art: TextureRect
 var item_detail_title: Label
 var item_detail_type: Label
 var item_detail_desc: Label
@@ -322,10 +323,15 @@ func _build_party_top_bar() -> PanelContainer:
 
 	hbox.add_child(VSeparator.new())
 
+	var trays_scroll := ScrollContainer.new()
+	trays_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trays_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	trays_scroll.follow_focus = true
+	hbox.add_child(trays_scroll)
+
 	var trays_box := HBoxContainer.new()
-	trays_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	trays_box.add_theme_constant_override("separation", 10)
-	hbox.add_child(trays_box)
+	trays_scroll.add_child(trays_box)
 
 	var relic_label := Label.new()
 	relic_label.text = "遗物:"
@@ -346,6 +352,11 @@ func _build_party_top_bar() -> PanelContainer:
 	items_container = HBoxContainer.new()
 	items_container.add_theme_constant_override("separation", 5)
 	trays_box.add_child(items_container)
+	theme.set_type_variation("ItemShelfButton", "Button")
+	theme.set_stylebox("normal", "ItemShelfButton", MapVisuals.make_box(MapVisuals.WALNUT_DEEP, MapVisuals.WALNUT_BORDER, 1, 6, 3, 2))
+	theme.set_stylebox("hover", "ItemShelfButton", MapVisuals.make_box(Color("59432c"), GOLD, 1, 6, 3, 2))
+	theme.set_stylebox("pressed", "ItemShelfButton", MapVisuals.make_box(Color("695034"), GOLD, 2, 6, 3, 2))
+	theme.set_constant("icon_max_width", "ItemShelfButton", 27)
 
 	destiny_pill = PanelContainer.new()
 	destiny_pill.add_theme_stylebox_override("panel", MapVisuals.make_box(Color("291f15"), MapVisuals.BRASS_GOLD, 1, 10, 10, 3))
@@ -1119,12 +1130,24 @@ func _build_item_detail_modal() -> void:
 
 	vbox.add_child(HSeparator.new())
 
+	var detail_body := HBoxContainer.new()
+	detail_body.add_theme_constant_override("separation", 14)
+	detail_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(detail_body)
+	item_detail_art = TextureRect.new()
+	item_detail_art.custom_minimum_size = Vector2(116, 116)
+	item_detail_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	item_detail_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	item_detail_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	detail_body.add_child(item_detail_art)
+
 	item_detail_desc = Label.new()
 	item_detail_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	item_detail_desc.add_theme_font_size_override("font_size", 13)
 	item_detail_desc.add_theme_color_override("font_color", MapVisuals.CREAM_TEXT)
-	item_detail_desc.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.add_child(item_detail_desc)
+	item_detail_desc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	item_detail_desc.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	detail_body.add_child(item_detail_desc)
 
 	var btn_box := HBoxContainer.new()
 	btn_box.add_theme_constant_override("separation", 10)
@@ -1666,7 +1689,9 @@ func _on_confirm_forge_enchant() -> void:
 
 func _show_item_detail(item_id: String, item_idx: int) -> void:
 	var info: Dictionary = RelicSystem.get_consumable(item_id)
-	item_detail_title.text = "%s %s" % [info.get("icon", "✦"), info.get("name", item_id)]
+	item_detail_art.texture = RelicSystem.get_item_art(item_id)
+	item_detail_art.visible = item_detail_art.texture != null
+	item_detail_title.text = info.get("name", item_id)
 	item_detail_type.text = "【战术消耗品】"
 	item_detail_desc.text = info.get("description", "")
 
@@ -1694,6 +1719,8 @@ func _show_item_detail(item_id: String, item_idx: int) -> void:
 
 func _show_relic_detail(relic_id: String) -> void:
 	var info: Dictionary = RelicSystem.get_relic(relic_id)
+	item_detail_art.texture = null
+	item_detail_art.hide()
 	item_detail_title.text = "%s %s" % [info.get("icon", "✧"), info.get("name", relic_id)]
 	item_detail_type.text = "【被动遗物】稀有度: %s" % info.get("rarity", "common")
 	item_detail_desc.text = "%s\n\n✨ 全局被动常驻生效（可在所有遭遇与战斗中发挥效力）。" % info.get("description", "")
@@ -2870,14 +2897,20 @@ func _refresh_ui() -> void:
 
 	# Refresh Items Shelf
 	for child in items_container.get_children():
+		items_container.remove_child(child)
 		child.queue_free()
 	for idx in run.items.size():
 		var i_id: String = run.items[idx]
 		var i_data: Dictionary = RelicSystem.get_consumable(i_id)
 		var btn := Button.new()
-		btn.text = i_data.get("icon", "✦")
+		btn.theme_type_variation = &"ItemShelfButton"
+		btn.icon = RelicSystem.get_item_art(i_id)
+		btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		btn.expand_icon = true
+		if btn.icon == null:
+			btn.text = i_data.get("icon", "✦")
 		btn.tooltip_text = "【%s】(点击查看详情/使用)\n%s" % [i_data.get("name", i_id), i_data.get("description", "")]
-		btn.custom_minimum_size = Vector2(28, 28)
+		btn.custom_minimum_size = Vector2(34, 32)
 		btn.pressed.connect(_show_item_detail.bind(i_id, idx))
 		items_container.add_child(btn)
 

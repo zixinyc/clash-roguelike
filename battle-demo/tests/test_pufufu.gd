@@ -72,7 +72,7 @@ func test_ownership() -> void:
 	for key in available:
 		if Rules.card_owner(key) == Rules.PUFUFU_ID:
 			exclusive += 1
-	check(exclusive == 10, "all ten exclusive cards join the deck")
+	check(exclusive == 15, "all fifteen exclusive cards join the deck")
 	var others: Array = Rules.available_cards([Rules.ASH_ID])
 	var leaked := false
 	for key in others:
@@ -96,7 +96,7 @@ func test_deck_pool() -> void:
 	for key in pool:
 		if Rules.card_owner(key) == Rules.PUFUFU_ID:
 			exclusive += 1
-	check(exclusive == 10, "the reward pool offers every exclusive card")
+	check(exclusive == 15, "the reward pool offers every exclusive card")
 
 
 func test_soft_guard_win() -> void:
@@ -105,11 +105,15 @@ func test_soft_guard_win() -> void:
 	var card := battle.hand.find("pufufu_soft_guard")
 	var slot := hero_slot(battle, 0, 2)
 	check(battle.assign(card, slot, enemy_slot(battle, 0, 0)).is_empty(), "the guard card is playable")
-	battle.lock_and_resolve()
+	var events := battle.lock_and_resolve()
 	var hero: Dictionary = battle.heroes[0]
 	check(int(hero.shield) == 10, "winning the clash grants 10 shield")
 	check(int(hero.fluff) == 1, "the card grants one fluff layer")
-	check(int(battle.enemies[0].hp) == Rules.TRAINING_HP - 4, "the chip damage lands on the enemy")
+	var momentum_damage := 0
+	for event in events:
+		if event.type == "strike" and event.allied:
+			momentum_damage += int(event.get("momentum_damage", 0))
+	check(int(battle.enemies[0].hp) == Rules.TRAINING_HP - 4 - momentum_damage, "the chip damage lands alongside the momentum damage")
 
 
 func test_soft_guard_lose() -> void:
@@ -332,7 +336,7 @@ func test_ui() -> void:
 		for key in scene.battle.hand:
 			if Rules.card_owner(key) == Rules.PUFUFU_ID:
 				exclusive += 1
-		check(exclusive == 10, "the preset hand carries every exclusive card")
+		check(exclusive == 15, "the preset hand carries every exclusive card")
 	scene.queue_free()
 	await process_frame
 
@@ -352,6 +356,37 @@ func test_setup_page() -> void:
 	await process_frame
 
 
+func test_new_cards() -> void:
+	var hero: Dictionary = Pufufu.create_unit()
+	var shell: Dictionary = Pufufu.resolve_card(hero, Pufufu.ROUND_SHELL, 1, 1, false)
+	check(shell.self_shield == 4 and shell.fluff_gain == 1 and hero.shell_turn == 1, "shell gains a layer and arms damage reduction on loss")
+	hero.fluff = 3
+	var padding: Dictionary = Pufufu.resolve_card(hero, Pufufu.FUZZ_PADDING, 0, 1, false)
+	check(padding.team_heal == 4 and padding.ally_shield == 6 and padding.ally_shield_expiry == 2, "three layers activate the padding shield")
+	var proxy: Dictionary = Pufufu.resolve_card(hero, Pufufu.FLUFF_PROXY, 0, 1, true)
+	check(proxy.self_shield == 9 and proxy.ally_shield == 18 and proxy.proxy, "enhanced proxy grants the forecast shield and counter")
+	hero.shield = 1
+	var bounce: Dictionary = Pufufu.resolve_card(hero, Pufufu.BOUNCE, 0, 1, false)
+	check(bounce.extra_damage == 16 and bounce.self_heal == 5, "bounce rewards active shield and fluff")
+	var lantern: Dictionary = Pufufu.resolve_card(hero, Pufufu.FLUFF_LANTERN, 0, 1, false)
+	check(lantern.ally_shield == 5 and lantern.ally_heal == 3 and lantern.other_only, "lantern protects and heals its teammate")
+	var battle := FixedCoins.new()
+	battle.start(73129, Rules.TRAINING_ENCOUNTER, false, false, [Rules.PUFUFU_ID, Rules.ASH_ID, Rules.WEAVER_ID])
+	battle.heroes[0].fluff = 2
+	battle.heroes[1].hp = 4
+	var events: Array[Dictionary] = []
+	var guard := hero_slot(battle, 0, 2)
+	var enemy := enemy_slot(battle, 0, 0)
+	var card := battle.hand.find(Pufufu.FLUFF_PROXY)
+	check(battle.assign(card, guard, enemy, true, false, 2).is_empty(), "normal plan reserves enhancement and selects a teammate")
+	battle._apply_pufufu_result(events, battle.hero_slots[guard], 0, true)
+	check(battle.heroes[2].shield == 18 and battle.heroes[1].shield == 0, "proxy honors the selected teammate")
+	var foe_hp := int(battle.enemies[0].hp)
+	battle.enemies[0].shield = 5
+	battle._deal_hit(events, false, 0, 2, 1, 1, 2)
+	battle._deal_hit(events, false, 0, 2, 1, 2, 2)
+	check(battle.enemies[0].hp == foe_hp and battle.enemies[0].shield == 2, "proxy reflects once through the enemy shield")
+
 func _run() -> void:
 	test_roster()
 	test_ownership()
@@ -364,6 +399,7 @@ func _run() -> void:
 	test_passives()
 	test_passives_in_a_real_fight()
 	test_fluff_rules()
+	test_new_cards()
 	await test_ui()
 	await test_setup_page()
 	print("PUFUFU checks=", checks, " failures=", failures)

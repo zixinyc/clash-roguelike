@@ -6,6 +6,24 @@ const SELECTION_LIFT := 10.0
 const GLINT_PATH := "res://art/card-selection-glint.png"
 static var selection_glint: Texture2D
 const USE_HINTS := {
+	"ziwu_afterimage": "拼胜回费 · 独行提高拼点",
+	"ziwu_blood_pact": "扣队友盾或生命 · 自身获盾",
+	"ziwu_lone_break": "独行加伤获盾 · 可强化",
+	"ziwu_shadow_chase": "追击半血 · 退场后降费",
+	"ziwu_frost_turn": "拼胜获跨回合盾 · 独行增强",
+	"pufufu_round_shell": "叠蓬松 · 首次受击减伤",
+	"pufufu_fuzz_padding": "治疗全队 · 高蓬松附带护盾",
+	"pufufu_fluff_proxy": "给队友跨回合盾 · 可强化",
+	"pufufu_bounce": "蓬松加伤 · 有盾拼胜自疗",
+	"pufufu_fluff_lantern": "为队友套盾 · 拼胜治疗",
+	"minghe_tuning": "积累律动 · 拼胜回费",
+	"minghe_prelude": "提高队友下次拼点",
+	"minghe_infusion": "提高队友下次攻击 · 回费",
+	"minghe_crane": "降低敌方下回合拼点",
+	"minghe_concerto": "队友加拼点和护盾 · 可强化",
+	"minghe_rally": "队友下次攻击增伤 · 拼胜回费",
+	"minghe_harmony": "全队加拼点和护盾 · 可强化",
+	"minghe_omni": "消耗律动 · 全队增益并回费",
 	"probe": "低费接招", "observe": "积累准备", "exploit": "消耗准备强化拼点",
 	"follow": "拼赢后追加攻击", "steady_edge": "同费下限更高", "all_in": "同费上限更高",
 	"shatter": "三枚硬币 · 爆发",
@@ -85,6 +103,13 @@ func _ready() -> void:
 	if skill.has("enhance_name"):
 		tooltip_text += "\n%s · %s" % [skill.enhance_name, skill.enhance_description]
 
+func _get_drag_data(_at_position: Vector2) -> Variant:
+	var preview := Label.new()
+	preview.text = skill.get("name", "")
+	preview.add_theme_color_override("font_color", Color("ffd700"))
+	set_drag_preview(preview)
+	return {"type": "card", "index": hand_index, "key": skill_key}
+
 func effect_text() -> String:
 	if not Rules.targets_enemy(skill_key):
 		var effect := "行动结算时，自身 +%d 护盾" % Rules.GUARD_AMOUNT
@@ -126,7 +151,11 @@ func _draw() -> void:
 	style.border_width_top = 3 if active or enhanced else 1
 	style.set_corner_radius_all(6)
 	draw_style_box(style, rect)
-	var kind_label := "防御" if skill.kind == "guard" else ("大招" if skill.kind == "ultimate" else "进攻")
+	var kind_label := "进攻"
+	match skill.kind:
+		"guard": kind_label = "防御"
+		"support": kind_label = "辅助"
+		"ultimate": kind_label = "大招"
 	_text("%d cost" % skill.cost, Vector2(10, 23), 17, bright, number_font)
 	_right(kind_label, Vector2(size.x - 10, 23), 13, muted)
 	_text(skill.name, Vector2(10, 48), 19, ink)
@@ -141,7 +170,7 @@ func _draw() -> void:
 		var value_width := number_font.get_string_size(values, HORIZONTAL_ALIGNMENT_LEFT, -1, 23).x
 		_text(values, Vector2(10, 76), 23, bright, number_font)
 		_text("拼点威力", Vector2(17 + value_width, 75), 12, muted)
-	var usage: String = USE_HINTS.get(skill_key, skill.description)
+	var usage: String = USE_HINTS.get(Rules.Minghe.canonical_key(skill_key), skill.description)
 	if skill.kind == "guard" and ally_shield > 0:
 		usage = "队友各 +%d 护盾" % ally_shield
 	_text(usage, Vector2(10, 100), 13, ink)

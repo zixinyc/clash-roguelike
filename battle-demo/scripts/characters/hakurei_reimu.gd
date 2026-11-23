@@ -40,17 +40,20 @@ static func release_on_win(hero: Dictionary, enemies: Array[Dictionary], key: St
 		hero.dream_orbs += 1
 		messages.append("梦想宝玉：%d/3 层" % hero.dream_orbs)
 	if key == "demon_seal":
-		enemies[target].seal_pending = true
-		for left in range(target - 1, -1, -1):
-			if enemies[left].hp > 0:
-				enemies[left].seal_pending = true
-				break
-		messages.append("封魔阵：目标和最近的左侧敌人下回合拼点威力 −2")
+		messages.append(apply_demon_seal(enemies, target))
 	if key == "fantasy_nature":
 		hero.dream_orbs = 1
 		hero.dream_due = turn + 3
 		messages.append("梦想天生开始蓄能：第 %d 回合结束时发动" % hero.dream_due)
 	return messages
+
+static func apply_demon_seal(enemies: Array[Dictionary], target: int) -> String:
+	enemies[target].seal_pending = true
+	for left in range(target - 1, -1, -1):
+		if enemies[left].hp > 0:
+			enemies[left].seal_pending = true
+			break
+	return "封魔阵：目标和最近的左侧敌人下回合拼点威力 −2"
 
 static func dream_damage(hero: Dictionary, enemy: Dictionary) -> int:
 	return 5 * hero.dream_orbs * enemy.exorcism

@@ -8,8 +8,11 @@ signal aim_cancelled
 signal quick_assign_requested(allied: bool, slot_id: int)
 signal slot_cancel_requested(slot_id: int)
 signal impact_sound(kind: String)
+signal shared_support_clicked
+signal shared_support_dropped(slot_id: int)
 
 const Rules = preload("res://scripts/battle_rules.gd")
+const SHARED_SUPPORT_RECT := Rect2(595, 302, 190, 68)
 
 var active_slot := 0
 var target_slot := 0
@@ -19,6 +22,7 @@ var pressed_slot_id := -1
 var hovered_slot_side := -1
 var hovered_slot_id := -1
 var pointer := Vector2.ZERO
+var screen_shake := 0.0
 var target_guidance: Array[Dictionary] = []
 var hero_guidance: Array[Dictionary] = []
 
@@ -94,6 +98,7 @@ func reset_visuals() -> void:
 	floaters.clear()
 	banner = ""
 	impact = 0.0
+	screen_shake = 0.0
 	sparks = 0.0
 	holding_impact = false
 	queue_redraw()
@@ -102,6 +107,7 @@ func _process(delta: float) -> void:
 	if not is_visible_in_tree():
 		return
 	time += delta
+	screen_shake = maxf(0.0, screen_shake - delta * 3.8)
 	if not holding_impact:
 		impact = maxf(0.0, impact - delta * 3.5)
 		sparks = maxf(0.0, sparks - delta * 2.0)
@@ -111,7 +117,7 @@ func _process(delta: float) -> void:
 			for item in floaters:
 				item.age += delta
 			floaters = floaters.filter(func(item: Dictionary) -> bool: return item.age < 1.5)
-	if busy or holding_impact or dragging >= 0 or time >= next_idle_redraw:
+	if busy or holding_impact or dragging >= 0 or screen_shake > 0.0 or time >= next_idle_redraw:
 		next_idle_redraw = time + 1.0 / 24.0
 		queue_redraw()
 
@@ -139,6 +145,13 @@ func _gui_input(event: InputEvent) -> void:
 		tooltip_text = ""
 		hovered_slot_side = -1
 		hovered_slot_id = -1
+		if SHARED_SUPPORT_RECT.has_point(pointer):
+			var support: Dictionary = state.get("shared_support_slot", {})
+			if support.get("active", false):
+				tooltip_text = "全队共有辅助槽（已安排 %s）：先于普通行动结算。点击或右键可撤销。" % Rules.SKILLS[support.key].name
+			else:
+				tooltip_text = "全队共有辅助槽：拖入或选中辅助类牌后点击，先于普通行动结算。"
+			return
 		for side in 2:
 			var slots: Array = state.get("hero_slots" if side == 0 else "enemy_slots", [])
 			for slot in slots:
@@ -157,8 +170,14 @@ func _gui_input(event: InputEvent) -> void:
 	var point: Vector2 = event.position * BASE / size
 	queue_redraw()
 
-	# Right click on an active hero slot -> quick cancel
+	# Right click on an active hero slot or shared support -> quick cancel
 	if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		if SHARED_SUPPORT_RECT.has_point(point):
+			var support: Dictionary = state.get("shared_support_slot", {})
+			if support.get("active", false):
+				slot_cancel_requested.emit(-2)
+			accept_event()
+			return
 		for slot in state.get("hero_slots", []):
 			if _slot_rect(true, slot.id).has_point(point):
 				if slot.active:
@@ -168,6 +187,20 @@ func _gui_input(event: InputEvent) -> void:
 		return
 
 	if event.button_index != MOUSE_BUTTON_LEFT:
+		return
+
+	if SHARED_SUPPORT_RECT.has_point(point):
+		if event.pressed:
+			shared_support_clicked.emit()
+		else:
+			if dragging >= 0:
+				shared_support_dropped.emit(dragging)
+			else:
+				shared_support_clicked.emit()
+			dragging = -1
+			pressed_slot_side = -1
+			pressed_slot_id = -1
+		accept_event()
 		return
 
 	for side in 2:
@@ -213,6 +246,15 @@ func _gui_input(event: InputEvent) -> void:
 			unit_selected.emit(allied, idx)
 			accept_event()
 			return
+
+func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
+	var local_pos := at_position * BASE / size
+	return data is Dictionary and data.get("type", "") == "card" and SHARED_SUPPORT_RECT.has_point(local_pos)
+
+func _drop_data(at_position: Vector2, data: Variant) -> void:
+	var local_pos := at_position * BASE / size
+	if SHARED_SUPPORT_RECT.has_point(local_pos):
+		shared_support_dropped.emit(int(data.get("index", -1)))
 
 func _arrow(a: Vector2, b: Vector2, color: Color, bend: float, thickness: float = 4.0, animated: bool = false) -> void:
 	var points := PackedVector2Array()
@@ -274,7 +316,9 @@ func _planning_overlay() -> void:
 
 	# 2. Hero planned arrows
 	for slot in state.hero_slots:
-		if slot.active and slot.get("targeted", slot.category != 2) and not slot.done:
+		if slot.active and not slot.done and slot.has("ally_target"):
+			_arrow(slot_position(true, slot.id), _actor_position(slot.ally_target) + Vector2(0, -142), Color(RED, 0.7), -52.0)
+		elif slot.active and slot.get("targeted", slot.category != 2) and not slot.done:
 			var related: bool = focus_hero_id == slot.id or focus_enemy_id == int(slot.target)
 			var opacity := 0.16 if busy else (0.96 if related else (0.26 if has_focus else 0.76))
 			var thick := 5.0 if related else 3.8
@@ -465,7 +509,8 @@ func _draw_pill(center: Vector2, text: String, font_size: int, bg: Color, border
 	draw_string(face_font, Vector2(rect.position.x + 6.0, rect.position.y + ph - 4.0), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, text_col)
 
 func _draw() -> void:
-	var wobble := Vector2(sin(time * 116.0), cos(time * 133.0)) * impact * 5.0
+	var total_shake := impact * 5.0 + screen_shake * 12.0
+	var wobble := Vector2(sin(time * 120.0), cos(time * 140.0)) * total_shake
 	draw_set_transform(wobble, 0.0, size / BASE)
 	_background()
 	if state.is_empty():
@@ -478,8 +523,10 @@ func _draw() -> void:
 		var unit: Dictionary = state.heroes[idx] if allied else state.enemies[idx]
 		var selected := idx == selected_hero if allied else idx == selected_enemy
 		_actor(i, unit, allied, selected)
+	_draw_shared_support_slot()
 	_planning_overlay()
 	_draw_overlay()
+	_draw_momentum_hud()
 	for item in floaters:
 		var p: Vector2 = item.position + Vector2(0, -item.age * 36.0)
 		var color: Color = item.color
@@ -539,7 +586,7 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 		_glow(Vector2(0, -74), 88, Color(accent, 0.035))
 	var character_id := int(unit.get("character_id", -1))
 	var region: Rect2 = HERO_SPRITES[character_id] if character_id in [0, 1, 2] else ENEMY_SPRITES.get(unit.get("kind", ""), Rect2())
-	var sprite_height := 162.0 if allied else (170.0 if unit.kind in ["elite", "warden"] else 158.0)
+	var sprite_height := 162.0 if allied else (170.0 if unit.get("kind", "") in ["elite", "warden"] else 158.0)
 	var bob := sin(time * 2.1 + id * 1.5) * 1.2 if alive else 0.0
 	var texture := actors_texture
 	if allied and unit.has("metaphysics"):
@@ -552,7 +599,7 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 			region = Rect2(Vector2.ZERO, texture.get_size())
 	if allied and character_id in [3, 4]:
 		texture = null
-	if not allied and unit.kind == "priest":
+	if not allied and unit.get("kind", "") == "priest":
 		texture = priest_texture
 		region = Rect2(Vector2(35, 12), Vector2(1165, 1244))
 	if texture != null and region.size.y > 0:
@@ -586,8 +633,15 @@ func _actor(id: int, unit: Dictionary, allied: bool, selected: bool) -> void:
 		_text(status, _actor_position(id) + Vector2(0, 70), 10, RED)
 	elif allied:
 		_text("已行动" if acted else "规划中", _actor_position(id) + Vector2(0, 70), 10, Color("999f98") if acted else BLUE)
+		if alive and (unit.get("name", "") == "minghe" or unit.has("rhythm") or unit.get("character_id", -1) == Rules.MINGHE_ID):
+			_draw_minghe_rhythm_badge(id, unit)
 	elif alive:
 		_draw_pill(_actor_position(id) + Vector2(0, -234), "已锁定 · 技能隐藏" if state.get("phase", "") == "response" else "行动已揭晓", 11, Color(0.16, 0.09, 0.08, 0.88), Color(RED, 0.75), Color("ffcdc6"))
+	if not allied and alive:
+		if not String(unit.get("weakness", "")).is_empty():
+			_draw_enemy_weakness_and_fracture(id, unit)
+		if unit.get("is_shattered", false):
+			_draw_enemy_shattered_state(id, unit)
 
 func _draw_placeholder_actor(accent: Color, alpha: float, bob: float, flash: float) -> void:
 	var outline := Color(accent.lerp(Color.WHITE, flash), alpha)
@@ -689,9 +743,9 @@ func play_event(event: Dictionary, speed: float) -> void:
 			await get_tree().create_timer(0.12 * duration).timeout
 			overlay.clear()
 		"strike":
-			var attacker: int = event.source if event.allied else event.source + 3
+			var attacker: int = event.source if event.allied or event.get("friendly", false) else event.source + 3
 			var victim: int = event.target + 3 if event.allied else event.target
-			var direction := 1.0 if event.allied else -1.0
+			var direction := 1.0 if _actor_position(victim).x >= _actor_position(attacker).x else -1.0
 			var travel: Vector2 = _actor_position(victim) - _actor_position(attacker) - Vector2(92 * direction, 0)
 			await _move_pair(attacker, victim, Vector2(-14 * direction, 0), Vector2.ZERO, 0.10 * duration)
 			await _move_pair(attacker, victim, travel, Vector2.ZERO, 0.15 * duration)
@@ -720,6 +774,255 @@ func play_event(event: Dictionary, speed: float) -> void:
 			flashes[event.enemy + 3] = 0.5
 			floaters.append({"text": "+%d 护盾" % event.amount, "position": _actor_position(event.enemy + 3) + Vector2(0, -150), "age": 0.0, "color": BLUE, "size": 22})
 			await get_tree().create_timer(0.4 * duration).timeout
+		"momentum_gain":
+			var m: int = int(event.momentum)
+			var text_col := Color("f0ebd8") if m == 1 else (Color("ffd700") if m == 2 else Color("ff7043"))
+			floaters.append({"text": "⚡ 势能 ×%d！" % m, "position": Vector2(690, 160), "age": 0.0, "color": text_col, "size": 24})
+			await get_tree().create_timer(0.20 * duration).timeout
+		"momentum_break":
+			screen_shake = 1.3
+			impact = 1.4
+			impact_sound.emit("break")
+			floaters.append({"text": "💔 势能中断！", "position": Vector2(690, 160), "age": 0.0, "color": RED, "size": 28})
+			await get_tree().create_timer(0.35 * duration).timeout
+		"shatter_stagger":
+			var victim: int = event.target + 3
+			flashes[victim] = 1.5
+			screen_shake = 2.0
+			impact = 2.2
+			sparks = 2.0
+			contact_position = _actor_position(victim) + Vector2(0, -90)
+			impact_sound.emit("break")
+			floaters.append({"text": "💥 碎甲大失衡！", "position": _actor_position(victim) + Vector2(0, -185), "age": 0.0, "color": Color("ff3b30"), "size": 30})
+			await get_tree().create_timer(0.40 * duration).timeout
+		"fracture_hit":
+			var victim: int = event.target + 3
+			flashes[victim] = 0.8
+			var f_val: int = int(event.fracture)
+			floaters.append({"text": "弱点破损 %d/3" % f_val, "position": _actor_position(victim) + Vector2(0, -135), "age": 0.0, "color": Color("f59e42"), "size": 22})
+			await get_tree().create_timer(0.18 * duration).timeout
 		"outcome":
 			banner = "胜利" if event.result == "victory" else "败北"
 			await get_tree().create_timer(0.6 * duration).timeout
+
+func _weakness_info(weakness: String) -> Dictionary:
+	var label := "斩"
+	var col := Color("e26d5c")
+	if weakness.contains("刺"):
+		label = "刺"
+		col = Color("48cae4")
+	elif weakness.contains("重"):
+		label = "重"
+		col = Color("f4a261")
+	return {"label": label, "color": col}
+
+func _draw_enemy_weakness_and_fracture(id: int, unit: Dictionary) -> void:
+	var w_info := _weakness_info(String(unit.get("weakness", "")))
+	var pos := _actor_position(id) + Vector2(0, 85)
+	var badge_rect := Rect2(pos + Vector2(-54, -10), Vector2(108, 20))
+	draw_rect(badge_rect, Color(0.10, 0.08, 0.07, 0.90), true)
+	draw_rect(badge_rect, Color("5c4d3e"), false, 1.1)
+	
+	# Weakness tag box on the left: e.g. [斩] / [刺] / [重]
+	var tag_rect := Rect2(badge_rect.position + Vector2(4, 2), Vector2(26, 16))
+	draw_rect(tag_rect, w_info.color.darkened(0.65), true)
+	draw_rect(tag_rect, w_info.color, false, 1.2)
+	_text(w_info.label, tag_rect.get_center() + Vector2(0, 4.0), 10, w_info.color)
+	
+	# Fracture progress meter: 3 dots (○ ○ ○ / ● ● ○ / ● ● ●)
+	var fracture: int = clampi(int(unit.get("fracture", 0)), 0, 3)
+	var dot_start_x := badge_rect.position.x + 46.0
+	for d in 3:
+		var dot_center := Vector2(dot_start_x + d * 18.0, pos.y)
+		if d < fracture:
+			draw_circle(dot_center, 5.0, Color(0.95, 0.25, 0.15, 0.35))
+			draw_circle(dot_center, 3.6, Color("e63946"))
+			draw_circle(dot_center, 1.8, Color("ffb703"))
+		else:
+			draw_circle(dot_center, 3.2, Color(0.16, 0.14, 0.12, 0.90))
+			draw_arc(dot_center, 3.4, 0, TAU, 16, Color("7a6857"), 1.2, true)
+
+func _draw_enemy_shattered_state(id: int, _unit: Dictionary) -> void:
+	var head_pos := _actor_position(id) + Vector2(0, -204.0)
+	var pulse := 0.75 + 0.25 * sin(time * 7.5)
+	var border_col := Color("ff3b30").lerp(Color("ffcc00"), pulse)
+	
+	# 1. Pulsing head banner: 【💥 碎甲大失衡】
+	var banner_w := 132.0
+	var banner_h := 34.0
+	var banner_rect := Rect2(head_pos.x - banner_w * 0.5, head_pos.y - banner_h * 0.5, banner_w, banner_h)
+	
+	draw_rect(banner_rect.grow(4.0), Color("ff3b30", 0.30 * pulse), true)
+	draw_rect(banner_rect, Color(0.18, 0.05, 0.04, 0.95), true)
+	draw_rect(banner_rect, border_col, false, 2.0)
+	
+	_text("💥 碎甲大失衡", head_pos + Vector2(0, -2.0), 12, border_col)
+	_text("易伤 +50% · 速度锁1", head_pos + Vector2(0, 11.0), 10, Color("ffe082"))
+	
+	# 2. Pulsing fractured shards (脉冲碎光): rotating and pulsing gold & crimson shards
+	var shard_origin := _actor_position(id) + Vector2(0, -78.0)
+	for s in 8:
+		var angle := s * TAU / 8.0 + time * 2.8
+		var dist := 60.0 + sin(time * 6.5 + s * 1.4) * 12.0
+		var sp := shard_origin + Vector2(cos(angle) * dist, sin(angle) * dist * 0.72)
+		var shard_alpha := 0.50 + 0.45 * sin(time * 8.0 + s)
+		var sc := Color("ff3b30" if s % 2 == 0 else "ffd700", shard_alpha)
+		var sz := 4.5
+		var shard_poly := PackedVector2Array([
+			sp + Vector2(0, -sz * 1.4),
+			sp + Vector2(sz, 0),
+			sp + Vector2(0, sz * 1.4),
+			sp + Vector2(-sz, 0)
+		])
+		draw_colored_polygon(shard_poly, sc)
+
+func _draw_minghe_rhythm_badge(id: int, unit: Dictionary) -> void:
+	var plate_pos := _actor_position(id)
+	var badge_pos := plate_pos + Vector2(58 + 48, 43)
+	var is_cooldown := int(unit.get("no_rhythm_round", 0)) == int(state.get("turn", 1))
+	
+	if is_cooldown:
+		# 灰色冷光: 🚫 调谐冷却
+		var bw := 92.0
+		var bh := 24.0
+		var brect := Rect2(badge_pos.x - bw * 0.5, badge_pos.y - bh * 0.5, bw, bh)
+		draw_rect(brect.grow(2.5), Color(0.35, 0.45, 0.55, 0.22), true)
+		draw_rect(brect, Color(0.12, 0.14, 0.17, 0.94), true)
+		draw_rect(brect, Color("708a96"), false, 1.4)
+		_text("🚫 调谐冷却", badge_pos + Vector2(0, 4.0), 11, Color("b8cdd6"))
+	else:
+		# 青金渐变色: 🎶 律动 ×N
+		var rhythm := clampi(int(unit.get("rhythm", 0)), 0, 5)
+		var bw := 96.0
+		var bh := 28.0
+		var brect := Rect2(badge_pos.x - bw * 0.5, badge_pos.y - bh * 0.5, bw, bh)
+		
+		var halo_col := Color("5de2d3").lerp(Color("f5c963"), float(rhythm) / 5.0)
+		draw_rect(brect.grow(2.5), Color(halo_col, 0.22), true)
+		draw_rect(brect, Color(0.08, 0.13, 0.12, 0.94), true)
+		
+		draw_line(brect.position, brect.position + Vector2(bw, 0), Color("5de2d3"), 1.6)
+		draw_line(brect.position, brect.position + Vector2(0, bh), Color("5de2d3"), 1.6)
+		draw_line(brect.position + Vector2(bw, 0), brect.position + Vector2(bw, bh), Color("f5c963"), 1.6)
+		draw_line(brect.position + Vector2(0, bh), brect.position + Vector2(bw, bh), Color("f5c963"), 1.6)
+		
+		var text_col := Color("7cf5d8").lerp(Color("fde68a"), float(rhythm) / 5.0)
+		_text("🎶 律动 ×%d" % rhythm, badge_pos + Vector2(0, -1.0), 11, text_col)
+		
+		var pip_start_x := brect.position.x + 16.0
+		for b in 5:
+			var pip_center := Vector2(pip_start_x + b * 16.0, badge_pos.y + 8.5)
+			if b < rhythm:
+				draw_circle(pip_center, 2.5, Color("5de2d3").lerp(Color("f5c963"), float(b) / 4.0))
+			else:
+				draw_circle(pip_center, 1.8, Color(0.24, 0.28, 0.28, 0.70))
+
+func _draw_momentum_hud() -> void:
+	var m: int = int(state.get("round_momentum", 0))
+	if overlay.has("momentum"):
+		m = int(overlay.momentum)
+	if m <= 0:
+		return
+	var center := Vector2(690, 24)
+	var title := "势能 ×%d" % m
+	var desc := "势能起 · 拼点+1"
+	var text_col := Color("fdfbf7")
+	var border_col := Color("f0ebd8")
+	var bg_col := Color(0.12, 0.11, 0.09, 0.94)
+	
+	match m:
+		1:
+			desc = "势能起 · 拼点+1"
+			border_col = Color("f0ebd8")
+			text_col = Color("fffdf5")
+		2:
+			desc = "势如破竹 · 拼点+1 震击+3"
+			border_col = Color("ffd700")
+			text_col = Color("fff59d")
+			bg_col = Color(0.18, 0.14, 0.06, 0.96)
+		_:
+			title = "势能 ×%d MAX" % m
+			desc = "势不可挡 · 拼点+2 贯穿+6"
+			border_col = Color("ff4d22").lerp(Color("ffc83b"), 0.5 + 0.5 * sin(time * 7.0))
+			text_col = Color("ffe082")
+			bg_col = Color(0.22, 0.08, 0.06, 0.96)
+	
+	var full_text := "⚡ %s ｜ %s" % [title, desc]
+	var tw := face_font.get_string_size(full_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x if face_font else 220.0
+	var pw := tw + 24.0
+	var ph := 26.0
+	var rect := Rect2(center.x - pw * 0.5, center.y - ph * 0.5, pw, ph)
+	
+	if m == 1:
+		draw_rect(rect.grow(3.0), Color("f0ebd8", 0.20 * (0.8 + 0.2 * sin(time * 3.5))), true)
+	elif m == 2:
+		var p2 := 0.7 + 0.3 * sin(time * 6.0)
+		draw_rect(rect.grow(4.5), Color("ffd700", 0.40 * p2), true)
+		draw_rect(rect.grow(2.0), Color("fff176", 0.50 * p2), false, 1.2)
+	else:
+		var p3 := 0.7 + 0.3 * sin(time * 8.0)
+		draw_rect(rect.grow(5.5), Color("ff3b10", 0.42 * p3), true)
+		for st in 4:
+			var t_pos := fmod(time * 1.8 + st * 0.25, 1.0)
+			var pt := rect.position + Vector2(rect.size.x * t_pos, 0 if st % 2 == 0 else rect.size.y)
+			draw_circle(pt, 3.5, Color("ffeb3b", 0.85))
+	
+	draw_rect(rect, bg_col, true)
+	draw_rect(rect, border_col, false, 1.8)
+	_text(full_text, center + Vector2(0, 4.5), 13, text_col)
+
+func _point_on_rect(rect: Rect2, dist: float) -> Vector2:
+	var w := rect.size.x
+	var h := rect.size.y
+	var p := fposmod(dist, 2.0 * (w + h))
+	if p < w:
+		return rect.position + Vector2(p, 0)
+	p -= w
+	if p < h:
+		return rect.position + Vector2(w, p)
+	p -= h
+	if p < w:
+		return rect.position + Vector2(w - p, h)
+	p -= w
+	return rect.position + Vector2(0, h - p)
+
+func _draw_shared_support_slot() -> void:
+	if not overlay.is_empty():
+		return
+	var rect: Rect2 = SHARED_SUPPORT_RECT
+	var is_hovered: bool = rect.has_point(pointer)
+	var support: Dictionary = state.get("shared_support_slot", {})
+	var is_active: bool = support.get("active", false)
+	
+	draw_rect(Rect2(rect.position + Vector2(2, 3), rect.size), Color(0.04, 0.05, 0.03, 0.55), true)
+	
+	var parch_col: Color = Color("fffaf0") if is_hovered else Color("f6edd8")
+	draw_rect(rect, parch_col, true)
+	draw_rect(rect.grow(-3.5), Color("dfd2b5"), false, 1.0)
+	
+	var border_base := Color("d6a447")
+	draw_rect(rect, border_base, false, 2.0)
+	
+	var perimeter := 2.0 * (rect.size.x + rect.size.y)
+	var flow_t := fmod(time * 0.9, 1.0)
+	for k in 2:
+		var dist := fmod(flow_t * perimeter + float(k) * (perimeter * 0.5), perimeter)
+		var pt := _point_on_rect(rect, dist)
+		draw_circle(pt, 4.2, Color("fff2a8", 0.95))
+		draw_circle(pt, 2.2, Color.WHITE)
+	
+	if is_active:
+		var sname: String = String(Rules.SKILLS[support.key].name) if Rules.SKILLS.has(support.key) else String(support.key)
+		_text("【全队辅助】", Vector2(690, 320), 11, Color("8a561c"))
+		_text("★ " + sname, Vector2(690, 338), 14, Color("2a1c12"))
+		var hname: String = state.heroes[support.hero].name if support.hero >= 0 and support.hero < state.heroes.size() else ""
+		var tname: String = state.heroes[support.support_target].name if support.get("support_target", -1) >= 0 and support.support_target < state.heroes.size() else ""
+		var line := "%s 出牌" % hname
+		if not tname.is_empty():
+			line += " → " + tname
+		_text(line, Vector2(690, 355), 10, Color("574332"))
+	else:
+		_text("【全队辅助槽】", Vector2(690, 326), 13, Color("2d2116"))
+		_text("拖入或点击辅助牌放入", Vector2(690, 348), 11, Color("6b5442"))
+		if is_hovered:
+			draw_rect(rect.grow(3.0), Color("d6a447", 0.4), false, 2.0)

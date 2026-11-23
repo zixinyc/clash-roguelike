@@ -76,7 +76,7 @@ func _run() -> void:
 	strikes = ev.filter(func(e: Dictionary) -> bool: return e.type == "strike" and e.allied)
 	total_dmg = 0
 	for s in strikes:
-		total_dmg += int(s.damage)
+		total_dmg += int(s.damage) - int(s.get("momentum_damage", 0))
 	check(b.heroes[0].spark == 2 and total_dmg == 32, "Laser hits two enemies for 32 total damage and gains 2 spark")
 	
 	# 5. Orrery damage reduction

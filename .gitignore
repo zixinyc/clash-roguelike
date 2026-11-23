@@ -4,7 +4,8 @@ asset/参考源码/
 battle-demo/build/
 battle-demo/builds/
 battle-demo/test-output/
-battle-demo/art/
+battle-demo/art/*
+!battle-demo/art/items/
 docs/任务记录/视觉预览/
 *.tmp
 *.m4a

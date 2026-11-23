@@ -10,11 +10,11 @@
 ## 1. 快速上手三步走
 
 1. **先读架构速查**：阅读 [`docs/代码速查/代码全景与模块指南.md`](docs/代码速查/代码全景与模块指南.md)，定位你要修改的模块文件。
-2. **检查工作区状态**：运行 `git status --short --branch`，确认当前是否有并行开发的未提交文件（例如 `scripts/characters/ziwu.gd` 等），切勿覆盖他人或并行子 Agent 的改动。
+2. **检查工作区状态**：运行 `git status --short --branch`，确认当前是否有并行开发的未提交文件（例如角色脚本、插图资源或文档），切勿覆盖他人或并行子 Agent 的改动。
 3. **遵守美术与测试护栏**：
-   - **视觉一致性**：所有新增或重构的 UI 界面必须统一使用 `battle-demo/scripts/map_visuals.gd`（`ForestMapVisuals`）的**晨曦阳光林野 + 胡桃木底色 (`#33261a`) + 黄铜金镶边 (`#d6a447`) + 羊皮纸 (`#f6edd8`)** 风格，严禁使用旧版冷蓝灰测试配色。
-   - **逻辑与视图分离**：战斗规则只进 `battle_rules.gd`，探索状态只进 `forest_run.gd`，UI 脚本只消费状态快照与事件。
-   - **测试不破损**：修改 `battle_setup.gd`、`exploration_map.gd` 或 `planning_ui.gd` 时，必须保留自动化测试（如 `tests/test_battle_setup.gd`）所依赖的节点名（如 `%ClearLineup`）与属性引用。
+   - **视觉一致性**：所有新增或重构的 UI 界面必须统一使用 `battle-demo/scripts/map_visuals.gd`（`ForestMapVisuals`）的**晨曦阳光林野 + 胡桃木底色 (`#33261a`) + 黄铜金镶边 (`#d6a447`) + 羊皮纸 (`#f6edd8`)** 风格，严禁使用旧版冷蓝灰测试配色；10 件战术消耗品透明插图统一存放于 `battle-demo/art/items/` 并经 `RelicSystem.get_item_art()` 引用。
+   - **逻辑与视图分离**：战斗规则（含 11 位角色机制、弱点破防/碎甲大失衡、拼刀势能链与 Phase 0 共有辅助槽）只进 `battle_rules.gd` 及 `scripts/characters/`，探索状态只进 `forest_run.gd`，UI 脚本只消费状态快照与事件。
+   - **测试不破损**：修改 `battle_setup.gd`、`exploration_map.gd` 或 `planning_ui.gd` 时，必须保留自动化测试（如 `tests/test_battle_setup.gd`、`tests/test_expansion_ui.gd`、`tests/test_visual_combat_feedback.gd`）所依赖的节点名（如 `%ClearLineup`）与属性引用（如 `support_slot_button`、`momentum_panel`、`ally_target_picker`）。
 
 ---
 
@@ -27,8 +27,9 @@
 | [五层远征与敌方强化](docs/代码速查/代码全景与模块指南.md#五层远征与敌方强化) | 第 1～4 层选择规则、战斗数值传参和第 5 层通关接点 |
 | [拼点概率与探索奖励](docs/代码速查/代码全景与模块指南.md#拼点概率与探索奖励) | 正面率、节点与战后奖励入口，含命运石之门和全队强化方案 |
 | [`battle-demo/project.godot`](battle-demo/project.godot) | Godot 4.7.2 主工程配置（主场景入口为 `res://battle_setup.tscn`） |
-| [`battle-demo/scripts/`](battle-demo/scripts/) | 全部核心 GDScript 源码（探索、战斗、UI、视觉、音频与 `characters/` 角色模块） |
-| [`battle-demo/tests/`](battle-demo/tests/) | 自动化回归测试脚本（`test_*.gd`），按当前文件清单选跑 |
+| [`battle-demo/scripts/`](battle-demo/scripts/) | 全部核心 GDScript 源码（探索、战斗、UI、视觉、音频与 `characters/` 8 名进阶角色模块，含最新 `minghe.gd`） |
+| [`battle-demo/art/items/`](battle-demo/art/items/) | 10 件战术消耗品手绘厚涂透明插图（探索顶栏、详情弹窗与战斗道具栏共用） |
+| [`battle-demo/tests/`](battle-demo/tests/) | 自动化回归测试脚本（39 个 `test_*.gd`，含 35 个无头测试如 `test_minghe_expansion.gd`、`test_core_combat_mechanics.gd`） |
 | [`asset/素材清单.md`](asset/素材清单.md) | 战斗特效（`fx/`）、音效（`sfx/`）与第三方开源参考清单 |
 | [`asset/背景音乐计划.md`](asset/背景音乐计划.md) | 暗潮风格分层 BGM 规划方案 |
 | [`idea/`](idea/) | 待讨论与扩展的设计想法（如阵容组合 Buff、界面演进） |

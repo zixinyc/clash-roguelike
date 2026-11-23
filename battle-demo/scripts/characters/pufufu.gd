@@ -24,10 +24,16 @@ const FUZZ_BARRIER := "pufufu_fuzz_barrier"   # 绒毛壁障
 const WARM_ECHO := "pufufu_warm_echo"         # 暖绒回响
 const THICK_WALL := "pufufu_thick_wall"       # 厚实壁垒
 const FLUFF_HUG := "pufufu_fluff_hug"         # 蓬松大拥抱
+const ROUND_SHELL := "pufufu_round_shell"
+const FUZZ_PADDING := "pufufu_fuzz_padding"
+const FLUFF_PROXY := "pufufu_fluff_proxy"
+const BOUNCE := "pufufu_bounce"
+const FLUFF_LANTERN := "pufufu_fluff_lantern"
 
 const CARDS := [
 	FUZZ_FRICTION, SOFT_GUARD, STATIC_FUZZ, FUZZ_HEAL, FUZZ_COMBO,
 	FUZZ_BLESS, FUZZ_BARRIER, WARM_ECHO, THICK_WALL, FLUFF_HUG,
+	ROUND_SHELL, FUZZ_PADDING, FLUFF_PROXY, BOUNCE, FLUFF_LANTERN,
 ]
 
 # —— 卡面定义 ——
@@ -118,7 +124,38 @@ static func create_unit() -> Dictionary:
 		"enhanced_slot": -1, "double_reflect_round": 0, "no_fluff_round": 0,
 		# 跨回合护盾
 		"shield_until": {},
+		"shell_turn": 0, "proxy_turn": 0, "proxy_target": -1,
 	}
+
+const ROUND_SHELL_CARD := {
+	"name": "滚圆缩壳", "cost": 0, "base": 6, "power": 2, "coins": 1,
+	"kind": "guard", "targeted": true, "no_damage": true,
+	"description": "拼赢获得 6 护盾，拼输或单方行动获得 4 护盾；获得 1 层蓬松，本回合下一次受击伤害 −3。",
+}
+const FUZZ_PADDING_CARD := {
+	"name": "绒毛铺垫", "cost": 2, "base": 8, "power": 2, "coins": 2,
+	"kind": "guard", "targeted": true, "no_damage": true,
+	"description": "拼赢全队回复 4 HP，拼输或单方行动回复 2 HP。至少有 3 层蓬松时，为生命最低的存活队友提供 6 护盾，持续至下一回合结束。",
+}
+const FLUFF_PROXY_CARD := {
+	"name": "蓬松替身", "cost": 3, "base": 9, "power": 2, "coins": 2,
+	"kind": "guard", "targeted": true, "no_damage": true,
+	"enhance_name": "弹力替身", "enhance_bonus": 0,
+	"enhance_cost": ENHANCE_COST, "can_support_ally": true,
+	"description": "自身获得 6 护盾；指定队友（未指定时选生命最低的存活队友）获得跨回合护盾，拼赢为 12，拼输或单方行动为 8。",
+	"enhance_description": "消耗 2 层蓬松，目标额外获得 6 护盾，且本回合下次遭受攻击时由 pufufu 反伤一次。",
+}
+const BOUNCE_CARD := {
+	"name": "弹跳撞击", "cost": 3, "base": 9, "power": 3, "coins": 2,
+	"kind": "attack", "targeted": true, "no_damage": true,
+	"shielded_momentum": true,
+	"description": "拼赢造成 10 点伤害，拼输或单方行动造成 5 点伤害，另加蓬松层数 × 2。攻击时带护盾且拼赢，恢复自身 5 HP。",
+}
+const FLUFF_LANTERN_CARD := {
+	"name": "绒灯守候", "cost": 1, "base": 7, "power": 2, "coins": 1,
+	"kind": "guard", "targeted": true, "no_damage": true,
+	"description": "生命最低的存活队友获得 5 护盾，持续至本回合结束；拼赢时该队友再回复 3 HP。",
+}
 
 
 ## 回合开始：刷新每回合计数、清理强化预约、按到期回合重建护盾。
@@ -142,7 +179,7 @@ static func add_shield(hero: Dictionary, amount: int, expiry: int) -> void:
 
 ## 强化校验：只有【厚实壁垒】可强化，代价是 2 层蓬松，每回合限一次。
 static func enhancement_error(hero: Dictionary, slot_id: int, key: String) -> String:
-	if key != THICK_WALL:
+	if key not in [THICK_WALL, FLUFF_PROXY]:
 		return "该技能不可强化"
 	if int(hero.get("enhanced_slot", -1)) == slot_id:
 		return ""
@@ -187,9 +224,7 @@ static func gain_fluff(hero: Dictionary, amount: int, from_hit: bool = false, tu
 ## 被动①【弹力绒盾】+ 被动②【暖绒共鸣】：受击时由战斗规则层调用。
 ## 返回 {"reflect_damage": int, "ally_heal": int, "fluff_gained": int}
 static func on_take_hit(hero: Dictionary, turn: int) -> Dictionary:
-	var reflect := BASE_REFLECT + int(hero.get("fluff", 0))
-	if int(hero.get("double_reflect_round", 0)) == turn:
-		reflect *= 2
+	var reflect := reflect_damage(hero, turn)
 	var gained := gain_fluff(hero, 1, true, turn)
 	var ally_heal := 0
 	if int(hero.get("round_passive_heals", 0)) < ROUND_PASSIVE_HEAL_MAX:
@@ -200,6 +235,10 @@ static func on_take_hit(hero: Dictionary, turn: int) -> Dictionary:
 		"ally_heal": ally_heal,
 		"fluff_gained": gained,
 	}
+
+static func reflect_damage(hero: Dictionary, turn: int) -> int:
+	var reflect := BASE_REFLECT + int(hero.get("fluff", 0))
+	return reflect * 2 if int(hero.get("double_reflect_round", 0)) == turn else reflect
 
 
 ## 卡牌结算。result：0 = 拼赢，1 = 拼输或本回合无人与她拼点。
@@ -213,8 +252,30 @@ static func resolve_card(hero: Dictionary, key: String, result: int, turn: int, 
 		"team_shield": 0, "team_shield_expiry": turn + 1,
 		"single_heal": 0, "team_heal": 0,
 		"fluff_gain": 0, "self_damage": 0, "extra_damage": 0,
+		"self_heal": 0, "ally_heal": 0, "proxy": false, "other_only": false,
 	}
 	match key:
+		ROUND_SHELL:
+			out.self_shield = (6 if won else 4) + layers
+			out.fluff_gain = 1
+			hero.shell_turn = turn
+		FUZZ_PADDING:
+			out.team_heal = 4 if won else 2
+			out.ally_shield = 6 if layers >= 3 else 0
+			out.other_only = true
+		FLUFF_PROXY:
+			out.self_shield = 6 + layers
+			out.ally_shield = (12 if won else 8) + (6 if enhanced else 0)
+			out.other_only = true
+			out.proxy = enhanced
+		BOUNCE:
+			out.extra_damage = (10 if won else 5) + layers * 2
+			out.self_heal = 5 if won and hero.shield > 0 else 0
+		FLUFF_LANTERN:
+			out.ally_shield = 5
+			out.ally_shield_expiry = turn
+			out.ally_heal = 3 if won else 0
+			out.other_only = true
 		SOFT_GUARD:
 			out.self_shield = (10 if won else 7) + layers
 			out.fluff_gain = 1

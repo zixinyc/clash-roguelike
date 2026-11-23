@@ -22,7 +22,7 @@ func check(condition: bool, message: String) -> void:
 func _run() -> void:
 	# 1. Roster & 10 characters
 	var roster := Rules.create_roster()
-	check(roster.size() == 10, "roster has all 10 characters (including pufufu and ZiWu)")
+	check(roster.size() >= 11 and roster[Rules.MINGHE_ID].name == "minghe", "roster includes all previous characters and minghe")
 	check(roster[Rules.PUFUFU_ID].name == "pufufu", "pufufu is registered at PUFUFU_ID")
 	check(roster[Rules.ZIWU_ID].name == "ZiWu", "ZiWu is registered at ZIWU_ID")
 	check(Rules.card_owner("ziwu_cold_edge") == Rules.ZIWU_ID, "ziwu_cold_edge belongs to ZiWu")
@@ -62,7 +62,7 @@ func _run() -> void:
 	var setup := Setup.instantiate()
 	root.add_child(setup)
 	await process_frame
-	check(setup.role_buttons.size() == 10, "setup UI renders all 10 character buttons")
+	check(setup.role_buttons.size() == roster.size(), "setup UI renders every registered character")
 	check(setup.single_view.visible and not setup.multi_view.visible, "opens in singleplayer mode by default")
 	check(setup.explore_pane.visible and not setup.skirmish_pane.visible, "opens in explore pane without duplicate card wall")
 	if DisplayServer.get_name() != "headless":

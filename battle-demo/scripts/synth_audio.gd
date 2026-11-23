@@ -10,7 +10,7 @@ func _ready() -> void:
 	player.max_polyphony = 8
 	player.volume_db = -18.0
 	add_child(player)
-	for kind in ["select", "clash", "strike", "guard", "victory", "defeat"]:
+	for kind in ["select", "clash", "strike", "guard", "victory", "defeat", "break"]:
 		samples[kind] = _make_sound(kind)
 
 func play_sound(kind: String) -> void:
@@ -23,10 +23,13 @@ func _make_sound(kind: String) -> AudioStreamWAV:
 	var length := 0.16
 	if kind == "victory" or kind == "defeat":
 		length = 0.9
+	elif kind == "break":
+		length = 0.35
 	var frequency := 520.0
 	if kind == "clash": frequency = 980.0
 	if kind == "strike": frequency = 120.0
 	if kind == "guard": frequency = 430.0
+	if kind == "break": frequency = 340.0
 	var sample_rate := 22050
 	var data := PackedByteArray()
 	data.resize(int(sample_rate * length) * 2)
@@ -38,6 +41,8 @@ func _make_sound(kind: String) -> AudioStreamWAV:
 		var wave := sin(TAU * frequency * t)
 		if kind == "clash":
 			wave = wave * 0.35 + sin(TAU * frequency * 1.47 * t) * 0.3 + noise_rng.randf_range(-0.35, 0.35)
+		elif kind == "break":
+			wave = sin(TAU * (frequency * t - 140.0 * t * t)) * 0.45 + noise_rng.randf_range(-0.65, 0.65) * 0.55
 		elif kind == "strike":
 			wave = sin(TAU * (frequency * t - 55.0 * t * t)) * 0.6 + noise_rng.randf_range(-0.3, 0.3)
 		elif kind == "victory":

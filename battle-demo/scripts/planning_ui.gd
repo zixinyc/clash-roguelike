@@ -13,6 +13,7 @@ const Rules = preload("res://scripts/battle_rules.gd")
 const Stage = preload("res://scripts/battle_stage.gd")
 const RoleHand = preload("res://scripts/role_hand.gd")
 const Sound = preload("res://scripts/synth_audio.gd")
+const MapVisuals = preload("res://scripts/map_visuals.gd")
 var battle := Rules.new()
 var stage: DemoBattleStage
 var sound: DemoSynthAudio
@@ -28,6 +29,12 @@ var auto_button: Button
 var restart_button: Button
 var hero_picker: OptionButton
 var enemy_picker: OptionButton
+var ally_target_picker: OptionButton
+var support_slot_button: Button
+var ally_target_dialog: ConfirmationDialog
+var ally_target_card := -1
+var ally_target_slot := -1
+var ally_target_unit := -1
 var selected_card := -1
 var selected_slot := 0
 var selected_target := 0
@@ -48,10 +55,13 @@ var last_second := -1
 var ally_status: Label
 var enemy_status: Label
 var clash_rate_label: Label
+var momentum_panel: PanelContainer
+var momentum_label: Label
 var guide: Label
 var item_button: Button
 var item_popup: PanelContainer
 var item_close_button: Button
+var item_scroll: ScrollContainer
 var item_rows: VBoxContainer
 var item_feedback: Label
 var draw_pile_button: Button
@@ -137,6 +147,21 @@ func _ready() -> void:
 	clash_rate_label.add_theme_color_override("font_color", Color("f5c963"))
 	clash_rate_label.tooltip_text = "全队所有参与真实拼点的技能自然硬币正面率（敌方固定 50%）"
 	rate_panel.add_child(clash_rate_label)
+	momentum_panel = PanelContainer.new()
+	var m_style := StyleBoxFlat.new()
+	m_style.bg_color = Color("2b2116")
+	m_style.border_color = Color("d6a447")
+	m_style.set_border_width_all(1)
+	m_style.set_corner_radius_all(5)
+	m_style.content_margin_left = 12
+	m_style.content_margin_right = 12
+	m_style.content_margin_top = 8
+	m_style.content_margin_bottom = 8
+	momentum_panel.add_theme_stylebox_override("panel", m_style)
+	statuses.add_child(momentum_panel)
+	momentum_label = label("势能 ×0", 18)
+	momentum_label.add_theme_color_override("font_color", Color("f5c963"))
+	momentum_panel.add_child(momentum_label)
 	enemy_status = _status_panel(statuses, Color("ee9b8b"))
 	stage = Stage.new()
 	stage.custom_minimum_size.y = 280
@@ -147,6 +172,8 @@ func _ready() -> void:
 	stage.quick_assign_requested.connect(_quick_assign)
 	stage.slot_cancel_requested.connect(_quick_cancel)
 	stage.unit_selected.connect(_on_unit_selected)
+	stage.shared_support_clicked.connect(_assign_shared_support)
+	stage.shared_support_dropped.connect(_on_shared_support_dropped)
 	column.add_child(stage)
 	var selectors := HBoxContainer.new()
 	column.add_child(selectors)
@@ -158,6 +185,16 @@ func _ready() -> void:
 	enemy_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	enemy_picker.item_selected.connect(func(index: int) -> void: _slot_selected(false, index))
 	selectors.add_child(enemy_picker)
+	ally_target_picker = OptionButton.new()
+	ally_target_picker.hide()
+	ally_target_picker.item_selected.connect(_choose_ally_target)
+	selectors.add_child(ally_target_picker)
+	ally_target_dialog = ConfirmationDialog.new()
+	ally_target_dialog.theme = theme
+	ally_target_dialog.title = "确认攻击队友"
+	ally_target_dialog.ok_button_text = "确认安排"
+	ally_target_dialog.confirmed.connect(_confirm_ally_target)
+	add_child(ally_target_dialog)
 	assign_button = button("安排 →", _assign)
 	selectors.add_child(assign_button)
 	cancel_button = button("撤销此格", _cancel)
@@ -171,6 +208,23 @@ func _ready() -> void:
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 16)
 	action_center.add_child(actions)
+	support_slot_button = button("共有辅助槽 · 空", _assign_shared_support)
+	support_slot_button.custom_minimum_size = Vector2(250, 46)
+	var parch_style := StyleBoxFlat.new()
+	parch_style.bg_color = Color("f6edd8")
+	parch_style.border_color = Color("d6a447")
+	parch_style.set_border_width_all(2)
+	parch_style.set_corner_radius_all(6)
+	parch_style.set_content_margin_all(8)
+	support_slot_button.add_theme_stylebox_override("normal", parch_style)
+	var parch_hover := parch_style.duplicate()
+	parch_hover.bg_color = Color("fffaf0")
+	parch_hover.border_color = Color("f5c963")
+	support_slot_button.add_theme_stylebox_override("hover", parch_hover)
+	support_slot_button.add_theme_color_override("font_color", Color("2c2116"))
+	support_slot_button.add_theme_color_override("font_hover_color", Color("140f09"))
+	support_slot_button.add_theme_color_override("font_focus_color", Color("2c2116"))
+	actions.add_child(support_slot_button)
 	auto_button = button("自动安排", _auto_plan)
 	auto_button.custom_minimum_size = Vector2(180, 46)
 	actions.add_child(auto_button)
@@ -368,17 +422,13 @@ func _build_item_popup(top: HBoxContainer) -> void:
 	top.add_child(item_button)
 	item_popup = PanelContainer.new()
 	item_popup.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	item_popup.offset_left = -394
+	item_popup.offset_left = -440
 	item_popup.offset_right = -18
 	item_popup.offset_top = 66
 	item_popup.offset_bottom = 66
+	item_popup.custom_minimum_size.x = 422
 	item_popup.hide()
-	var panel := StyleBoxFlat.new()
-	panel.bg_color = Color("13232d")
-	panel.border_color = Color("9bc5c9")
-	panel.set_border_width_all(1)
-	panel.set_corner_radius_all(8)
-	item_popup.add_theme_stylebox_override("panel", panel)
+	item_popup.add_theme_stylebox_override("panel", MapVisuals.make_box(MapVisuals.WALNUT_DEEP, MapVisuals.BRASS_GOLD, 1, 8, 0, 0))
 	add_child(item_popup)
 	var margin := MarginContainer.new()
 	for side in ["left", "right", "top", "bottom"]:
@@ -391,16 +441,22 @@ func _build_item_popup(top: HBoxContainer) -> void:
 	body.add_child(heading)
 	var title := label("消耗道具", 19)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_color_override("font_color", Color("a7e1e2"))
+	title.add_theme_color_override("font_color", MapVisuals.SUN_GOLD)
 	heading.add_child(title)
 	item_close_button = button("关闭", _close_items)
 	heading.add_child(item_close_button)
+	item_scroll = ScrollContainer.new()
+	item_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	item_scroll.follow_focus = true
+	body.add_child(item_scroll)
 	item_rows = VBoxContainer.new()
+	item_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	item_rows.add_theme_constant_override("separation", 8)
-	body.add_child(item_rows)
+	item_scroll.add_child(item_rows)
 	item_feedback = label("", 15)
 	item_feedback.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	body.add_child(item_feedback)
+	item_popup.minimum_size_changed.connect(item_popup.reset_size)
 
 func _open_items() -> void:
 	if item_popup.visible:
@@ -410,6 +466,7 @@ func _open_items() -> void:
 		return
 	item_feedback.text = "选用道具后立即生效，准备交锋前可以继续安排行动。"
 	_refresh_items()
+	item_scroll.scroll_vertical = 0
 	item_popup.show()
 	item_close_button.grab_focus()
 
@@ -422,19 +479,36 @@ func _refresh_items() -> void:
 		item_rows.remove_child(child)
 		child.queue_free()
 	if battle.active_items.is_empty():
+		item_scroll.custom_minimum_size.y = 24
 		item_rows.add_child(label("当前没有消耗道具。可在废林商店购买。", 15))
 		return
 	var quantities := {}
 	for key in battle.active_items:
 		quantities[key] = int(quantities.get(key, 0)) + 1
+	item_scroll.custom_minimum_size.y = mini(364, 96 * quantities.size())
 	for key in quantities:
 		var info := RelicSystem.get_consumable(key)
 		var row := HBoxContainer.new()
 		item_rows.add_child(row)
+		var item_body := HBoxContainer.new()
+		item_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		item_body.add_theme_constant_override("separation", 10)
+		row.add_child(item_body)
+		var art := TextureRect.new()
+		art.texture = RelicSystem.get_item_art(key)
+		art.visible = art.texture != null
+		art.custom_minimum_size = Vector2(54, 54)
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		art.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		item_body.add_child(art)
 		var detail := VBoxContainer.new()
 		detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(detail)
-		detail.add_child(label("%s ×%d" % [info.get("name", key), quantities[key]], 16))
+		item_body.add_child(detail)
+		var title := label("%s ×%d" % [info.get("name", key), quantities[key]], 16)
+		title.add_theme_color_override("font_color", MapVisuals.SUN_GOLD)
+		detail.add_child(title)
 		var description := label(info.get("description", ""), 16)
 		description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		detail.add_child(description)
@@ -444,7 +518,9 @@ func _refresh_items() -> void:
 		use_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(use_button)
 		if not error.is_empty():
-			detail.add_child(label(error, 13))
+			var error_label := label(error, 13)
+			error_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			detail.add_child(error_label)
 
 func _use_battle_item(key: String) -> void:
 	if busy:
@@ -647,6 +723,10 @@ func _refresh(state: Dictionary) -> void:
 		var action: String = " · " + Rules.SKILLS[slot.key].name if slot.active else " · 空"
 		if slot.get("enhanced", false):
 			action += "（强化）"
+		if slot.has("ally_target") or slot.has("support_target"):
+			var ally: int = slot.get("ally_target", slot.get("support_target", -1))
+			if ally >= 0:
+				action += " → " + state.heroes[ally].name
 		if slot.get("frozen", false):
 			action = " · 停时"
 		hero_picker.add_item("%s(%s) · %s · 速度 %d%s" % [state.heroes[slot.unit].name, state.heroes[slot.unit].role, category, slot.speed, action])
@@ -660,8 +740,12 @@ func _refresh(state: Dictionary) -> void:
 	hero_picker.select(selected_slot)
 	enemy_picker.select(selected_target)
 	hand_view.refresh(state, stage.selected_hero, selected_card, not busy and state.phase == "response", selected_slot, enhance_selected)
-	for control in [ready_button, cancel_button, assign_button, auto_button, hero_picker, enemy_picker]:
+	for control in [ready_button, cancel_button, assign_button, auto_button, hero_picker, enemy_picker, support_slot_button]:
 		control.disabled = busy or state.phase != "response"
+	_refresh_ally_target_picker(state)
+	var support: Dictionary = state.get("shared_support_slot", {})
+	support_slot_button.text = "共有辅助槽 · %s" % (Rules.SKILLS[support.key].name if support.get("active", false) else "空")
+	support_slot_button.tooltip_text = "选择防御或辅助牌，再点击放入。辅助牌优先结算。点击已放入的牌可撤销。"
 	restart_button.disabled = busy
 	encounter_button.disabled = busy
 	team_button.disabled = busy
@@ -690,6 +774,25 @@ func _refresh(state: Dictionary) -> void:
 	if is_instance_valid(clash_rate_label):
 		clash_rate_label.text = "◆ 我方拼点正面率 %d%%" % heads_pct
 		clash_rate_label.add_theme_color_override("font_color", Color("7bf1a8") if heads_pct >= 90 else (Color("f5c963") if heads_pct >= 60 else Color("f2a272")))
+	var m: int = int(state.get("round_momentum", 0))
+	if is_instance_valid(momentum_label) and is_instance_valid(momentum_panel):
+		match m:
+			1:
+				momentum_label.text = "⚡ 势能 ×1 ｜ 势能起 · 拼点+1"
+				momentum_label.add_theme_color_override("font_color", Color("f0ebd8"))
+				momentum_panel.show()
+			2:
+				momentum_label.text = "⚡ 势能 ×2 ｜ 势如破竹 · 拼点+1 震击+3"
+				momentum_label.add_theme_color_override("font_color", Color("ffd700"))
+				momentum_panel.show()
+			3:
+				momentum_label.text = "🔥 势能 ×3 MAX ｜ 势不可挡 · 拼点+2 贯穿+6"
+				momentum_label.add_theme_color_override("font_color", Color("ff7043"))
+				momentum_panel.show()
+			_:
+				momentum_label.text = "势能 ×0"
+				momentum_label.add_theme_color_override("font_color", Color("a89f91"))
+				momentum_panel.visible = not busy and state.phase == "response" and m > 0
 	ally_status.text = "我方  ·  规划中    已安排 %d 次行动" % count
 	enemy_status.text = "敌方  ·  已锁定    目标公开 / 技能隐藏"
 	if selected_card >= 0 and selected_card < battle.hand.size():
@@ -852,13 +955,103 @@ func _quick_assign(allied: bool, slot_id: int) -> void:
 func _quick_cancel(slot_id: int) -> void:
 	if busy or battle.phase != "response":
 		return
+	if slot_id == -2:
+		battle.cancel_support()
+		log_label.text = "已撤销共有辅助行动。"
+		_refresh(battle.snapshot())
+		return
 	selected_slot = slot_id
 	_cancel()
+
+func _on_shared_support_dropped(source_id: int) -> void:
+	if busy or battle.phase != "response":
+		return
+	if source_id >= 0 and source_id < battle.hero_slots.size() and battle.hero_slots[source_id].active:
+		selected_card = battle.hero_slots[source_id].card
+		selected_slot = source_id
+	elif source_id >= 0 and source_id < battle.hand.size():
+		selected_card = source_id
+	_assign_shared_support()
+
+func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
+	return data is Dictionary and data.get("type", "") == "card" and support_slot_button.get_global_rect().has_point(at_position)
+
+func _drop_data(_at_position: Vector2, data: Variant) -> void:
+	_on_shared_support_dropped(int(data.get("index", -1)))
+
+func _assign_shared_support() -> void:
+	if busy or battle.phase != "response":
+		return
+	var support := battle.shared_support_slot
+	var key := battle.hand[selected_card] if selected_card >= 0 and selected_card < battle.hand.size() else ""
+	var can_support: bool = not key.is_empty() and (Rules.SKILLS[key].kind == "support" or battle.category_for(key) == 2)
+	if support.active and (support.card_idx == selected_card or not can_support):
+		battle.cancel_support()
+		log_label.text = "已撤销共有辅助行动。"
+	else:
+		if not can_support:
+			log_label.text = "先选择一张防御或辅助牌，再点击共有辅助槽。"
+			return
+		if enhance_selected:
+			log_label.text = "共有辅助槽只使用普通效果。请关闭强化，或安排到个人行动槽。"
+			return
+		var unit: int = battle.hero_slots[selected_slot].unit
+		var error := battle.assign_support(selected_card, unit, selected_target, _chosen_support_target())
+		log_label.text = "已放入共有辅助槽，将先于普通行动结算。" if error.is_empty() else error
+	_refresh(battle.snapshot())
+
+func _refresh_ally_target_picker(state: Dictionary) -> void:
+	var skill: Dictionary = Rules.SKILLS[state.hand[selected_card]] if selected_card >= 0 and selected_card < state.hand.size() else {}
+	var friendly: bool = skill.get("can_target_ally", false)
+	ally_target_picker.visible = not busy and state.phase == "response" and (friendly or skill.get("can_support_ally", false))
+	if not ally_target_picker.visible:
+		return
+	var unit: int = state.hero_slots[selected_slot].unit
+	var previous_target := _chosen_support_target()
+	var source: int = state.hero_slots[selected_slot].unit
+	var same_choice: bool = ally_target_picker.has_meta("source") and ally_target_picker.get_meta("source") == source and ally_target_picker.get_meta("card") == selected_card
+	ally_target_picker.set_meta("source", source)
+	ally_target_picker.set_meta("card", selected_card)
+	ally_target_picker.clear()
+	ally_target_picker.add_item("攻击队友…" if friendly else "援助队友…", 100)
+	for i in state.heroes.size():
+		var ally: Dictionary = state.heroes[i]
+		if i != unit and ally.hp > 0:
+			ally_target_picker.add_item("%s · %d/%d HP · %d 盾" % [ally.name, ally.hp, ally.max_hp, ally.shield], i)
+	ally_target_picker.select(ally_target_picker.get_item_index(previous_target) if same_choice and previous_target >= 0 else 0)
+	ally_target_picker.disabled = ally_target_picker.item_count <= 1
+	ally_target_picker.tooltip_text = "需要存活队友" if ally_target_picker.disabled else "选中队友后，点击安排或放入共有辅助槽"
+
+func _chosen_support_target() -> int:
+	if not ally_target_picker.visible or ally_target_picker.selected <= 0:
+		return -1
+	return ally_target_picker.get_selected_id()
+
+func _choose_ally_target(index: int) -> void:
+	if index <= 0 or selected_card < 0:
+		return
+	var target := ally_target_picker.get_item_id(index)
+	var skill: Dictionary = Rules.SKILLS[battle.hand[selected_card]]
+	if skill.get("can_target_ally", false):
+		ally_target_picker.select(0)
+		var ally: Dictionary = battle.heroes[target]
+		ally_target_card = selected_card
+		ally_target_slot = selected_slot
+		ally_target_unit = target
+		ally_target_dialog.dialog_text = "%s → %s（%d HP · %d 盾）\n%s\n队友退场会取消其尚未结算的行动。" % [skill.name, ally.name, ally.hp, ally.shield, skill.description]
+		ally_target_dialog.popup_centered(Vector2i(440, 170))
+	else:
+		log_label.text = "援助目标为 %s。点击安排，或放入共有辅助槽。" % battle.heroes[target].name
+
+func _confirm_ally_target() -> void:
+	var error := battle.assign(ally_target_card, ally_target_slot, ally_target_unit, false, true)
+	_refresh(battle.snapshot())
+	log_label.text = "已安排攻击队友，可在交锋前撤销。" if error.is_empty() else error
 
 func _assign() -> void:
 	if busy:
 		return
-	var error := battle.assign(selected_card, selected_slot, selected_target, enhance_selected)
+	var error := battle.assign(selected_card, selected_slot, selected_target, enhance_selected, false, _chosen_support_target())
 	_refresh(battle.snapshot())
 	log_label.text = "已安排，可撤销或改目标。" if error.is_empty() else error
 
@@ -875,7 +1068,7 @@ func _auto_plan() -> void:
 		return
 	var covered := {}
 	for slot in battle.hero_slots:
-		if slot.active and Rules.targets_enemy(slot.key) and battle.can_clash(slot, battle.enemy_slots[slot.target]):
+		if slot.active and not slot.has("ally_target") and Rules.targets_enemy(slot.key) and battle.can_clash(slot, battle.enemy_slots[slot.target]):
 			covered[slot.target] = true
 	var slots: Array[Dictionary] = battle.hero_slots.duplicate()
 	slots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return _auto_slot_order(a) < _auto_slot_order(b))
@@ -991,6 +1184,7 @@ func _resolve() -> void:
 		return
 	busy = true
 	item_popup.hide()
+	ally_target_dialog.hide()
 	stage.dragging = -1
 	clock_label.text = "双方已准备"
 	var events := battle.lock_and_resolve()
@@ -1018,6 +1212,15 @@ func _resolve() -> void:
 				await get_tree().create_timer(0.4 / speed).timeout
 			"overwhelm":
 				log_label.text = "【压制】分差 %d，追加 %d 点压制伤害！" % [event.margin, event.amount]
+			"momentum_gain":
+				log_label.text = "【拼刀连击】全队势能提升至 ×%d！" % event.momentum
+			"momentum_break":
+				log_label.text = "【拼刀落败】势能中断！"
+			"shatter_stagger":
+				log_label.text = "【💥 碎甲大失衡】引爆！受创 +50%，下回合速度锁死为 1！"
+				await get_tree().create_timer(0.4 / speed).timeout
+			"fracture_hit":
+				log_label.text = "【弱点命中】破损刻度增加至 %d/3！" % event.fracture
 		await stage.play_event(event, speed)
 	busy = false
 	stage.reset_visuals()
@@ -1045,6 +1248,8 @@ func _resolve() -> void:
 		battle_finished.emit()
 
 func _input(event: InputEvent) -> void:
+	if is_instance_valid(ally_target_dialog) and ally_target_dialog.visible:
+		return
 	if is_instance_valid(pile_popup) and pile_popup.visible:
 		if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 			_close_pile()

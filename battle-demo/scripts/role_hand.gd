@@ -154,6 +154,9 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 	if displayed_hand != state.hand:
 		_add_cards(state.hand)
 	var assigned := {}
+	var support: Dictionary = state.get("shared_support_slot", {})
+	if support.get("active", false):
+		assigned[support.card_idx] = "共有辅助槽"
 	var enhanced_cards := {}
 	var counts := [0, 0, 0]
 	var limits := [0, 0, 0]
@@ -200,6 +203,8 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 			role_summary.text = Rules.Pufufu.summary(hero)
 		Rules.ZIWU_ID:
 			role_summary.text = Rules.ZiWu.summary(hero)
+		Rules.MINGHE_ID:
+			role_summary.text = Rules.Minghe.summary(hero, int(state.turn))
 	var cycle_on: bool = state.get("deck_cycle_enabled", false)
 	all_playable_button.visible = cycle_on
 	if not cycle_on:
@@ -211,7 +216,10 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 	var is_zixi := hero.has("metaphysics")
 	var is_pufufu := int(hero.get("character_id", -1)) == Rules.PUFUFU_ID
 	var is_ziwu := int(hero.get("character_id", -1)) == Rules.ZIWU_ID
-	enhance_toggle.visible = (is_zixi or is_pufufu or is_ziwu) and (show_all_playable or not show_shared)
+	var is_minghe := int(hero.get("character_id", -1)) == Rules.MINGHE_ID
+	var selected_key := String(state.hand[selection]) if selection >= 0 and selection < state.hand.size() else ""
+	var selected_skill: Dictionary = Rules.SKILLS.get(selected_key, {})
+	enhance_toggle.visible = (is_zixi or is_pufufu or is_ziwu or is_minghe) and (show_all_playable or not show_shared)
 	enhance_toggle.text = "强化 · 3 层" if is_zixi else ("强化 · 2 层蓬松" if is_pufufu else "强化 · 2 层绝缘")
 	var enhancement_error := ""
 	if is_zixi:
@@ -221,20 +229,21 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else "消耗 3 层超形上学。本回合可强化一张，结算后因果律 +1，拼胜分差至少 5 时 +2。"
 		enhance_toggle.set_pressed_no_signal(enhance)
 	elif is_pufufu:
-		var selected_key := ""
-		if selection >= 0 and selection < state.hand.size():
-			selected_key = String(state.hand[selection])
 		enhancement_error = Rules.Pufufu.enhancement_error(hero, slot_id, selected_key)
 		enhance_toggle.disabled = not planning or selection < 0 or hero.hp <= 0 or not enhancement_error.is_empty()
-		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else "消耗 2 层蓬松。强化【厚实壁垒】额外获得 8 点护盾，且本回合受击反伤翻倍。"
+		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else selected_skill.get("enhance_description", "")
 		enhance_toggle.set_pressed_no_signal(enhance)
 	elif is_ziwu:
-		var selected_key := ""
-		if selection >= 0 and selection < state.hand.size():
-			selected_key = String(state.hand[selection])
+		enhance_toggle.text = "强化 · %d 层绝缘" % int(selected_skill.get("enhance_cost", Rules.ZiWu.ENHANCE_COST))
 		enhancement_error = Rules.ZiWu.enhancement_error(hero, slot_id, selected_key)
 		enhance_toggle.disabled = not planning or selection < 0 or hero.hp <= 0 or not enhancement_error.is_empty()
-		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else "消耗 2 层绝缘。强化【孤影截杀】本次拼点 +4，拼赢后下次拼点 +3。"
+		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else selected_skill.get("enhance_description", "")
+		enhance_toggle.set_pressed_no_signal(enhance)
+	elif is_minghe:
+		enhance_toggle.text = "强化 · 律动 %d" % int(selected_skill.get("enhance_cost", 0)) if selected_skill.has("enhance_cost") else "强化 · 律动"
+		enhancement_error = Rules.Minghe.enhancement_error(hero, slot_id, selected_key)
+		enhance_toggle.disabled = not planning or selection < 0 or hero.hp <= 0 or not enhancement_error.is_empty()
+		enhance_toggle.tooltip_text = enhancement_error if not enhancement_error.is_empty() else selected_skill.get("enhance_description", "")
 		enhance_toggle.set_pressed_no_signal(enhance)
 	role_summary.add_theme_color_override("font_color", ROLE_COLORS[unit])
 	detail.add_theme_color_override("font_color", Color("d7e0e1"))
@@ -270,9 +279,11 @@ func refresh(state: Dictionary, unit: int, selection: int, planning: bool, slot_
 				var occupied: Dictionary = state.hero_slots[hero.enhanced_slot]
 				card.can_enhance = Rules.SKILLS[occupied.key].kind == card.skill.kind
 		elif is_pufufu and card.skill.has("enhance_name") and planning and hero.hp > 0:
-			card.can_enhance = hero.enhanced_slot < 0 and int(hero.get("fluff", 0)) >= Rules.Pufufu.ENHANCE_COST
+			card.can_enhance = Rules.Pufufu.enhancement_error(hero, slot_id, card.skill_key).is_empty()
 		elif is_ziwu and card.skill.has("enhance_name") and planning and hero.hp > 0:
-			card.can_enhance = hero.enhanced_slot < 0 and int(hero.get("insulation", 0)) >= Rules.ZiWu.ENHANCE_COST
+			card.can_enhance = Rules.ZiWu.enhancement_error(hero, slot_id, card.skill_key).is_empty()
+		elif is_minghe and card.skill.has("enhance_name") and planning and hero.hp > 0:
+			card.can_enhance = Rules.Minghe.enhancement_error(hero, slot_id, card.skill_key).is_empty()
 		card.queue_redraw()
 	all_playable_button.text = "本轮可用 %d" % (personal_count + shared_count)
 	all_playable_button.disabled = not planning or (personal_count + shared_count) == 0

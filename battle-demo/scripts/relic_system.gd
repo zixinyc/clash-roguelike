@@ -194,6 +194,22 @@ const ITEMS := {
 const RELIC_DB := RELICS
 const CONSUMABLE_DB := ITEMS
 
+const ITEM_ART := {
+	"ember_catalyst": preload("res://art/items/ember_catalyst.png"),
+	"dense_smoke": preload("res://art/items/dense_smoke.png"),
+	"weighted_coin": preload("res://art/items/weighted_coin.png"),
+	"field_poultice": preload("res://art/items/field_poultice.png"),
+	"whetstone": preload("res://art/items/whetstone.png"),
+	"echo_pendulum": preload("res://art/items/echo_pendulum.png"),
+	"phoenix_feather": preload("res://art/items/phoenix_feather.png"),
+	"shatter_bomb": preload("res://art/items/shatter_bomb.png"),
+	"clarity_elixir": preload("res://art/items/clarity_elixir.png"),
+	"gambler_die": preload("res://art/items/gambler_die.png"),
+}
+
+static func get_item_art(key: String) -> Texture2D:
+	return ITEM_ART.get(key)
+
 static func get_relic(key: String) -> Dictionary:
 	return RELICS.get(key, {})
 

@@ -34,6 +34,7 @@ const HERO_STARTER_CARD := {
 	DemoBattleRules.MARISA_ID: "marisa_stars",
 	DemoBattleRules.PUFUFU_ID: "pufufu_soft_guard",
 	DemoBattleRules.ZIWU_ID: "ziwu_cold_edge",
+	DemoBattleRules.MINGHE_ID: "minghe_prelude",
 }
 
 const HERO_STARTER_CARDS := {
@@ -47,6 +48,7 @@ const HERO_STARTER_CARDS := {
 	DemoBattleRules.MARISA_ID: ["marisa_stars", "marisa_laser"],
 	DemoBattleRules.PUFUFU_ID: ["pufufu_soft_guard", "pufufu_fuzz_friction"],
 	DemoBattleRules.ZIWU_ID: ["ziwu_cold_edge", "ziwu_backstab"],
+	DemoBattleRules.MINGHE_ID: ["minghe_prelude", "minghe_infusion"],
 }
 
 const CARD_RARITY := {
@@ -108,15 +110,33 @@ const CARD_RARITY := {
 	"pufufu_warm_echo": RARITY_RARE,
 	"pufufu_thick_wall": RARITY_RARE,
 	"pufufu_fluff_hug": RARITY_RARE,
+	"pufufu_round_shell": RARITY_COMMON,
+	"pufufu_fuzz_padding": RARITY_COMMON,
+	"pufufu_fluff_proxy": RARITY_UNCOMMON,
+	"pufufu_bounce": RARITY_UNCOMMON,
+	"pufufu_fluff_lantern": RARITY_COMMON,
 	# ZiWu
 	"ziwu_cold_edge": RARITY_COMMON,
 	"ziwu_backstab": RARITY_UNCOMMON,
 	"ziwu_lone_intercept": RARITY_UNCOMMON,
 	"ziwu_meridian_slash": RARITY_RARE,
+	"ziwu_afterimage": RARITY_UNCOMMON,
+	"ziwu_blood_pact": RARITY_UNCOMMON,
+	"ziwu_lone_break": RARITY_RARE,
+	"ziwu_shadow_chase": RARITY_UNCOMMON,
+	"ziwu_frost_turn": RARITY_COMMON,
+	"minghe_tuning": RARITY_COMMON,
+	"minghe_prelude": RARITY_COMMON,
+	"minghe_infusion": RARITY_UNCOMMON,
+	"minghe_crane": RARITY_COMMON,
+	"minghe_concerto": RARITY_UNCOMMON,
+	"minghe_rally": RARITY_UNCOMMON,
+	"minghe_harmony": RARITY_UNCOMMON,
+	"minghe_omni": RARITY_RARE,
 }
 
 static func rarity_of(key: String) -> String:
-	return String(CARD_RARITY.get(key, RARITY_COMMON))
+	return String(CARD_RARITY.get(DemoBattleRules.Minghe.canonical_key(key), RARITY_COMMON))
 
 static func rarity_label(key: String) -> String:
 	return String(RARITY_META[rarity_of(key)].label)
@@ -131,9 +151,10 @@ static func shop_price(key: String) -> int:
 	return int(RARITY_META[rarity_of(key)].price)
 
 static func count_copies(deck: Array, key: String) -> int:
+	var canonical := DemoBattleRules.Minghe.canonical_key(key)
 	var n := 0
 	for k in deck:
-		if String(k) == key:
+		if DemoBattleRules.Minghe.canonical_key(String(k)) == canonical:
 			n += 1
 	return n
 

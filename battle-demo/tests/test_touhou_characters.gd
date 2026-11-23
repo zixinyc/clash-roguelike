@@ -33,7 +33,7 @@ func event_damage(events: Array[Dictionary], target: int) -> int:
 	var damage := 0
 	for event in events:
 		if event.type == "strike" and event.target == target:
-			damage += event.damage
+			damage += int(event.damage) - int(event.get("momentum_damage", 0))
 	return damage
 
 func _test_sakuya() -> void:

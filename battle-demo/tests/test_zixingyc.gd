@@ -65,7 +65,7 @@ func first_clash(events: Array[Dictionary]) -> Dictionary:
 func total_damage(events: Array[Dictionary]) -> int:
 	var total := 0
 	for hit in strikes(events):
-		total += int(hit.damage)
+		total += int(hit.damage) - int(hit.get("momentum_damage", 0))
 	return total
 
 func messages(events: Array[Dictionary]) -> String:
@@ -363,7 +363,7 @@ func test_ending() -> void:
 	var events := battle.lock_and_resolve()
 	var hits := strikes(events)
 	check(hits.size() == 2, "the ending hits every living enemy")
-	check(int(hits[0].damage) == 21 and int(hits[1].damage) == 21, "one reasoning, one retrieval and one generation corpus deal twenty one damage")
+	check(hits.all(func(hit: Dictionary) -> bool: return int(hit.damage) - int(hit.get("momentum_damage", 0)) == 21), "one reasoning, one retrieval and one generation corpus deal twenty one damage")
 	check(int(hero.ending_uses) == 1, "one activation is used")
 	check(int(hero.corpora[ZiXingYC.REASONING]) == 1 and int(hero.corpora[ZiXingYC.GENERATION]) == 1, "the corpora survive the bombardment")
 	battle.next_round()
