@@ -37,5 +37,6 @@
 
 ## 3. 并行开发与验证约定
 
+- **地图与平衡验证**：行商每层保底一处，在第 2～5 层同时相邻两个首领入口。保留首座命运门的 2～3 步安全距离，以及第 4、5 层行商西侧的额外战前命运门。涉及战斗或节点强度时，沿用标准远征开局配置，分别报告单场、五层远征及阵容差异。
 - **并行开发切分**：不同子 Agent 并行工作时，应按「主界面与联机大厅（`battle_setup.gd`）」、「角色与羁绊规则（`battle_rules.gd` + `characters/`）」、「探索事件与遗物扩展（`forest_run.gd` + `relic_system.gd`）」解耦分工。
 - **验证命令**：每次完成阶段性代码更新后，使用 `.\.tools\godot-4.7.2\Godot_v4.7.2-stable_win64_console.exe --headless --path battle-demo --script "tests/test_xxx.gd"` 进行回归校验，确保前面功能 100% 完整。

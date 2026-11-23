@@ -13,6 +13,7 @@ func _init() -> void:
 	print("--- Running Forest Map & Relic Tests ---")
 	_test_relic_database()
 	_test_map_generator()
+	_test_random_floor_supply_access()
 	_test_forest_run_navigation()
 	_test_action_dice_system()
 	_test_forest_run_nodes_and_patrol()
@@ -298,6 +299,48 @@ func _test_battle_consumables() -> void:
 	rules.phase = "resolve"
 	rules.guaranteed_heads = false
 	check(not rules.use_item("weighted_coin").ok and rules.active_items.has("weighted_coin"), "items cannot be used outside planning")
+
+func _test_random_floor_supply_access() -> void:
+	var kind := ForestMapGraph.NodeKind
+	var shop_positions := {}
+	var event_positions := {}
+	for floor in range(2, ForestRun.MAX_FLOOR + 1):
+		for seed_value in range(1, 26):
+			var graph := ForestRandomGenerator.generate_grid(seed_value, floor)
+			var safe := {}
+			var shops: Array[String] = []
+			var early_gate := ""
+			var gate_count := 0
+			for node in graph.nodes.values():
+				if node.kind == kind.SHOP:
+					shops.append(node.id)
+				if node.kind == kind.EVENT:
+					event_positions[node.id] = true
+				if node.kind == kind.DESTINY_GATE:
+					gate_count += 1
+					if node.cell.x < 4:
+						early_gate = node.id
+				if not node.id in graph.patrol_route and not node.kind in [kind.BATTLE, kind.ELITE, kind.CENTER, kind.EXIT]:
+					safe[node.id] = true
+			var context := " (floor %d seed %d)" % [floor, seed_value]
+			check(shops.size() == 1, "Each random floor has one shop" + context)
+			check(gate_count == (3 if floor >= 4 else 2), "Only late floors get the extra destiny gate" + context)
+			if shops.size() != 1:
+				continue
+			var shop := shops[0]
+			shop_positions[shop] = true
+			check(not graph.shortest_path(graph.start_id, shop, safe).is_empty(), "Shop can be reached outside battle and patrol cells" + context)
+			check(graph.edge_between(shop, graph.center_id) != null, "Shop neighbors the altar" + context)
+			check(graph.edge_between(shop, graph.exit_id) != null, "Shop neighbors the exit boss" + context)
+			var gate_path := graph.shortest_path(graph.start_id, early_gate, safe)
+			check(gate_path.size() in [3, 4], "Early destiny gate is within 2–3 safe moves" + context)
+			if floor >= 4:
+				var prep_node := graph.node_at(graph.cell_of(shop) + Vector2i.LEFT)
+				check(prep_node != null and prep_node.kind == kind.DESTINY_GATE and safe.has(prep_node.id), "Extra gate is on the safe shop approach" + context)
+				if prep_node != null:
+					check(not graph.shortest_path(graph.start_id, prep_node.id, safe).is_empty(), "Extra gate is reachable before the bosses" + context)
+	check(shop_positions.size() > 1 and event_positions.size() > 1, "Shop cluster and optional events still vary with the seed")
+
 
 func _test_floor_progression_and_exit_boss() -> void:
 	var map1 = ForestRandomGenerator.generate(500)

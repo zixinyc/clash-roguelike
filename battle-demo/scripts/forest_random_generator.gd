@@ -120,19 +120,16 @@ static func generate_grid(seed_val: int = -1, floor_level: int = 2) -> ForestMap
 	graph.is_grid = true
 	graph.grid_size = Vector2i(9, 7)
 
-	# 1. 选定核心地标坐标（随种子变化，确保每层结构清晰：西入口 -> 早门/哨塔 -> 中段交锋 -> 东侧祭坛/行商/归途石门）
+	# 1. 锚定关键整备节点，探索路线及支线仍由种子决定。
 	var spawn_cell := Vector2i(rng.randi_range(0, 1), rng.randi_range(2, 4))
-	var exit_cell := Vector2i(8, rng.randi_range(1, 5))
-	var shop_y := exit_cell.y - 1 if exit_cell.y > 0 else exit_cell.y + 1
-	var shop_cell := Vector2i(8, shop_y)
+	var early_gate_cell := spawn_cell + Vector2i(2, rng.randi_range(-1, 1))
+	var shop_y := rng.randi_range(2, 4)
+	var shop_cell := Vector2i(7, shop_y)
+	var exit_cell := Vector2i(8, shop_y)
+	var center_cell := shop_cell + Vector2i(0, 1 if rng.randi_range(0, 1) == 0 else -1)
 
-	# 烬心祭坛在东侧 6~7 列
-	var center_cell := Vector2i(rng.randi_range(6, 7), rng.randi_range(2, 4))
-	if center_cell == exit_cell or center_cell == shop_cell:
-		center_cell = Vector2i(6, 3)
-
-	# 巡逻 2x2 闭环放在中东侧 (col 6..7, row 4..5 或 1..2，避开 center / spawn / early gate)
-	var patrol_top := 1 if center_cell.y >= 3 else 4
+	# 巡逻闭环在整备通路的另一侧，仍会拦截前往周边支线的小队。
+	var patrol_top := 1 if shop_y >= 3 else 4
 	var p_cells: Array[Vector2i] = [
 		Vector2i(5, patrol_top),
 		Vector2i(6, patrol_top),
@@ -145,7 +142,13 @@ static func generate_grid(seed_val: int = -1, floor_level: int = 2) -> ForestMap
 		exit_cell: true,
 		shop_cell: true,
 		center_cell: true,
+		early_gate_cell: true,
 	}
+	# 为首座命运门及行商保留不经过障碍、遭遇或巡逻的入口。
+	for x in range(spawn_cell.x + 1, early_gate_cell.x + 1):
+		reserved[Vector2i(x, spawn_cell.y)] = true
+	for x in range(4, shop_cell.x):
+		reserved[Vector2i(x, shop_y)] = true
 	for pc in p_cells:
 		reserved[pc] = true
 
@@ -170,12 +173,16 @@ static func generate_grid(seed_val: int = -1, floor_level: int = 2) -> ForestMap
 		reserved[oc] = true
 		obs_placed += 1
 
-	# 3. 按分区放置有用节点（保底含双命运石之门 + 全功能节点 + 少量战斗点，其余全为空节点 PASSAGE）
+	# 3. 按分区放置有用节点，其余格为空节点 PASSAGE。
 	var specials: Dictionary = {}
 	specials[spawn_cell] = {"kind": ForestMapGraph.NodeKind.SPAWN, "name": "层间入口"}
 	specials[exit_cell] = {"kind": ForestMapGraph.NodeKind.EXIT, "name": "关底守卫 · 归途石门"}
 	specials[shop_cell] = {"kind": ForestMapGraph.NodeKind.SHOP, "name": "战前行商"}
 	specials[center_cell] = {"kind": ForestMapGraph.NodeKind.CENTER, "name": "烬心祭坛"}
+	specials[early_gate_cell] = {"kind": ForestMapGraph.NodeKind.DESTINY_GATE, "name": "命运石之门"}
+	if floor_level >= 4:
+		# 使用行商通路上的预留空格，同种子的其他节点不会重新洗牌。
+		specials[shop_cell + Vector2i.LEFT] = {"kind": ForestMapGraph.NodeKind.DESTINY_GATE, "name": "战前命运石之门"}
 
 	# 西区非战斗安全池（cols 0..3）：早门、瞭望台、补给、神龛、营地、树洞
 	var west_cells: Array[Vector2i] = []
@@ -185,16 +192,6 @@ static func generate_grid(seed_val: int = -1, floor_level: int = 2) -> ForestMap
 			if not reserved.has(c) and not graph.is_obstacle(c):
 				west_cells.append(c)
 	_shuffle_cells(west_cells, rng)
-
-	# 确保首座命运石之门在西区且与入口之间可通过无战路线直达
-	var early_gate_cell := Vector2i(2, 1)
-	for wc in west_cells:
-		if absi(wc.x - spawn_cell.x) + absi(wc.y - spawn_cell.y) >= 2:
-			early_gate_cell = wc
-			break
-	specials[early_gate_cell] = {"kind": ForestMapGraph.NodeKind.DESTINY_GATE, "name": "命运石之门"}
-	reserved[early_gate_cell] = true
-	west_cells.erase(early_gate_cell)
 
 	var west_roles := [
 		{"kind": ForestMapGraph.NodeKind.LOOKOUT, "name": "断枝高台"},
